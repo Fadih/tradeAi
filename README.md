@@ -5,8 +5,8 @@ Compliance: Informational alerts only. Not financial advice. Paper trade first.
 ## 1) Setup
 
 ```bash
-# From repo root
-cd /Users/fhussein/Documents/repositories/huggingface/tradeAi
+
+
 
 # Create venv
 python3 -m venv .venv
