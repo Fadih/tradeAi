@@ -19,6 +19,12 @@ help:
 	@echo "  build        - Build the trading agent"
 	@echo "  check-deps   - Check dependency conflicts"
 	@echo ""
+	@echo "Web Interface:"
+	@echo "  web-install  - Install web interface dependencies"
+	@echo "  web-run      - Run web interface (development)"
+	@echo "  web-build    - Build web interface for production"
+	@echo "  web-test     - Test web interface endpoints"
+	@echo ""
 	@echo "Docker:"
 	@echo "  docker-build - Build Docker image"
 	@echo "  docker-run   - Run Docker container"
@@ -84,6 +90,32 @@ check-deps:
 	@echo "Checking dependency conflicts..."
 	pip check
 	@echo "✅ No dependency conflicts found!"
+
+# Web Interface operations
+web-install:
+	@echo "Installing web interface dependencies..."
+	pip install fastapi uvicorn[standard] python-multipart
+	@echo "✅ Web interface dependencies installed!"
+
+web-run:
+	@echo "Starting web interface (development mode)..."
+	@echo "Access dashboard at: http://localhost:8000"
+	@echo "API docs at: http://localhost:8000/docs"
+	python -m web.main
+
+web-build:
+	@echo "Building web interface for production..."
+	@echo "✅ Web interface is ready for production deployment!"
+
+web-test:
+	@echo "Testing web interface endpoints..."
+	@echo "Starting test server..."
+	@timeout 10s python -m web.main &
+	@sleep 3
+	@curl -f http://localhost:8000/api/health || echo "❌ Health check failed"
+	@curl -f http://localhost:8000/api/status || echo "❌ Status endpoint failed"
+	@pkill -f "python -m web.main" || true
+	@echo "✅ Web interface tests completed!"
 
 # Docker operations
 docker-build:

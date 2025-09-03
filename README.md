@@ -49,6 +49,21 @@ docker-compose up -d
 make docker-stop
 ```
 
+### Option 4: Web Interface (Interactive Dashboard)
+```bash
+# Install web interface dependencies
+make web-install
+
+# Run web interface in development mode
+make web-run
+
+# Or use the startup script
+python start_web.py
+
+# Access dashboard at: http://localhost:8000
+# API documentation at: http://localhost:8000/docs
+```
+
 ## 🛠️ Build & Development
 
 ### Available Make Commands
@@ -96,6 +111,76 @@ python -m agent.cli backtest
 
 # 7. Auto-tune parameters
 python -m agent.cli tune
+```
+
+## 🌐 Web Interface
+
+### Features
+- **Real-time Dashboard**: Live monitoring of trading agent status
+- **Signal Generation**: Interactive trading signal generation
+- **Configuration Management**: View and update agent settings
+- **Market Data Visualization**: Charts and technical indicators
+- **API Documentation**: Interactive API docs with Swagger UI
+- **Responsive Design**: Works on desktop and mobile devices
+
+### Quick Start
+```bash
+# Install web interface dependencies
+make web-install
+
+# Start the web interface
+make web-run
+
+# Access the dashboard
+open http://localhost:8000
+```
+
+### Web Interface Commands
+```bash
+make web-install   # Install web interface dependencies
+make web-run       # Run web interface (development mode)
+make web-build     # Build web interface for production
+make web-test      # Test web interface endpoints
+```
+
+### Environment Variables for Web Interface
+```bash
+export WEB_HOST="0.0.0.0"        # Host to bind to (default: 0.0.0.0)
+export WEB_PORT="8000"            # Port to run on (default: 8000)
+export WEB_RELOAD="true"          # Enable auto-reload (default: false)
+export WEB_LOG_LEVEL="info"       # Log level (default: info)
+```
+
+### API Endpoints
+- `GET /` - Main dashboard
+- `GET /api/status` - Agent status
+- `GET /api/signals` - Recent trading signals
+- `POST /api/signals/generate` - Generate new signal
+- `GET /api/config` - Current configuration
+- `POST /api/config/update` - Update configuration
+- `GET /api/market-data/{symbol}` - Market data for symbol
+- `GET /api/health` - Health check
+- `GET /docs` - Interactive API documentation
+
+### Development Mode
+```bash
+# Start with auto-reload
+export WEB_RELOAD=true
+make web-run
+
+# Or use the startup script
+python start_web.py
+```
+
+### Production Deployment
+```bash
+# Build production image
+make docker-build
+
+# Run with Docker Compose
+docker-compose up -d
+
+# The web interface will be available at port 8000
 ```
 
 ## 📦 Docker Deployment

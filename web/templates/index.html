@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trading Agent Dashboard</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        .signal-buy { color: #28a745; }
+        .signal-sell { color: #dc3545; }
+        .signal-hold { color: #6c757d; }
+        .card-header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; }
+        .status-indicator { width: 12px; height: 12px; border-radius: 50%; display: inline-block; margin-right: 8px; }
+        .status-running { background-color: #28a745; }
+        .status-stopped { background-color: #dc3545; }
+        .status-warning { background-color: #ffc107; }
+        .metric-card { transition: transform 0.2s; }
+        .metric-card:hover { transform: translateY(-2px); }
+        .chart-container { position: relative; height: 300px; }
+        .signal-card { border-left: 4px solid #dee2e6; }
+        .signal-card.buy { border-left-color: #28a745; }
+        .signal-card.sell { border-left-color: #dc3545; }
+        .signal-card.hold { border-left-color: #6c757d; }
+    </style>
+</head>
+<body class="bg-light">
+    <!-- Navigation -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="#">
+                <i class="bi bi-graph-up"></i> Trading Agent Dashboard
+            </a>
+            <div class="navbar-nav ms-auto">
+                <span class="navbar-text">
+                    <span id="status-indicator" class="status-indicator status-running"></span>
+                    <span id="status-text">Running</span>
+                </span>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container-fluid mt-4">
+        <!-- Status Overview -->
+        <div class="row mb-4">
+            <div class="col-md-3">
+                <div class="card metric-card">
+                    <div class="card-body text-center">
+                        <h5 class="card-title text-muted">Status</h5>
+                        <h3 id="agent-status" class="text-success">Running</h3>
+                        <small class="text-muted">Agent Status</small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card metric-card">
+                    <div class="card-body text-center">
+                        <h5 class="card-title text-muted">Signals</h5>
+                        <h3 id="total-signals" class="text-primary">0</h3>
+                        <small class="text-muted">Total Generated</small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card metric-card">
+                    <div class="card-body text-center">
+                        <h5 class="card-title text-muted">Symbols</h5>
+                        <h3 id="active-symbols" class="text-info">0</h3>
+                        <small class="text-muted">Active Trading</small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card metric-card">
+                    <div class="card-body text-center">
+                        <h5 class="card-title text-muted">Uptime</h5>
+                        <h3 id="uptime" class="text-warning">0:00:00</h3>
+                        <small class="text-muted">Agent Uptime</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="row">
+            <!-- Left Column -->
+            <div class="col-lg-8">
+                <!-- Signal Generation -->
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h5 class="mb-0"><i class="bi bi-lightning"></i> Generate Trading Signal</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="symbol-input" class="form-label">Symbol</label>
+                                    <input type="text" class="form-control" id="symbol-input" placeholder="BTC/USDT or SPY" value="BTC/USDT">
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="timeframe-input" class="form-label">Timeframe</label>
+                                    <select class="form-select" id="timeframe-input">
+                                        <option value="15m">15 minutes</option>
+                                        <option value="1h" selected>1 hour</option>
+                                        <option value="4h">4 hours</option>
+                                        <option value="1d">1 day</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                        <button class="btn btn-primary" onclick="generateSignal()">
+                            <i class="bi bi-play-circle"></i> Generate Signal
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Recent Signals -->
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h5 class="mb-0"><i class="bi bi-list-ul"></i> Recent Signals</h5>
+                    </div>
+                    <div class="card-body">
+                        <div id="signals-container">
+                            <!-- Signals will be populated here -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Market Data Chart -->
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h5 class="mb-0"><i class="bi bi-graph-up"></i> Market Data</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="chart-container">
+                            <canvas id="marketChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Column -->
+            <div class="col-lg-4">
+                <!-- Configuration -->
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h5 class="mb-0"><i class="bi bi-gear"></i> Configuration</h5>
+                    </div>
+                    <div class="card-body">
+                        <div id="config-container">
+                            <!-- Configuration will be populated here -->
+                        </div>
+                        <button class="btn btn-outline-primary btn-sm" onclick="refreshConfig()">
+                            <i class="bi bi-arrow-clockwise"></i> Refresh
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Quick Actions -->
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h5 class="mb-0"><i class="bi bi-lightning-charge"></i> Quick Actions</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="d-grid gap-2">
+                            <button class="btn btn-outline-success" onclick="runBacktest()">
+                                <i class="bi bi-graph-up-arrow"></i> Run Backtest
+                            </button>
+                            <button class="btn btn-outline-info" onclick="runTune()">
+                                <i class="bi bi-tools"></i> Auto-Tune
+                            </button>
+                            <button class="btn btn-outline-warning" onclick="runSchedule()">
+                                <i class="bi bi-clock"></i> Start Scheduler
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- System Info -->
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0"><i class="bi bi-info-circle"></i> System Info</h5>
+                    </div>
+                    <div class="card-body">
+                        <small class="text-muted">
+                            <div>Version: 1.0.0</div>
+                            <div>Last Update: <span id="last-update">-</span></div>
+                            <div>API Status: <span id="api-status" class="text-success">Healthy</span></div>
+                        </small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Signal Modal -->
+    <div class="modal fade" id="signalModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Trading Signal Generated</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" id="signal-modal-body">
+                    <!-- Signal details will be populated here -->
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Global variables
+        let marketChart = null;
+        let statusUpdateInterval = null;
+
+        // Initialize dashboard
+        document.addEventListener('DOMContentLoaded', function() {
+            initializeDashboard();
+            startStatusUpdates();
+        });
+
+        async function initializeDashboard() {
+            await Promise.all([
+                updateStatus(),
+                loadSignals(),
+                loadConfig()
+            ]);
+        }
+
+        function startStatusUpdates() {
+            statusUpdateInterval = setInterval(updateStatus, 5000); // Update every 5 seconds
+        }
+
+        async function updateStatus() {
+            try {
+                const response = await fetch('/api/status');
+                const status = await response.json();
+                
+                // Update status indicators
+                document.getElementById('agent-status').textContent = status.status;
+                document.getElementById('total-signals').textContent = status.total_signals;
+                document.getElementById('active-symbols').textContent = status.active_symbols.length;
+                document.getElementById('uptime').textContent = status.uptime;
+                document.getElementById('last-update').textContent = new Date(status.last_update).toLocaleString();
+                
+                // Update status indicator
+                const indicator = document.getElementById('status-indicator');
+                const statusText = document.getElementById('status-text');
+                
+                indicator.className = `status-indicator status-${status.status}`;
+                statusText.textContent = status.status.charAt(0).toUpperCase() + status.status.slice(1);
+                
+            } catch (error) {
+                console.error('Error updating status:', error);
+                document.getElementById('api-status').textContent = 'Error';
+                document.getElementById('api-status').className = 'text-danger';
+            }
+        }
+
+        async function loadSignals() {
+            try {
+                const response = await fetch('/api/signals');
+                const signals = await response.json();
+                displaySignals(signals);
+            } catch (error) {
+                console.error('Error loading signals:', error);
+            }
+        }
+
+        function displaySignals(signals) {
+            const container = document.getElementById('signals-container');
+            
+            if (signals.length === 0) {
+                container.innerHTML = '<p class="text-muted">No signals generated yet.</p>';
+                return;
+            }
+            
+            container.innerHTML = signals.map(signal => `
+                <div class="card signal-card ${signal.signal_type.toLowerCase()} mb-2">
+                    <div class="card-body py-2">
+                        <div class="row align-items-center">
+                            <div class="col-md-2">
+                                <span class="badge bg-${getSignalColor(signal.signal_type)}">${signal.signal_type}</span>
+                            </div>
+                            <div class="col-md-3">
+                                <strong>${signal.symbol}</strong>
+                            </div>
+                            <div class="col-md-2">
+                                <small class="text-muted">Confidence</small><br>
+                                <strong>${(signal.confidence * 100).toFixed(1)}%</strong>
+                            </div>
+                            <div class="col-md-3">
+                                <small class="text-muted">Score</small><br>
+                                <strong>${signal.fused_score.toFixed(2)}</strong>
+                            </div>
+                            <div class="col-md-2">
+                                <small class="text-muted">${new Date(signal.timestamp).toLocaleTimeString()}</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function getSignalColor(signalType) {
+            switch (signalType) {
+                case 'BUY': return 'success';
+                case 'SELL': return 'danger';
+                case 'HOLD': return 'secondary';
+                default: return 'secondary';
+            }
+        }
+
+        async function loadConfig() {
+            try {
+                const response = await fetch('/api/config');
+                const config = await response.json();
+                displayConfig(config);
+            } catch (error) {
+                console.error('Error loading config:', error);
+            }
+        }
+
+        function displayConfig(config) {
+            const container = document.getElementById('config-container');
+            container.innerHTML = `
+                <div class="mb-2">
+                    <small class="text-muted">Tickers</small><br>
+                    <strong>${config.tickers.join(', ')}</strong>
+                </div>
+                <div class="mb-2">
+                    <small class="text-muted">Timeframe</small><br>
+                    <strong>${config.timeframe}</strong>
+                </div>
+                <div class="mb-2">
+                    <small class="text-muted">Buy Threshold</small><br>
+                    <strong>${config.buy_threshold}</strong>
+                </div>
+                <div class="mb-2">
+                    <small class="text-muted">Sell Threshold</small><br>
+                    <strong>${config.sell_threshold}</strong>
+                </div>
+                <div class="mb-2">
+                    <small class="text-muted">Tech Weight</small><br>
+                    <strong>${config.tech_weight}</strong>
+                </div>
+                <div class="mb-2">
+                    <small class="text-muted">Sentiment Weight</small><br>
+                    <strong>${config.sentiment_weight}</strong>
+                </div>
+            `;
+        }
+
+        async function generateSignal() {
+            const symbol = document.getElementById('symbol-input').value;
+            const timeframe = document.getElementById('timeframe-input').value;
+            
+            if (!symbol) {
+                alert('Please enter a symbol');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/signals/generate', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ symbol, timeframe })
+                });
+                
+                if (response.ok) {
+                    const signal = await response.json();
+                    showSignalModal(signal);
+                    await loadSignals(); // Refresh signals list
+                    await updateStatus(); // Update status
+                } else {
+                    const error = await response.json();
+                    alert(`Error: ${error.detail}`);
+                }
+            } catch (error) {
+                console.error('Error generating signal:', error);
+                alert('Error generating signal. Please try again.');
+            }
+        }
+
+        function showSignalModal(signal) {
+            const modalBody = document.getElementById('signal-modal-body');
+            modalBody.innerHTML = `
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6>Signal Details</h6>
+                        <p><strong>Symbol:</strong> ${signal.symbol}</p>
+                        <p><strong>Type:</strong> <span class="badge bg-${getSignalColor(signal.signal_type)}">${signal.signal_type}</span></p>
+                        <p><strong>Confidence:</strong> ${(signal.confidence * 100).toFixed(1)}%</p>
+                        <p><strong>Timestamp:</strong> ${new Date(signal.timestamp).toLocaleString()}</p>
+                    </div>
+                    <div class="col-md-6">
+                        <h6>Scores</h6>
+                        <p><strong>Technical:</strong> ${signal.technical_score.toFixed(2)}</p>
+                        <p><strong>Sentiment:</strong> ${signal.sentiment_score.toFixed(2)}</p>
+                        <p><strong>Fused:</strong> ${signal.fused_score.toFixed(2)}</p>
+                    </div>
+                </div>
+                <div class="row mt-3">
+                    <div class="col-12">
+                        <h6>Risk Management</h6>
+                        ${signal.stop_loss ? `<p><strong>Stop Loss:</strong> ${signal.stop_loss.toFixed(2)}</p>` : ''}
+                        ${signal.take_profit ? `<p><strong>Take Profit:</strong> ${signal.take_profit.toFixed(2)}</p>` : ''}
+                    </div>
+                </div>
+                <div class="row mt-3">
+                    <div class="col-12">
+                        <h6>Reasoning</h6>
+                        <p>${signal.reasoning}</p>
+                    </div>
+                </div>
+            `;
+            
+            const modal = new bootstrap.Modal(document.getElementById('signalModal'));
+            modal.show();
+        }
+
+        async function refreshConfig() {
+            await loadConfig();
+        }
+
+        function runBacktest() {
+            alert('Backtest functionality will be implemented in the CLI integration');
+        }
+
+        function runTune() {
+            alert('Auto-tune functionality will be implemented in the CLI integration');
+        }
+
+        function runSchedule() {
+            alert('Scheduler functionality will be implemented in the CLI integration');
+        }
+
+        // Cleanup on page unload
+        window.addEventListener('beforeunload', function() {
+            if (statusUpdateInterval) {
+                clearInterval(statusUpdateInterval);
+            }
+        });
+    </script>
+</body>
+</html>

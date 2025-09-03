@@ -25,7 +25,7 @@ services:
       - ./logs:/app/logs
       - ./.env:/app/.env:ro
     ports:
-      - "8000:8000"  # If you add a web interface later
+      - "8000:8000"  # Web interface
     networks:
       - trading-network
     healthcheck:
