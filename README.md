@@ -2,6 +2,153 @@
 
 Compliance: Informational alerts only. Not financial advice. Paper trade first.
 
+## 🚀 Quick Start
+
+### Option 1: Using Makefile (Recommended)
+```bash
+# Clone the repository
+git clone https://github.com/Fadih/tradeAi.git
+cd tradeAi
+
+# Setup development environment
+make setup-dev
+source .venv/bin/activate  # On Unix/macOS
+# .venv\Scripts\activate   # On Windows
+
+# Install dependencies
+make install
+
+# Quick start guide
+make quick-start
+```
+
+### Option 2: Manual Setup
+```bash
+# From repo root
+cd tradeAi
+
+# Create virtual environment
+python3 -m venv .venv
+source .venv/bin/activate  # On Unix/macOS
+# .venv\Scripts\activate   # On Windows
+
+# Install dependencies
+pip install -r requirements.txt
+```
+
+### Option 3: Docker (Production Ready)
+```bash
+# Build and run with Docker Compose
+make docker-build
+make docker-run
+
+# Or use docker-compose directly
+docker-compose up -d
+
+# Stop the container
+make docker-stop
+```
+
+## 🛠️ Build & Development
+
+### Available Make Commands
+```bash
+make help          # Show all available commands
+make install       # Install Python dependencies
+make setup-dev     # Setup development environment
+make test          # Run tests (if pytest is installed)
+make lint          # Run linting checks
+make format        # Format code with black
+make clean         # Clean build artifacts
+make check-deps    # Check for dependency conflicts
+make build         # Build the trading agent
+```
+
+### Docker Commands
+```bash
+make docker-build  # Build Docker image
+make docker-run    # Run Docker container
+make docker-stop   # Stop Docker container
+make docker-clean  # Clean Docker resources
+```
+
+### Development Workflow
+```bash
+# 1. Setup environment
+make setup-dev
+source .venv/bin/activate
+
+# 2. Install dependencies
+make install
+
+# 3. Configure environment variables
+cp .env.example .env
+# Edit .env with your API keys
+
+# 4. Test the setup
+python -m agent.cli show-config
+
+# 5. Get a trading tip
+python -m agent.cli tip
+
+# 6. Run backtest
+python -m agent.cli backtest
+
+# 7. Auto-tune parameters
+python -m agent.cli tune
+```
+
+## 📦 Docker Deployment
+
+### Building the Image
+```bash
+# Build locally
+make docker-build
+
+# Or with docker-compose
+docker-compose build
+```
+
+### Running with Docker Compose
+```bash
+# Start the service
+docker-compose up -d
+
+# View logs
+docker-compose logs -f trading-agent
+
+# Stop the service
+docker-compose down
+
+# Rebuild and restart
+docker-compose up -d --build
+```
+
+### Docker Environment Variables
+Create a `.env` file in the project root:
+```bash
+# Copy the example
+cp .env.example .env
+
+# Edit with your values
+nano .env
+```
+
+### Docker Volumes
+- `./config:/app/config:ro` - Configuration files (read-only)
+- `./logs:/app/logs` - Log files
+- `./.env:/app/.env:ro` - Environment variables (read-only)
+
+### Health Checks
+The Docker container includes health checks:
+```bash
+# Check container health
+docker inspect trading-agent | grep Health -A 10
+
+# View health check logs
+docker logs trading-agent 2>&1 | grep "health check"
+```
+
 ## 1) Setup
 
 ```bash
@@ -269,6 +416,91 @@ export AGENT_LOG_FILE="/tmp/debug.log"
 4. **Monitor**: Run `python -m agent.cli run-once` for current signals
 5. **Automate**: Schedule with `python -m agent.cli schedule`
 
+## 🚀 Production Deployment
+
+### Docker Production Setup
+```bash
+# Build production image
+make docker-build
+
+# Run with production environment
+docker run -d --name trading-agent-prod \
+  --restart unless-stopped \
+  -e AGENT_LOG_LEVEL=warning \
+  -e AGENT_LOG_FORMAT=simple \
+  -v $(PWD)/config:/app/config:ro \
+  -v $(PWD)/logs:/app/logs \
+  -v $(PWD)/.env:/app/.env:ro \
+  trading-agent:latest
+```
+
+### Docker Compose Production
+```bash
+# Start production stack
+docker-compose -f docker-compose.yml up -d
+
+# Monitor logs
+docker-compose logs -f trading-agent
+
+# Scale if needed
+docker-compose up -d --scale trading-agent=2
+```
+
+### Systemd Service (Linux)
+Create `/etc/systemd/system/trading-agent.service`:
+```ini
+[Unit]
+Description=Trading Agent
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/path/to/tradeAi
+ExecStart=/usr/bin/docker-compose up -d
+ExecStop=/usr/bin/docker-compose down
+TimeoutStartSec=0
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Enable and start:
+```bash
+sudo systemctl enable trading-agent
+sudo systemctl start trading-agent
+sudo systemctl status trading-agent
+```
+
+### Monitoring & Logging
+```bash
+# View real-time logs
+docker logs -f trading-agent
+
+# Check container health
+docker inspect trading-agent | grep Health
+
+# Monitor resource usage
+docker stats trading-agent
+
+# View logs from specific time
+docker logs --since="2024-01-15T10:00:00" trading-agent
+```
+
+### Backup & Recovery
+```bash
+# Backup configuration and logs
+tar -czf trading-agent-backup-$(date +%Y%m%d).tar.gz \
+  config/ logs/ .env
+
+# Restore from backup
+tar -xzf trading-agent-backup-20240115.tar.gz
+
+# Restart with restored config
+docker-compose restart
+```
+
 ## 10) Next Steps (Optional)
 
 ### Performance Improvements
@@ -277,21 +509,102 @@ export AGENT_LOG_FILE="/tmp/debug.log"
 - Add correlation analysis for portfolio optimization
 
 ### Infrastructure
-- Docker deployment with compose
-- Centralized secrets management
-- Logging and metrics dashboard
+- ✅ Docker deployment with compose
+- Centralized secrets management (Vault, AWS Secrets Manager)
+- Logging and metrics dashboard (Grafana, Prometheus)
 - Multi-timeframe analysis
+- Kubernetes deployment manifests
 
 ### Advanced Features
 - TimesFM forecasting integration
 - Alternative sentiment sources (Twitter, Reddit)
 - Machine learning signal enhancement
 - Portfolio backtesting across multiple assets
+- Web dashboard for real-time monitoring
 
-## Notes
+## 🔧 Troubleshooting
+
+### Common Issues
+
+#### Docker Issues
+```bash
+# Container won't start
+docker logs trading-agent
+
+# Permission denied on volumes
+sudo chown -R $USER:$USER config/ logs/
+
+# Port already in use
+docker-compose down
+docker-compose up -d
+```
+
+#### Environment Variables
+```bash
+# Check if variables are loaded
+python -m agent.cli show-config
+
+# Test specific variable
+echo $AGENT_LOG_LEVEL
+
+# Reload environment
+source .env
+```
+
+#### Dependencies
+```bash
+# Check for conflicts
+make check-deps
+
+# Reinstall dependencies
+make clean
+make install
+
+# Update specific package
+pip install --upgrade package-name
+```
+
+#### Logging Issues
+```bash
+# Check log file permissions
+ls -la logs/
+
+# Test logging
+export AGENT_LOG_LEVEL=debug
+python -m agent.cli tip
+
+# View logs in real-time
+tail -f logs/trading_agent.log
+```
+
+### Performance Tuning
+```bash
+# Run with debug logging to see bottlenecks
+export AGENT_LOG_LEVEL=debug
+python -m agent.cli run-once
+
+# Profile memory usage
+docker stats trading-agent
+
+# Check system resources
+htop
+iostat
+```
+
+### Security Considerations
+- Never commit `.env` files to version control
+- Use Docker secrets for production deployments
+- Regularly rotate API keys
+- Monitor container logs for suspicious activity
+- Use read-only volumes where possible
+
+## 📚 Notes
 - This agent is notifications-only. It does not place trades.
 - Always validate signals with paper trading or backtesting before acting.
 - Use the tune command to find optimal parameters for your market conditions.
 - Monitor regime changes and adjust thresholds accordingly.
 - Use debug logging to troubleshoot issues and understand signal generation.
 - File logging is useful for production monitoring and debugging.
+- Docker deployment provides isolation and easy scaling.
+- Use the Makefile for consistent development workflows.
+- Monitor container health checks in production environments.

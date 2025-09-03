@@ -1,0 +1,145 @@
+# Trading Agent Makefile
+# Usage: make <target>
+
+.PHONY: help install test clean build docker-build docker-run docker-stop docker-clean lint format check-deps setup-dev
+
+# Default target
+help:
+	@echo "Trading Agent - Available Commands:"
+	@echo ""
+	@echo "Development:"
+	@echo "  install      - Install dependencies"
+	@echo "  setup-dev    - Setup development environment"
+	@echo "  test         - Run tests"
+	@echo "  lint         - Run linting checks"
+	@echo "  format       - Format code with black"
+	@echo "  clean        - Clean build artifacts"
+	@echo ""
+	@echo "Building:"
+	@echo "  build        - Build the trading agent"
+	@echo "  check-deps   - Check dependency conflicts"
+	@echo ""
+	@echo "Docker:"
+	@echo "  docker-build - Build Docker image"
+	@echo "  docker-run   - Run Docker container"
+	@echo "  docker-stop  - Stop Docker container"
+	@echo "  docker-clean - Clean Docker images and containers"
+	@echo ""
+	@echo "Examples:"
+	@echo "  make install && make test"
+	@echo "  make docker-build && make docker-run"
+
+# Development setup
+install:
+	@echo "Installing dependencies..."
+	pip install -r requirements.txt
+	@echo "✅ Dependencies installed successfully!"
+
+setup-dev:
+	@echo "Setting up development environment..."
+	python -m venv .venv
+	@echo "Virtual environment created. Activate with:"
+	@echo "  source .venv/bin/activate  # On Unix/macOS"
+	@echo "  .venv\\Scripts\\activate     # On Windows"
+	@echo "Then run: make install"
+
+# Testing and quality
+test:
+	@echo "Running tests..."
+	python -m pytest tests/ -v --tb=short
+	@echo "✅ Tests completed!"
+
+lint:
+	@echo "Running linting checks..."
+	@if command -v flake8 >/dev/null 2>&1; then \
+		flake8 agent/ --max-line-length=100 --ignore=E501,W503; \
+	else \
+		echo "⚠️  flake8 not found. Install with: pip install flake8"; \
+	fi
+	@if command -v pylint >/dev/null 2>&1; then \
+		pylint agent/ --disable=C0114,C0116; \
+	else \
+		echo "⚠️  pylint not found. Install with: pip install pylint"; \
+	fi
+
+format:
+	@echo "Formatting code..."
+	@if command -v black >/dev/null 2>&1; then \
+		black agent/ --line-length=100; \
+	else \
+		echo "⚠️  black not found. Install with: pip install black"; \
+	fi
+
+# Building
+build:
+	@echo "Building trading agent..."
+	@if [ -f "setup.py" ]; then \
+		python setup.py build; \
+	else \
+		echo "✅ Trading agent is ready to run!"; \
+		echo "Use: python -m agent.cli <command>"; \
+	fi
+
+check-deps:
+	@echo "Checking dependency conflicts..."
+	pip check
+	@echo "✅ No dependency conflicts found!"
+
+# Docker operations
+docker-build:
+	@echo "Building Docker image..."
+	docker build -t trading-agent:latest .
+	@echo "✅ Docker image built successfully!"
+
+docker-run:
+	@echo "Running Docker container..."
+	@if [ ! "$$(docker images -q trading-agent:latest 2> /dev/null)" ]; then \
+		echo "⚠️  Docker image not found. Run 'make docker-build' first."; \
+		exit 1; \
+	fi
+	docker run -d --name trading-agent \
+		-e AGENT_LOG_LEVEL=info \
+		-e AGENT_LOG_FORMAT=simple \
+		-v $(PWD)/config:/app/config \
+		-v $(PWD)/logs:/app/logs \
+		trading-agent:latest
+	@echo "✅ Container started! Check logs with: docker logs trading-agent"
+
+docker-stop:
+	@echo "Stopping Docker container..."
+	docker stop trading-agent 2>/dev/null || echo "Container not running"
+	docker rm trading-agent 2>/dev/null || echo "Container not found"
+	@echo "✅ Container stopped and removed!"
+
+docker-clean:
+	@echo "Cleaning Docker resources..."
+	docker stop trading-agent 2>/dev/null || true
+	docker rm trading-agent 2>/dev/null || true
+	docker rmi trading-agent:latest 2>/dev/null || true
+	docker system prune -f
+	@echo "✅ Docker cleanup completed!"
+
+# Utility targets
+clean:
+	@echo "Cleaning build artifacts..."
+	find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+	find . -type f -name "*.pyc" -delete 2>/dev/null || true
+	find . -type f -name "*.pyo" -delete 2>/dev/null || true
+	find . -type f -name "*.pyd" -delete 2>/dev/null || true
+	find . -type f -name ".coverage" -delete 2>/dev/null || true
+	find . -type d -name "*.egg-info" -exec rm -rf {} + 2>/dev/null || true
+	find . -type d -name ".pytest_cache" -exec rm -rf {} + 2>/dev/null || true
+	find . -type d -name ".mypy_cache" -exec rm -rf {} + 2>/dev/null || true
+	@echo "✅ Cleanup completed!"
+
+# Quick start
+quick-start: install
+	@echo ""
+	@echo "🚀 Quick Start Guide:"
+	@echo "1. Set environment variables (see README.md)"
+	@echo "2. Test the agent: python -m agent.cli show-config"
+	@echo "3. Get a trading tip: python -m agent.cli tip"
+	@echo "4. Run backtest: python -m agent.cli backtest"
+	@echo "5. Auto-tune parameters: python -m agent.cli tune"
+	@echo ""
+	@echo "For more commands: python -m agent.cli --help"

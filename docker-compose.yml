@@ -1,0 +1,52 @@
+version: '3.8'
+
+services:
+  trading-agent:
+    build: .
+    container_name: trading-agent
+    restart: unless-stopped
+    environment:
+      - AGENT_LOG_LEVEL=${AGENT_LOG_LEVEL:-info}
+      - AGENT_LOG_FORMAT=${AGENT_LOG_FORMAT:-simple}
+      - AGENT_LOG_FILE=${AGENT_LOG_FILE:-/app/logs/trading_agent.log}
+      # Add your API keys here or use .env file
+      - CCXT_EXCHANGE=${CCXT_EXCHANGE:-binance}
+      - CCXT_API_KEY=${CCXT_API_KEY:-}
+      - CCXT_API_SECRET=${CCXT_API_SECRET:-}
+      - ALPACA_KEY_ID=${ALPACA_KEY_ID:-}
+      - ALPACA_SECRET_KEY=${ALPACA_SECRET_KEY:-}
+      - ALPACA_BASE_URL=${ALPACA_BASE_URL:-https://paper-api.alpaca.markets}
+      - HF_TOKEN=${HF_TOKEN:-}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-}
+      - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL:-}
+    volumes:
+      - ./config:/app/config:ro
+      - ./logs:/app/logs
+      - ./.env:/app/.env:ro
+    ports:
+      - "8000:8000"  # If you add a web interface later
+    networks:
+      - trading-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import agent; print('OK')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Optional: Add Redis for caching if needed
+  # redis:
+  #   image: redis:7-alpine
+  #   container_name: trading-agent-redis
+  #   restart: unless-stopped
+  #   networks:
+  #     - trading-network
+
+networks:
+  trading-network:
+    driver: bridge
+
+volumes:
+  trading-logs:
+    driver: local
