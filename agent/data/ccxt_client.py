@@ -5,18 +5,22 @@ from typing import List, Optional
 import pandas as pd
 import os
 
+from ..logging_config import get_logger
+
 try:
 	import ccxt  # type: ignore
 	_ccxt_ok = True
 except Exception:
 	_ccxt_ok = False
 
+logger = get_logger(__name__)
 
 def fetch_ohlcv_stub(symbol: str, timeframe: str, limit: int = 200) -> pd.DataFrame:
 	"""Stub for CCXT OHLCV. Replace with live CCXT calls later.
 
 	Returns minimal DataFrame with columns: time, open, high, low, close, volume.
 	"""
+	logger.debug(f"Using stub OHLCV for {symbol} @ {timeframe}, limit={limit}")
 	index = pd.date_range(end=pd.Timestamp.utcnow(), periods=limit, freq="h")
 	base = pd.Series(range(limit), dtype="float64")
 	ma = base.rolling(5, min_periods=1).mean()
@@ -28,6 +32,7 @@ def fetch_ohlcv_stub(symbol: str, timeframe: str, limit: int = 200) -> pd.DataFr
 		"volume": 10_000.0,
 	}, index=index)
 	data.index.name = "time"
+	logger.debug(f"Generated stub data: {len(data)} bars, close range: {data['close'].min():.2f}-{data['close'].max():.2f}")
 	return data
 
 
@@ -38,27 +43,58 @@ def fetch_ohlcv(symbol: str, timeframe: str, limit: int = 200) -> pd.DataFrame:
 	- CCXT_EXCHANGE (default: binance)
 	- CCXT_API_KEY, CCXT_API_SECRET (optional)
 	"""
+	logger.info(f"Fetching OHLCV: {symbol} @ {timeframe}, limit={limit}")
+	
 	if not _ccxt_ok:
+		logger.warning("CCXT not available, using stub data")
 		return fetch_ohlcv_stub(symbol, timeframe, limit)
 
 	exchange_name = os.getenv("CCXT_EXCHANGE", "binance").lower()
+	logger.debug(f"Using CCXT exchange: {exchange_name}")
+	
 	exchange_class = getattr(ccxt, exchange_name, None)
 	if exchange_class is None:
+		logger.error(f"Exchange {exchange_name} not found in CCXT, using stub")
 		return fetch_ohlcv_stub(symbol, timeframe, limit)
+	
+	# Setup exchange with optional API keys
+	api_key = os.getenv("CCXT_API_KEY")
+	api_secret = os.getenv("CCXT_API_SECRET")
+	
+	if api_key and api_secret:
+		logger.debug(f"Using API keys for {exchange_name}")
+	else:
+		logger.debug(f"No API keys provided for {exchange_name}, using public endpoints")
+	
 	exchange = exchange_class({
-		"apiKey": os.getenv("CCXT_API_KEY"),
-		"secret": os.getenv("CCXT_API_SECRET"),
+		"apiKey": api_key,
+		"secret": api_secret,
 		"enableRateLimit": True,
 	})
+	
 	try:
+		logger.debug(f"Requesting {limit} bars from {exchange_name}")
 		bars = exchange.fetch_ohlcv(symbol, timeframe=timeframe, limit=limit)
+		
 		if not bars:
+			logger.warning(f"No data returned from {exchange_name} for {symbol}, using stub")
 			return fetch_ohlcv_stub(symbol, timeframe, limit)
+		
+		logger.info(f"Received {len(bars)} bars from {exchange_name}")
+		
 		df = pd.DataFrame(bars, columns=["time","open","high","low","close","volume"]) 
 		df["time"] = pd.to_datetime(df["time"], unit="ms", utc=True)
 		df.set_index("time", inplace=True)
+		
+		# Log data summary
+		logger.debug(f"Data summary: close range {df['close'].min():.2f}-{df['close'].max():.2f}, "
+					f"volume range {df['volume'].min():.0f}-{df['volume'].max():.0f}")
+		
 		return df
-	except Exception:
+		
+	except Exception as e:
+		logger.error(f"Failed to fetch data from {exchange_name}: {e}")
+		logger.debug(f"Falling back to stub data for {symbol}")
 		return fetch_ohlcv_stub(symbol, timeframe, limit)
 
 

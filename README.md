@@ -5,8 +5,8 @@ Compliance: Informational alerts only. Not financial advice. Paper trade first.
 ## 1) Setup
 
 ```bash
-
-
+# From repo root
+cd /Users/fhussein/Documents/repositories/huggingface/tradeAi
 
 # Create venv
 python3 -m venv .venv
@@ -44,6 +44,22 @@ pip install transformers torch
 - `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`: for Telegram alerts
 - `SLACK_WEBHOOK_URL`: Slack incoming webhook URL
 
+### Logging Configuration
+- `AGENT_LOG_LEVEL`: log level (`debug`, `info`, `warning`, `error`, `critical`)
+- `AGENT_LOG_FORMAT`: log format style (`simple`, `verbose`)
+- `AGENT_LOG_FILE`: optional file path for logging
+
+**Log Levels:**
+- `debug`: Detailed debugging information (most verbose)
+- `info`: General information about program execution
+- `warning`: Warning messages for potentially problematic situations
+- `error`: Error messages for serious problems
+- `critical`: Critical errors that may prevent the program from running
+
+**Log Formats:**
+- `simple`: `2024-01-15 10:30:45 | agent.cli | INFO | Trading Agent CLI starting`
+- `verbose`: `2024-01-15 10:30:45 | agent.cli | INFO | main:45 | Trading Agent CLI starting`
+
 Example (console mode):
 ```bash
 export AGENT_TICKERS="BTC/USDT,ETH/USDT,SPY"
@@ -69,6 +85,20 @@ Example (HF Inference API for sentiment):
 export HF_TOKEN="hf_..."
 # optional override
 export HF_FIN_SENT_MODEL="ProsusAI/finbert"
+```
+
+Example (Logging configuration):
+```bash
+# Verbose debugging
+export AGENT_LOG_LEVEL="debug"
+export AGENT_LOG_FORMAT="verbose"
+
+# File logging
+export AGENT_LOG_FILE="/tmp/trading_agent.log"
+
+# Production logging
+export AGENT_LOG_LEVEL="warning"
+export AGENT_LOG_FORMAT="simple"
 ```
 
 ## 3) Run the CLI
@@ -176,6 +206,13 @@ Example output:
 - Regime awareness: bull/bear market filtering
 - Risk management: ATR-based stops and targets
 
+### Logging & Monitoring
+- Configurable log levels (DEBUG to CRITICAL)
+- Structured logging with timestamps and module names
+- File logging support
+- Verbose debugging mode
+- Performance metrics logging
+
 ## 8) Configuration Examples
 
 ### Basic Console Mode
@@ -217,6 +254,13 @@ export AGENT_BUY_THRESHOLD=0.3
 export AGENT_SELL_THRESHOLD=-0.3
 ```
 
+### Debug Logging
+```bash
+export AGENT_LOG_LEVEL="debug"
+export AGENT_LOG_FORMAT="verbose"
+export AGENT_LOG_FILE="/tmp/debug.log"
+```
+
 ## 9) Workflow
 
 1. **Setup**: Install deps, configure env vars
@@ -249,3 +293,5 @@ export AGENT_SELL_THRESHOLD=-0.3
 - Always validate signals with paper trading or backtesting before acting.
 - Use the tune command to find optimal parameters for your market conditions.
 - Monitor regime changes and adjust thresholds accordingly.
+- Use debug logging to troubleshoot issues and understand signal generation.
+- File logging is useful for production monitoring and debugging.
