@@ -28,6 +28,7 @@ from agent.indicators import compute_rsi, compute_ema, compute_macd, compute_atr
 from agent.engine import make_fused_tip
 from agent.models.sentiment import SentimentAnalyzer
 from agent.news.rss import fetch_headlines
+from agent.cache.redis_client import get_redis_client, close_redis_client
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -305,6 +306,48 @@ async def health_check():
         "version": "1.0.0"
     }
 
+@app.get("/api/redis/status")
+async def redis_status():
+    """Get Redis connection status and statistics"""
+    try:
+        redis_client = await get_redis_client()
+        if redis_client:
+            stats = await redis_client.get_cache_stats()
+            return stats
+        else:
+            return {"status": "redis_not_available"}
+    except Exception as e:
+        logger.error(f"Error checking Redis status: {e}")
+        return {"status": "error", "error": str(e)}
+
+@app.get("/api/redis/cache/clear")
+async def clear_cache(pattern: str = "*"):
+    """Clear Redis cache by pattern"""
+    try:
+        redis_client = await get_redis_client()
+        if redis_client:
+            deleted = await redis_client.clear_cache(pattern)
+            return {"status": "success", "deleted_keys": deleted}
+        else:
+            return {"status": "redis_not_available"}
+    except Exception as e:
+        logger.error(f"Error clearing cache: {e}")
+        return {"status": "error", "error": str(e)}
+
+@app.get("/api/redis/metrics/{metric_name}")
+async def get_redis_metrics(metric_name: str, days: int = 7):
+    """Get performance metrics from Redis"""
+    try:
+        redis_client = await get_redis_client()
+        if redis_client:
+            metrics = await redis_client.get_performance_metrics(metric_name, days)
+            return {"metric": metric_name, "days": days, "data": metrics}
+        else:
+            return {"status": "redis_not_available"}
+    except Exception as e:
+        logger.error(f"Error retrieving metrics: {e}")
+        return {"status": "error", "error": str(e)}
+
 # Background task to update agent status
 async def update_status():
     """Background task to update agent status"""
@@ -321,6 +364,16 @@ async def startup_event():
     """Initialize the application"""
     logger.info("Starting Trading Agent Web Interface")
     
+    # Initialize Redis connection
+    try:
+        redis_client = await get_redis_client()
+        if redis_client and await redis_client.is_connected():
+            logger.info("Redis connection established")
+        else:
+            logger.warning("Redis not available - caching disabled")
+    except Exception as e:
+        logger.warning(f"Could not initialize Redis: {e}")
+    
     # Start background tasks
     asyncio.create_task(update_status())
     
@@ -335,6 +388,13 @@ async def startup_event():
 async def shutdown_event():
     """Cleanup on shutdown"""
     logger.info("Shutting down Trading Agent Web Interface")
+    
+    # Close Redis connection
+    try:
+        await close_redis_client()
+        logger.info("Redis connection closed")
+    except Exception as e:
+        logger.warning(f"Error closing Redis connection: {e}")
 
 if __name__ == "__main__":
     uvicorn.run(

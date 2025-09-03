@@ -151,6 +151,14 @@ export WEB_RELOAD="true"          # Enable auto-reload (default: false)
 export WEB_LOG_LEVEL="info"       # Log level (default: info)
 ```
 
+### Redis Configuration
+```bash
+export REDIS_HOST="localhost"     # Redis host (default: localhost)
+export REDIS_PORT="6379"          # Redis port (default: 6379)
+export REDIS_DB="0"               # Redis database (default: 0)
+export REDIS_PASSWORD=""          # Redis password (optional)
+```
+
 ### API Endpoints
 - `GET /` - Main dashboard
 - `GET /api/status` - Agent status
@@ -160,7 +168,12 @@ export WEB_LOG_LEVEL="info"       # Log level (default: info)
 - `POST /api/config/update` - Update configuration
 - `GET /api/market-data/{symbol}` - Market data for symbol
 - `GET /api/health` - Health check
-- `GET /docs` - Interactive API documentation
+- `GET /api/docs` - Interactive API documentation
+
+### Redis Endpoints
+- `GET /api/redis/status` - Redis connection status and statistics
+- `GET /api/redis/cache/clear` - Clear Redis cache by pattern
+- `GET /api/redis/metrics/{metric_name}` - Get performance metrics from Redis
 
 ### Development Mode
 ```bash
@@ -233,6 +246,48 @@ docker inspect trading-agent | grep Health -A 10
 # View health check logs
 docker logs trading-agent 2>&1 | grep "health check"
 ```
+
+## 🔴 **Redis Integration**
+
+### **Performance & Caching**
+Redis provides **lightning-fast performance** and **intelligent caching** for your trading agent:
+
+- **🚀 Market Data Caching** - Cache OHLCV data to reduce API calls
+- **💾 Signal Storage** - Persistent storage of trading signals with TTL
+- **⚡ Configuration Caching** - Fast access to frequently used settings
+- **📊 Performance Metrics** - Store and analyze trading performance over time
+- **🔔 Real-time Updates** - Pub/Sub for live market data and notifications
+
+### **Quick Redis Setup**
+```bash
+# Install Redis
+make redis-install
+
+# Start Redis server
+make redis-start
+
+# Check Redis status
+make redis-status
+
+# Stop Redis server
+make redis-stop
+```
+
+### **Redis with Docker**
+```bash
+# Start with Redis included
+docker-compose up -d
+
+# Redis will be available at localhost:6379
+# Trading agent will automatically connect to Redis
+```
+
+### **Redis Benefits**
+- **10x faster** data access compared to file-based storage
+- **Automatic TTL** for data expiration and memory management
+- **Pub/Sub** for real-time market updates across multiple instances
+- **Persistence** with AOF (Append-Only File) for data durability
+- **Horizontal scaling** support for high-traffic deployments
 
 ## 1) Setup
 

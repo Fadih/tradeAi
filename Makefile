@@ -25,6 +25,12 @@ help:
 	@echo "  web-build    - Build web interface for production"
 	@echo "  web-test     - Test web interface endpoints"
 	@echo ""
+	@echo "Redis:"
+	@echo "  redis-install - Install Redis server"
+	@echo "  redis-start   - Start Redis server"
+	@echo "  redis-stop    - Stop Redis server"
+	@echo "  redis-status  - Check Redis status"
+	@echo ""
 	@echo "Docker:"
 	@echo "  docker-build - Build Docker image"
 	@echo "  docker-run   - Run Docker container"
@@ -94,7 +100,7 @@ check-deps:
 # Web Interface operations
 web-install:
 	@echo "Installing web interface dependencies..."
-	pip install fastapi uvicorn[standard] python-multipart
+	pip install fastapi uvicorn[standard] python-multipart redis aioredis
 	@echo "✅ Web interface dependencies installed!"
 
 web-run:
@@ -114,8 +120,49 @@ web-test:
 	@sleep 3
 	@curl -f http://localhost:8000/api/health || echo "❌ Health check failed"
 	@curl -f http://localhost:8000/api/status || echo "❌ Status endpoint failed"
+	@curl -f http://localhost:8000/api/redis/status || echo "❌ Redis status failed"
 	@pkill -f "python -m web.main" || true
 	@echo "✅ Web interface tests completed!"
+
+# Redis operations
+redis-install:
+	@echo "Installing Redis..."
+	@if command -v brew >/dev/null 2>&1; then \
+		brew install redis; \
+	elif command -v apt-get >/dev/null 2>&1; then \
+		sudo apt-get update && sudo apt-get install -y redis-server; \
+	elif command -v yum >/dev/null 2>&1; then \
+		sudo yum install -y redis; \
+	else \
+		echo "⚠️  Please install Redis manually for your system"; \
+	fi
+	@echo "✅ Redis installation completed!"
+
+redis-start:
+	@echo "Starting Redis server..."
+	@if command -v redis-server >/dev/null 2>&1; then \
+		redis-server --daemonize yes; \
+		echo "✅ Redis server started!"; \
+	else \
+		echo "❌ Redis server not found. Run 'make redis-install' first."; \
+	fi
+
+redis-stop:
+	@echo "Stopping Redis server..."
+	@if command -v redis-cli >/dev/null 2>&1; then \
+		redis-cli shutdown; \
+		echo "✅ Redis server stopped!"; \
+	else \
+		echo "❌ Redis CLI not found."; \
+	fi
+
+redis-status:
+	@echo "Checking Redis status..."
+	@if command -v redis-cli >/dev/null 2>&1; then \
+		redis-cli ping || echo "❌ Redis not responding"; \
+	else \
+		echo "❌ Redis CLI not found."; \
+	fi
 
 # Docker operations
 docker-build:
