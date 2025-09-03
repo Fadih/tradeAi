@@ -738,8 +738,8 @@ make web-run
 
 **Connect with the developer:**
 - 🐙 **GitHub**: [Fadih](https://github.com/Fadih)
-- 🚀 **LinkedIn**: [Fadi Hussein](https://linkedin.com/in/fadihussein)
-- 📧 **Email**: [fadi.hussein@example.com](mailto:fadi.hussein@example.com)
+- 🚀 **LinkedIn**: [Fadi Hussein](www.linkedin.com/in/fadi-hussein-8ab7403b)
+
 
 ---
 
