@@ -32,14 +32,16 @@ help:
 	@echo "  redis-status  - Check Redis status"
 	@echo ""
 	@echo "Docker:"
-	@echo "  docker-build - Build Docker image"
-	@echo "  docker-run   - Run Docker container"
-	@echo "  docker-stop  - Stop Docker container"
-	@echo "  docker-clean - Clean Docker images and containers"
+	@echo "  docker-clean-all - Remove ALL Docker layers, images, and containers"
+	@echo "  docker-build     - Build Docker image"
+	@echo "  docker-run       - Run Docker container"
+	@echo "  docker-stop      - Stop Docker container"
+	@echo "  docker-clean     - Clean Docker images and containers"
 	@echo ""
 	@echo "Examples:"
 	@echo "  make install && make test"
-	@echo "  make docker-build && make docker-run"
+	@echo "  make docker-clean-all && make docker-build && make docker-run"
+	@echo "  make docker-clean-all && docker compose up -d"
 
 # Development setup
 install:
@@ -165,7 +167,17 @@ redis-status:
 	fi
 
 # Docker operations
-docker-build:
+docker-clean-all:
+	@echo "🧹 Removing ALL Docker layers, images, and containers..."
+	docker compose down 2>/dev/null || true
+	docker stop $$(docker ps -aq) 2>/dev/null || true
+	docker rm $$(docker ps -aq) 2>/dev/null || true
+	docker rmi $$(docker images -aq) 2>/dev/null || true
+	docker system prune -af --volumes
+	docker builder prune -af
+	@echo "✅ All Docker layers, images, and containers removed!"
+
+docker-build: docker-clean-all
 	@echo "Building Docker image..."
 	docker build -t trading-agent:latest .
 	@echo "✅ Docker image built successfully!"
