@@ -16,9 +16,6 @@ class SignalThresholds:
 	# Trigger levels for fused score in [-1, 1]
 	buy_threshold: float = 0.5
 	sell_threshold: float = -0.5
-	# Weights for signal fusion
-	tech_weight: float = 0.6
-	sentiment_weight: float = 0.4
 
 
 @dataclass
@@ -71,10 +68,6 @@ def load_config_from_env() -> AgentConfig:
 		config.thresholds.buy_threshold = float(buy)
 	if sell := os.getenv("AGENT_SELL_THRESHOLD"):
 		config.thresholds.sell_threshold = float(sell)
-	if tech_weight := os.getenv("AGENT_TECH_WEIGHT"):
-		config.thresholds.tech_weight = float(tech_weight)
-	if sentiment_weight := os.getenv("AGENT_SENTIMENT_WEIGHT"):
-		config.thresholds.sentiment_weight = float(sentiment_weight)
 
 	# Models overrides
 	if sent := os.getenv("HF_FIN_SENT_MODEL"):

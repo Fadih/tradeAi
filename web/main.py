@@ -15,8 +15,6 @@ import uvicorn
 import asyncio
 import json
 import os
-import math
-import numpy as np
 from datetime import datetime, timedelta
 import logging
 import hashlib
@@ -86,11 +84,6 @@ class User(BaseModel):
 class SignalRequest(BaseModel):
     symbol: str
     timeframe: str = "1h"
-    # Custom thresholds (optional - will use config defaults if not provided)
-    custom_buy_threshold: Optional[float] = None
-    custom_sell_threshold: Optional[float] = None
-    custom_tech_weight: Optional[float] = None
-    custom_sentiment_weight: Optional[float] = None
 
 class ConfigUpdate(BaseModel):
     key: str
@@ -99,7 +92,6 @@ class ConfigUpdate(BaseModel):
 class TradingSignal(BaseModel):
     symbol: str
     timestamp: str
-    timeframe: str  # Store the timeframe used for this signal
     signal_type: str  # "BUY", "SELL", "HOLD"
     confidence: float
     technical_score: float
@@ -443,24 +435,9 @@ agent_status = {
 market_data_cache = {}
 CACHE_TTL = 300  # 5 minutes in seconds
 
+
 # Initialize sentiment analyzer
 sentiment_analyzer = None
-
-def get_cached_market_data(cache_key: str):
-    """Get cached market data if it's still valid"""
-    if cache_key in market_data_cache:
-        cached_data, timestamp = market_data_cache[cache_key]
-        if (datetime.now() - timestamp).total_seconds() < CACHE_TTL:
-            return cached_data
-        else:
-            # Remove expired cache entry
-            del market_data_cache[cache_key]
-    return None
-
-def set_cached_market_data(cache_key: str, data: dict):
-    """Cache market data with current timestamp"""
-    market_data_cache[cache_key] = (data, datetime.now())
-
 try:
     sentiment_analyzer = SentimentAnalyzer("ProsusAI/finbert")
 except Exception as e:
@@ -625,15 +602,16 @@ async def get_signal_stats() -> Dict[str, Any]:
             "recent_activity": []
         }
 
+
 @app.post("/api/signals/generate")
 async def generate_signal(request: SignalRequest, current_user: Dict[str, Any] = Depends(verify_token)) -> TradingSignal:
     """Generate a new trading signal for a symbol"""
     try:
         # Fetch market data
-        if "/" in request.symbol or request.symbol.endswith(("USDT", "BTC", "ETH")):  # Crypto
-            ohlcv = fetch_ohlcv(request.symbol, request.timeframe)
+        if "/" in request.symbol:  # Crypto
+            ohlcv = await fetch_ohlcv(request.symbol, request.timeframe)
         else:  # Stock/ETF
-            ohlcv = fetch_alpaca_ohlcv(request.symbol, request.timeframe)
+            ohlcv = await fetch_alpaca_ohlcv(request.symbol, request.timeframe)
         
         if ohlcv is None or ohlcv.empty:
             raise HTTPException(status_code=400, detail="Could not fetch market data")
@@ -643,20 +621,14 @@ async def generate_signal(request: SignalRequest, current_user: Dict[str, Any] =
         rsi = compute_rsi(close)
         ema_12 = compute_ema(close, 12)
         ema_26 = compute_ema(close, 26)
-        macd_df = compute_macd(close)
-        macd = macd_df['macd']
-        macd_signal = macd_df['signal']
-        macd_hist = macd_df['hist']
-        atr = compute_atr(ohlcv['high'], ohlcv['low'], ohlcv['close'])
+        macd, macd_signal, macd_hist = compute_macd(close)
+        atr = compute_atr(ohlcv)
         
         # Get sentiment from news
         sentiment_score = 0.0
         if sentiment_analyzer:
             try:
-                headlines = fetch_headlines([
-                    "https://news.google.com/rss/search?q=stock+market&hl=en-US&gl=US&ceid=US:en",
-                    "https://news.google.com/rss/search?q=crypto+btc&hl=en-US&gl=US&ceid=US:en"
-                ])
+                headlines = await fetch_headlines()
                 if headlines:
                     # Analyze first few headlines
                     text_sample = " ".join(headlines[:3])
@@ -679,33 +651,15 @@ async def generate_signal(request: SignalRequest, current_user: Dict[str, Any] =
             
             tech_score = (rsi_score + macd_score) / 2
         
-        # Fused score (weighted average) - use custom weights or config defaults
-        try:
-            config = load_config_from_env()
-            # Use custom weights if provided, otherwise use config defaults
-            tech_weight = request.custom_tech_weight if request.custom_tech_weight is not None else config.thresholds.tech_weight
-            sentiment_weight = request.custom_sentiment_weight if request.custom_sentiment_weight is not None else config.thresholds.sentiment_weight
-        except Exception:
-            # Fallback to default weights
-            tech_weight = request.custom_tech_weight if request.custom_tech_weight is not None else 0.6
-            sentiment_weight = request.custom_sentiment_weight if request.custom_sentiment_weight is not None else 0.4
-        
+        # Fused score (weighted average)
+        tech_weight = 0.6
+        sentiment_weight = 0.4
         fused_score = tech_weight * tech_score + sentiment_weight * sentiment_score
         
-        # Determine signal type - use custom thresholds or config defaults
-        try:
-            config = load_config_from_env()
-            # Use custom thresholds if provided, otherwise use config defaults
-            buy_threshold = request.custom_buy_threshold if request.custom_buy_threshold is not None else config.thresholds.buy_threshold
-            sell_threshold = request.custom_sell_threshold if request.custom_sell_threshold is not None else config.thresholds.sell_threshold
-        except Exception:
-            # Fallback to default thresholds
-            buy_threshold = request.custom_buy_threshold if request.custom_buy_threshold is not None else 0.5
-            sell_threshold = request.custom_sell_threshold if request.custom_sell_threshold is not None else -0.5
-        
-        if fused_score >= buy_threshold:
+        # Determine signal type
+        if fused_score >= 0.7:
             signal_type = "BUY"
-        elif fused_score <= sell_threshold:
+        elif fused_score <= -0.7:
             signal_type = "SELL"
         else:
             signal_type = "HOLD"
@@ -729,7 +683,6 @@ async def generate_signal(request: SignalRequest, current_user: Dict[str, Any] =
         signal = TradingSignal(
             symbol=request.symbol,
             timestamp=datetime.now().isoformat(),
-            timeframe=request.timeframe,  # Store the timeframe used
             signal_type=signal_type,
             confidence=abs(fused_score),
             technical_score=tech_score,
@@ -771,6 +724,7 @@ async def generate_signal(request: SignalRequest, current_user: Dict[str, Any] =
             logger.error(f"Failed to update signal count: {e}")
             agent_status["total_signals"] += 1
         
+
         agent_status["last_update"] = datetime.now().isoformat()
         
         return signal
@@ -814,10 +768,10 @@ async def update_config(update: ConfigUpdate):
 async def get_market_data(symbol: str, timeframe: str = "1h", limit: int = 100):
     """Get market data for a symbol"""
     try:
-        if "/" in symbol or symbol.endswith(("USDT", "BTC", "ETH")):  # Crypto
-            ohlcv = fetch_ohlcv(symbol, timeframe)
+        if "/" in symbol:  # Crypto
+            ohlcv = await fetch_ohlcv(symbol, timeframe)
         else:  # Stock/ETF
-            ohlcv = fetch_alpaca_ohlcv(symbol, timeframe)
+            ohlcv = await fetch_alpaca_ohlcv(symbol, timeframe)
         
         if ohlcv is None or ohlcv.empty:
             raise HTTPException(status_code=400, detail="Could not fetch market data")
@@ -840,228 +794,6 @@ async def get_market_data(symbol: str, timeframe: str = "1h", limit: int = 100):
         logger.error(f"Error fetching market data: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/api/market-data/all/overview")
-async def get_all_market_overview(timeframe: str = "1h"):
-    """Get overview of all configured tickers with real-time data"""
-    try:
-        config = load_config_from_env()
-        symbols = config.universe.tickers
-        
-        overview_data = []
-        
-        for symbol in symbols:
-            try:
-                if "/" in symbol or symbol.endswith(("USDT", "BTC", "ETH")):  # Crypto
-                    ohlcv = fetch_ohlcv(symbol, timeframe)
-                else:  # Stock/ETF
-                    ohlcv = fetch_alpaca_ohlcv(symbol, timeframe)
-                
-                if ohlcv is not None and not ohlcv.empty:
-                    # Get latest data points
-                    latest = ohlcv.iloc[-1]
-                    previous = ohlcv.iloc[-2] if len(ohlcv) > 1 else latest
-                    
-                    # Calculate changes
-                    current_price = float(latest['close'])
-                    previous_price = float(previous['close'])
-                    change = current_price - previous_price
-                    change_percent = (change / previous_price) * 100
-                    
-                    # Get volume
-                    volume = float(latest['volume']) if 'volume' in latest else 0
-                    
-                    # Get high/low for the period
-                    high = float(ohlcv['high'].max())
-                    low = float(ohlcv['low'].min())
-                    
-                    # Validate float values before adding to response
-                    if (not math.isnan(current_price) and not math.isinf(current_price) and
-                        not math.isnan(change) and not math.isinf(change) and
-                        not math.isnan(change_percent) and not math.isinf(change_percent) and
-                        not math.isnan(volume) and not math.isinf(volume) and
-                        not math.isnan(high) and not math.isinf(high) and
-                        not math.isnan(low) and not math.isinf(low)):
-                        
-                        overview_data.append({
-                            "symbol": symbol,
-                            "current_price": current_price,
-                            "change": change,
-                            "change_percent": change_percent,
-                            "volume": volume,
-                            "high": high,
-                            "low": low,
-                            "timestamp": latest.name.isoformat(),
-                            "timeframe": timeframe
-                        })
-                    else:
-                        logger.warning(f"Invalid float values for {symbol}, skipping")
-                        overview_data.append({
-                            "symbol": symbol,
-                            "current_price": 0,
-                            "change": 0,
-                            "change_percent": 0,
-                            "volume": 0,
-                            "high": 0,
-                            "low": 0,
-                            "timestamp": datetime.now().isoformat(),
-                            "timeframe": timeframe,
-                            "error": "Invalid data values"
-                        })
-                else:
-                    # Fallback data if no market data available
-                    overview_data.append({
-                        "symbol": symbol,
-                        "current_price": 0,
-                        "change": 0,
-                        "change_percent": 0,
-                        "volume": 0,
-                        "high": 0,
-                        "low": 0,
-                        "timestamp": datetime.now().isoformat(),
-                        "timeframe": timeframe,
-                        "error": "No data available"
-                    })
-                    
-            except Exception as e:
-                logger.error(f"Error fetching data for {symbol}: {e}")
-                overview_data.append({
-                    "symbol": symbol,
-                    "current_price": 0,
-                    "change": 0,
-                    "change_percent": 0,
-                    "volume": 0,
-                    "high": 0,
-                    "low": 0,
-                    "timestamp": datetime.now().isoformat(),
-                    "timeframe": timeframe,
-                    "error": str(e)
-                })
-        
-        return {
-            "timestamp": datetime.now().isoformat(),
-            "timeframe": timeframe,
-            "symbols": overview_data
-        }
-        
-    except Exception as e:
-        logger.error(f"Error fetching market overview: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.get("/api/market-data/all/timeline")
-async def get_all_timeline_data(timeframe: str = "1h", limit: int = 50):
-    """Get timeline data for all configured tickers with optimized parallel fetching and caching"""
-    try:
-        # Check cache first
-        cache_key = f"timeline_{timeframe}_{limit}"
-        cached_data = get_cached_market_data(cache_key)
-        if cached_data:
-            logger.info(f"Returning cached timeline data for {timeframe}")
-            return cached_data
-        
-        config = load_config_from_env()
-        symbols = config.universe.tickers
-        
-        # Reduce limit for faster response - keep it small for performance
-        if limit > 20:
-            limit = 20
-        
-        timeline_data = {}
-        
-        # Process symbols sequentially but with better error handling and faster processing
-        for symbol in symbols:
-            try:
-                logger.info(f"Fetching data for {symbol} with timeframe {timeframe}")
-                
-                if "/" in symbol or symbol.endswith(("USDT", "BTC", "ETH")):  # Crypto
-                    ohlcv = fetch_ohlcv(symbol, timeframe)
-                else:  # Stock/ETF
-                    ohlcv = fetch_alpaca_ohlcv(symbol, timeframe)
-                
-                if ohlcv is not None and not ohlcv.empty:
-                    # Convert to timeline format with optimized processing
-                    symbol_data = []
-                    # Use tail for most recent data and limit rows for faster processing
-                    recent_data = ohlcv.tail(min(limit, len(ohlcv)))
-                    
-                    # Process data more efficiently with vectorized operations
-                    try:
-                        # Convert to numeric values and handle NaN/inf in one operation
-                        numeric_data = recent_data[['open', 'high', 'low', 'close']].astype(float)
-                        volume_data = recent_data['volume'].astype(float) if 'volume' in recent_data else pd.Series([0.0] * len(recent_data))
-                        
-                        # Replace NaN and inf values
-                        numeric_data = numeric_data.replace([np.inf, -np.inf], np.nan)
-                        volume_data = volume_data.replace([np.inf, -np.inf], np.nan)
-                        
-                        # Fill NaN values with forward fill then backward fill
-                        numeric_data = numeric_data.ffill().bfill()
-                        volume_data = volume_data.ffill().bfill()
-                        
-                        # Convert to timeline format
-                        for i, (idx, row) in enumerate(recent_data.iterrows()):
-                            symbol_data.append({
-                                "timestamp": idx.isoformat(),
-                                "open": float(numeric_data.iloc[i]['open']),
-                                "high": float(numeric_data.iloc[i]['high']),
-                                "low": float(numeric_data.iloc[i]['low']),
-                                "close": float(numeric_data.iloc[i]['close']),
-                                "volume": float(volume_data.iloc[i])
-                            })
-                            
-                    except Exception as e:
-                        logger.warning(f"Error processing data for {symbol}: {e}, using fallback method")
-                        # Fallback to simple processing
-                        for idx, row in recent_data.iterrows():
-                            try:
-                                symbol_data.append({
-                                    "timestamp": idx.isoformat(),
-                                    "open": float(row['open']) if not math.isnan(row['open']) else 0.0,
-                                    "high": float(row['high']) if not math.isnan(row['high']) else 0.0,
-                                    "low": float(row['low']) if not math.isnan(row['low']) else 0.0,
-                                    "close": float(row['close']) if not math.isnan(row['close']) else 0.0,
-                                    "volume": float(row['volume']) if 'volume' in row and not math.isnan(row['volume']) else 0.0
-                                })
-                            except Exception as row_error:
-                                logger.warning(f"Error processing row for {symbol}: {row_error}")
-                                continue
-                    
-                    timeline_data[symbol] = {
-                        "timeframe": timeframe,
-                        "data": symbol_data,
-                        "last_update": datetime.now().isoformat()
-                    }
-                else:
-                    timeline_data[symbol] = {
-                        "timeframe": timeframe,
-                        "data": [],
-                        "error": "No data available",
-                        "last_update": datetime.now().isoformat()
-                    }
-                    
-            except Exception as e:
-                logger.error(f"Error fetching timeline for {symbol}: {e}")
-                timeline_data[symbol] = {
-                    "timeframe": timeframe,
-                    "data": [],
-                    "error": str(e),
-                    "last_update": datetime.now().isoformat()
-                }
-        
-        result = {
-            "timestamp": datetime.now().isoformat(),
-            "timeframe": timeframe,
-            "symbols": timeline_data
-        }
-        
-        # Cache the result
-        set_cached_market_data(cache_key, result)
-        
-        return result
-        
-    except Exception as e:
-        logger.error(f"Error fetching timeline data: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
 @app.get("/api/health")
 async def health_check():
     """Health check endpoint"""
@@ -1070,31 +802,6 @@ async def health_check():
         "timestamp": datetime.now().isoformat(),
         "version": "1.0.0"
     }
-
-@app.get("/api/test-chart")
-async def test_chart_endpoint():
-    """Test endpoint for chart data - returns mock data quickly"""
-    try:
-        import time
-        time.sleep(1)  # Simulate 1 second delay
-        
-        return {
-            "timestamp": datetime.now().isoformat(),
-            "timeframe": "15m",
-            "symbols": {
-                "BTC/USDT": {
-                    "timeframe": "15m",
-                    "data": [
-                        {"timestamp": "2025-01-04T12:00:00", "open": 45000, "high": 45100, "low": 44900, "close": 45050, "volume": 1000},
-                        {"timestamp": "2025-01-04T12:15:00", "open": 45050, "high": 45200, "low": 45000, "close": 45150, "volume": 1200}
-                    ],
-                    "last_update": datetime.now().isoformat()
-                }
-            }
-        }
-    except Exception as e:
-        logger.error(f"Error in test chart endpoint: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/redis/status")
 async def redis_status():

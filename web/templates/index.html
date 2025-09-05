@@ -103,6 +103,7 @@
                         <div class="row">
                             <div class="col-md-6">
                                 <div class="mb-3">
+
                                     <label for="symbol-input" class="form-label">Market</label>
                                     <select class="form-select" id="symbol-input">
                                         <option value="">Loading markets...</option>
@@ -227,6 +228,7 @@
                                 <i class="bi bi-arrow-clockwise"></i> Reset to Defaults
                             </button>
                         </div>
+
                     </div>
                 </div>
 
@@ -242,57 +244,14 @@
                     </div>
                 </div>
 
-                <!-- Market Data Section -->
+                <!-- Market Data Chart -->
                 <div class="card mb-4">
-                    <div class="card-header d-flex justify-content-between align-items-center">
+                    <div class="card-header">
                         <h5 class="mb-0"><i class="bi bi-graph-up"></i> Market Data</h5>
-                        <div class="btn-group btn-group-sm" role="group">
-                            <button type="button" class="btn btn-outline-primary active" onclick="changeTimeframe('15m')">15m</button>
-                            <button type="button" class="btn btn-outline-primary" onclick="changeTimeframe('1h')">1h</button>
-                            <button type="button" class="btn btn-outline-primary" onclick="changeTimeframe('4h')">4h</button>
-                            <button type="button" class="btn btn-outline-primary" onclick="changeTimeframe('1d')">1d</button>
-                        </div>
                     </div>
                     <div class="card-body">
-                        <!-- Phase 1: Price Summary Cards -->
-                        <div class="row mb-3">
-                            <div class="col-12 d-flex justify-content-between align-items-center mb-2">
-                                <h6 class="mb-0"><i class="bi bi-currency-dollar"></i> Live Price Overview</h6>
-                                <small class="text-muted">Last update: <span id="last-market-update">-</span></small>
-                            </div>
-                            <div class="row" id="price-summary-cards">
-                                <!-- Price cards will be populated here -->
-                            </div>
-                        </div>
-                        
-
-                        
-                        <!-- Phase 3: Market Statistics -->
-                        <div class="row">
-                            <div class="col-md-6 mb-3">
-                                <div class="card h-100">
-                                    <div class="card-header">
-                                        <h6 class="mb-0"><i class="bi bi-bar-chart"></i> Performance Ranking</h6>
-                                    </div>
-                                    <div class="card-body">
-                                        <div id="performance-ranking">
-                                            <!-- Performance data will be populated here -->
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="col-md-6 mb-3">
-                                <div class="card h-100">
-                                    <div class="card-header">
-                                        <h6 class="mb-0"><i class="bi bi-activity"></i> Market Statistics</h6>
-                                    </div>
-                                    <div class="card-body">
-                                        <div id="market-statistics">
-                                            <!-- Market stats will be populated here -->
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
+                        <div class="chart-container">
+                            <canvas id="marketChart"></canvas>
                         </div>
                     </div>
                 </div>
@@ -372,6 +331,7 @@
     
     <script>
         // Global variables
+        let marketChart = null;
         let statusUpdateInterval = null;
         let pageRefreshInterval = null;
         let autoRefreshEnabled = true;
@@ -459,6 +419,7 @@
                 loadSignals(),
                 populateSymbolDropdown(), // Move this to parallel execution
                 loadMarketData()
+
             ]);
             
             // Hide loading states
@@ -643,6 +604,7 @@
             
             // Store the countdown interval for cleanup
             window.countdownInterval = countdownInterval;
+
         }
 
         async function updateStatus() {
@@ -748,28 +710,22 @@
             
             container.innerHTML = headerRow + signals.map((signal, index) => `
                 <div class="card signal-card ${signal.signal_type.toLowerCase()} mb-2 border-${getSignalColor(signal.signal_type)} border-1 shadow-sm">
+
                     <div class="card-body py-2">
                         <div class="row align-items-center">
-                            <div class="col-1 text-center">
-                                <span class="badge bg-secondary rounded-circle small">${index + 1}</span>
+                            <div class="col-md-2">
+                                <span class="badge bg-${getSignalColor(signal.signal_type)}">${signal.signal_type}</span>
                             </div>
-                            <div class="col-2 text-center">
-                                <span class="badge bg-${getSignalColor(signal.signal_type)} text-white small px-2 py-1">${signal.signal_type}</span>
+                            <div class="col-md-3">
+                                <strong>${signal.symbol}</strong>
                             </div>
-                            <div class="col-2 text-center">
-                                <strong class="small text-dark">${signal.symbol}</strong>
+                            <div class="col-md-2">
+                                <small class="text-muted">Confidence</small><br>
+                                <strong>${(signal.confidence * 100).toFixed(1)}%</strong>
                             </div>
-                            <div class="col-1 text-center">
-                                <span class="badge bg-info text-white small">${signal.timeframe || '1h'}</span>
-                            </div>
-                            <div class="col-2 text-center">
-                                <div class="d-flex flex-column align-items-center">
-                                    <small class="text-muted">${(signal.confidence * 100).toFixed(1)}%</small>
-                                    <div class="progress" style="width: 40px; height: 6px;">
-                                        <div class="progress-bar bg-${getConfidenceColor(signal.confidence)}" 
-                                             style="width: ${(signal.confidence * 100)}%"></div>
-                                    </div>
-                                </div>
+                            <div class="col-md-3">
+                                <small class="text-muted">Score</small><br>
+                                <strong>${signal.fused_score.toFixed(2)}</strong>
                             </div>
                             <div class="col-2 text-center">
                                 <span class="badge bg-${getScoreBadgeColor(signal.fused_score)} text-white small px-2 py-1">
@@ -881,6 +837,7 @@
                                         </strong>
                                     </div>
                                 </div>
+
                             </div>
                         </div>
                     </div>
@@ -896,45 +853,6 @@
                 default: return 'secondary';
             }
         }
-        
-        function toggleSignalDetails(timestamp) {
-            const detailsDiv = document.getElementById(`details-${timestamp}`);
-            const icon = document.getElementById(`icon-${timestamp}`);
-            
-            if (detailsDiv.style.display === 'none') {
-                detailsDiv.style.display = 'block';
-                icon.className = 'bi bi-chevron-up';
-            } else {
-                detailsDiv.style.display = 'none';
-                icon.className = 'bi bi-chevron-down';
-            }
-        }
-        
-        function getConfidenceColor(confidence) {
-            if (confidence >= 0.8) return 'success';
-            if (confidence >= 0.6) return 'warning';
-            if (confidence >= 0.4) return 'info';
-            return 'danger';
-        }
-        
-        function getScoreColor(score) {
-            if (score >= 0.5) return 'success';
-            if (score >= 0.0) return 'warning';
-            if (score >= -0.5) return 'info';
-            return 'danger';
-        }
-        
-        function getScoreBadgeColor(score) {
-            if (score >= 0.5) return 'success';
-            if (score >= 0.0) return 'warning';
-            if (score >= -0.5) return 'secondary';
-            return 'danger';
-        }
-
-
-
-
-        
 
 
         async function generateSignal() {
@@ -968,6 +886,7 @@
                 custom_sentiment_weight: sentimentWeight === '' ? null : parseFloat(sentimentWeight)
             };
             
+
             try {
                 // Get authentication token
                 const token = localStorage.getItem('auth_token');
@@ -983,7 +902,7 @@
                         'Content-Type': 'application/json',
                         'Authorization': `Bearer ${token}`
                     },
-                    body: JSON.stringify(payload)
+                    body: JSON.stringify({ symbol, timeframe })
                 });
                 
                 if (response.ok) {
@@ -1015,28 +934,6 @@
                 generateBtn.innerHTML = originalText;
                 generateBtn.disabled = false;
             }
-        }
-
-        function resetThresholds() {
-            // Reset all threshold inputs to empty (will use defaults)
-            document.getElementById('buy-threshold-input').value = '';
-            document.getElementById('sell-threshold-input').value = '';
-            document.getElementById('tech-weight-input').value = '';
-            document.getElementById('sentiment-weight-input').value = '';
-            
-            // Show feedback
-            const button = event.target;
-            const originalText = button.innerHTML;
-            button.innerHTML = '<i class="bi bi-check"></i> Reset!';
-            button.classList.remove('btn-outline-secondary');
-            button.classList.add('btn-success');
-            
-            // Reset button after 2 seconds
-            setTimeout(() => {
-                button.innerHTML = originalText;
-                button.classList.remove('btn-success');
-                button.classList.add('btn-outline-secondary');
-            }, 2000);
         }
 
         function showSignalModal(signal) {
@@ -1382,16 +1279,13 @@
             marketDataInterval = setInterval(loadMarketData, 30000); // Update every 30 seconds
         }
         
+
         // Cleanup on page unload
         window.addEventListener('beforeunload', function() {
             if (statusUpdateInterval) {
                 clearInterval(statusUpdateInterval);
             }
-            if (marketDataInterval) {
-                clearInterval(marketDataInterval);
-            }
         });
     </script>
 </body>
 </html>
-
