@@ -126,7 +126,7 @@
                         </a>
                         <a class="nav-link" href="#" onclick="showSection('signals')">
                             <i class="bi bi-graph-up me-2"></i>
-                            All Signals
+                            All Trading Tips
                         </a>
                         <a class="nav-link" href="#" onclick="showSection('settings')">
                             <i class="bi bi-gear me-2"></i>
@@ -179,6 +179,97 @@
                             </div>
                         </div>
 
+                        <!-- System Information -->
+                        <div class="row mb-4">
+                            <div class="col-12">
+                                <div class="card">
+                                    <div class="card-header">
+                                        <h5 class="mb-0"><i class="bi bi-cpu me-2"></i>System Information</h5>
+                                    </div>
+                                    <div class="card-body">
+                                        <div class="row">
+                                            <div class="col-md-3">
+                                                <div class="text-center p-3">
+                                                    <h6 class="text-muted">System Uptime</h6>
+                                                    <h5 id="system-uptime" class="text-primary">-</h5>
+                                                </div>
+                                            </div>
+                                            <div class="col-md-3">
+                                                <div class="text-center p-3">
+                                                    <h6 class="text-muted">App Uptime</h6>
+                                                    <h5 id="app-uptime" class="text-success">-</h5>
+                                                </div>
+                                            </div>
+                                            <div class="col-md-3">
+                                                <div class="text-center p-3">
+                                                    <h6 class="text-muted">CPU Usage</h6>
+                                                    <h5 id="cpu-usage" class="text-warning">-</h5>
+                                                </div>
+                                            </div>
+                                            <div class="col-md-3">
+                                                <div class="text-center p-3">
+                                                    <h6 class="text-muted">Memory Usage</h6>
+                                                    <h5 id="memory-usage" class="text-info">-</h5>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="row">
+                                            <div class="col-md-3">
+                                                <div class="text-center p-3">
+                                                    <h6 class="text-muted">Memory Available</h6>
+                                                    <h5 id="memory-available" class="text-info">-</h5>
+                                                </div>
+                                            </div>
+                                            <div class="col-md-3">
+                                                <div class="text-center p-3">
+                                                    <h6 class="text-muted">Disk Usage</h6>
+                                                    <h5 id="disk-usage" class="text-danger">-</h5>
+                                                </div>
+                                            </div>
+                                            <div class="col-md-3">
+                                                <div class="text-center p-3">
+                                                    <h6 class="text-muted">Disk Free</h6>
+                                                    <h5 id="disk-free" class="text-success">-</h5>
+                                                </div>
+                                            </div>
+                                            <div class="col-md-3">
+                                                <div class="text-center p-3">
+                                                    <h6 class="text-muted">Platform</h6>
+                                                    <h5 id="platform" class="text-secondary">-</h5>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="row">
+                                            <div class="col-md-3">
+                                                <div class="text-center p-3">
+                                                    <h6 class="text-muted">Python Version</h6>
+                                                    <h5 id="python-version" class="text-primary">-</h5>
+                                                </div>
+                                            </div>
+                                            <div class="col-md-3">
+                                                <div class="text-center p-3">
+                                                    <h6 class="text-muted">App Version</h6>
+                                                    <h5 id="app-version" class="text-success">-</h5>
+                                                </div>
+                                            </div>
+                                            <div class="col-md-3">
+                                                <div class="text-center p-3">
+                                                    <h6 class="text-muted">Redis Status</h6>
+                                                    <h5 id="redis-status" class="text-success">-</h5>
+                                                </div>
+                                            </div>
+                                            <div class="col-md-3">
+                                                <div class="text-center p-3">
+                                                    <h6 class="text-muted">Server Time</h6>
+                                                    <h5 id="server-time" class="text-dark">-</h5>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
                         <!-- Recent Activity -->
                         <div class="card">
                             <div class="card-header">
@@ -196,10 +287,23 @@
                     <div id="users-section" style="display: none;">
                         <div class="d-flex justify-content-between align-items-center mb-4">
                             <h2>User Management</h2>
-                            <button class="btn btn-primary" onclick="showCreateUserModal()">
+                            <button class="btn btn-primary" onclick="showCreateUserModal()" title="Create a new user account" data-bs-toggle="tooltip" data-bs-placement="left">
                                 <i class="bi bi-person-plus me-2"></i>
                                 Create User
                             </button>
+                        </div>
+
+                        <!-- Security Information -->
+                        <div class="alert alert-info mb-4">
+                            <h6 class="alert-heading">
+                                <i class="bi bi-shield-check me-2"></i>
+                                Security Rules
+                            </h6>
+                            <ul class="mb-0">
+                                <li><strong>Self-Deletion Protection:</strong> Admins cannot delete their own account</li>
+                                <li><strong>Last Admin Protection:</strong> The last admin user cannot be deleted to prevent system lockout</li>
+                                <li><strong>Admin Creation:</strong> Create additional admin users before deleting existing ones</li>
+                            </ul>
                         </div>
 
                         <div class="card user-table">
@@ -211,9 +315,11 @@
                                     <table class="table table-hover mb-0">
                                         <thead class="table-light">
                                             <tr>
-                                                <th>Username</th>
+                                                <th>User Information</th>
+                                                <th>Contact</th>
                                                 <th>Role</th>
                                                 <th>Status</th>
+                                                <th>Activation</th>
                                                 <th>Created</th>
                                                 <th>Last Login</th>
                                                 <th>Actions</th>
@@ -221,7 +327,7 @@
                                         </thead>
                                         <tbody id="users-table-body">
                                             <tr>
-                                                <td colspan="6" class="text-center text-muted py-4">
+                                                <td colspan="8" class="text-center text-muted py-4">
                                                     Loading users...
                                                 </td>
                                             </tr>
@@ -230,18 +336,180 @@
                                 </div>
                             </div>
                         </div>
+
+                        <!-- User Signals Detail Section -->
+                        <div id="user-signals-section" style="display: none;" class="mt-4">
+                            <div class="card">
+                                <div class="card-header d-flex justify-content-between align-items-center">
+                                    <h5 class="mb-0"><i class="bi bi-graph-up me-2"></i>Trading Tips for <span id="selected-username"></span></h5>
+                                    <button class="btn btn-sm btn-outline-secondary" onclick="hideUserSignals()">
+                                        <i class="bi bi-x-circle me-1"></i>Close
+                                    </button>
+                                </div>
+                                <div class="card-body">
+                                    <div id="user-signals-content">
+                                        <div class="text-center py-4">
+                                            <i class="bi bi-hourglass-split fs-1 text-muted"></i>
+                                            <p class="text-muted mt-2">Loading trading tips...</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
 
-                    <!-- Signals Section -->
+                    <!-- Trading Tips Section -->
                     <div id="signals-section" style="display: none;">
-                        <h2 class="mb-4">All Signals</h2>
-                        <div class="card">
+                        <div class="d-flex justify-content-between align-items-center mb-4">
+                            <h2>All Trading Tips</h2>
+                            <div class="d-flex gap-2">
+                                <button class="btn btn-outline-primary btn-sm" onclick="refreshAllSignals()">
+                                    <i class="bi bi-arrow-clockwise me-1"></i>Refresh
+                                </button>
+                                <button class="btn btn-outline-success btn-sm" onclick="exportSignals()">
+                                    <i class="bi bi-download me-1"></i>Export
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Statistics Cards -->
+                        <div class="row mb-4">
+                            <div class="col-md-3">
+                                <div class="card bg-primary text-white">
+                                    <div class="card-body text-center">
+                                        <h4 id="total-signals-count">0</h4>
+                                        <p class="mb-0">Total Trading Tips</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="card bg-success text-white">
+                                    <div class="card-body text-center">
+                                        <h4 id="buy-signals-count">0</h4>
+                                        <p class="mb-0">Buy Signals</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="card bg-danger text-white">
+                                    <div class="card-body text-center">
+                                        <h4 id="sell-signals-count">0</h4>
+                                        <p class="mb-0">Sell Signals</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="card bg-secondary text-white">
+                                    <div class="card-body text-center">
+                                        <h4 id="hold-signals-count">0</h4>
+                                        <p class="mb-0">Hold Signals</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Filters -->
+                        <div class="card mb-4">
                             <div class="card-header">
-                                <h5 class="mb-0"><i class="bi bi-graph-up me-2"></i>System Signals</h5>
+                                <h6 class="mb-0"><i class="bi bi-funnel me-2"></i>Filters</h6>
                             </div>
                             <div class="card-body">
-                                <div id="all-signals">
-                                    <p class="text-muted">Loading signals...</p>
+                                <div class="row">
+                                    <div class="col-md-3">
+                                        <label for="filter-user" class="form-label">User</label>
+                                        <select class="form-select" id="filter-user" onchange="applyFilters()">
+                                            <option value="">All Users</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label for="filter-market" class="form-label">Market</label>
+                                        <select class="form-select" id="filter-market" onchange="applyFilters()">
+                                            <option value="">All Markets</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label for="filter-type" class="form-label">Signal Type</label>
+                                        <select class="form-select" id="filter-type" onchange="applyFilters()">
+                                            <option value="">All Types</option>
+                                            <option value="BUY">Buy</option>
+                                            <option value="SELL">Sell</option>
+                                            <option value="HOLD">Hold</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label for="filter-date" class="form-label">Date Range</label>
+                                        <select class="form-select" id="filter-date" onchange="applyFilters()">
+                                            <option value="">All Time</option>
+                                            <option value="today">Today</option>
+                                            <option value="week">This Week</option>
+                                            <option value="month">This Month</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Trading Tips Table -->
+                        <div class="card">
+                            <div class="card-header d-flex justify-content-between align-items-center">
+                                <h5 class="mb-0"><i class="bi bi-graph-up me-2"></i>Trading Tips</h5>
+                                <div class="d-flex align-items-center gap-2">
+                                    <span class="text-muted small" id="signals-info">Loading...</span>
+                                    <div class="btn-group btn-group-sm" role="group">
+                                        <button type="button" class="btn btn-outline-secondary" onclick="changePageSize(10)">10</button>
+                                        <button type="button" class="btn btn-outline-secondary" onclick="changePageSize(25)">25</button>
+                                        <button type="button" class="btn btn-outline-secondary" onclick="changePageSize(50)">50</button>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="card-body p-0">
+                                <div class="table-responsive">
+                                    <table class="table table-hover mb-0">
+                                        <thead class="table-light">
+                                            <tr>
+                                                <th onclick="sortTable('market')" style="cursor: pointer;">
+                                                    Market <i class="bi bi-arrow-down-up"></i>
+                                                </th>
+                                                <th onclick="sortTable('recommendation')" style="cursor: pointer;">
+                                                    Type <i class="bi bi-arrow-down-up"></i>
+                                                </th>
+                                                <th onclick="sortTable('confidence')" style="cursor: pointer;">
+                                                    Confidence <i class="bi bi-arrow-down-up"></i>
+                                                </th>
+                                                <th onclick="sortTable('username')" style="cursor: pointer;">
+                                                    User <i class="bi bi-arrow-down-up"></i>
+                                                </th>
+                                                <th onclick="sortTable('generated_at')" style="cursor: pointer;">
+                                                    Generated <i class="bi bi-arrow-down-up"></i>
+                                                </th>
+                                                <th>Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="signals-table-body">
+                                            <tr>
+                                                <td colspan="6" class="text-center text-muted py-4">
+                                                    <i class="bi bi-hourglass-split fs-1"></i>
+                                                    <p class="mt-2">Loading trading tips...</p>
+                                                </td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                            <div class="card-footer">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <button class="btn btn-outline-secondary btn-sm" onclick="previousPage()" id="prev-btn" disabled>
+                                            <i class="bi bi-chevron-left"></i> Previous
+                                        </button>
+                                        <span class="mx-3" id="page-info">Page 1 of 1</span>
+                                        <button class="btn btn-outline-secondary btn-sm" onclick="nextPage()" id="next-btn" disabled>
+                                            Next <i class="bi bi-chevron-right"></i>
+                                        </button>
+                                    </div>
+                                    <div class="text-muted small" id="pagination-info">
+                                        Showing 0 of 0 trading tips
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -249,20 +517,404 @@
 
                     <!-- Settings Section -->
                     <div id="settings-section" style="display: none;">
-                        <h2 class="mb-4">System Settings</h2>
-                        <div class="card">
-                            <div class="card-header">
-                                <h5 class="mb-0"><i class="bi bi-gear me-2"></i>Configuration</h5>
+                        <div class="d-flex justify-content-between align-items-center mb-4">
+                            <h2>System Settings</h2>
+                            <div class="d-flex gap-2">
+                                <button class="btn btn-outline-primary btn-sm" onclick="exportSettings()">
+                                    <i class="bi bi-download me-1"></i>Export
+                                </button>
+                                <button class="btn btn-outline-warning btn-sm" onclick="resetSettings()">
+                                    <i class="bi bi-arrow-clockwise me-1"></i>Reset
+                                </button>
+                                <button class="btn btn-outline-success btn-sm" onclick="saveAllSettings()">
+                                    <i class="bi bi-check-circle me-1"></i>Save All
+                                </button>
                             </div>
-                            <div class="card-body">
-                                <div class="row">
-                                    <div class="col-md-6">
-                                        <h6>System Configuration</h6>
-                                        <p class="text-muted">System settings and configuration options will be displayed here.</p>
+                        </div>
+
+                        <!-- Settings Navigation -->
+                        <ul class="nav nav-tabs mb-4" id="settingsTabs" role="tablist">
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link active" id="trading-tab" data-bs-toggle="tab" data-bs-target="#trading-settings" type="button" role="tab">
+                                    <i class="bi bi-graph-up me-2"></i>Trading
+                                </button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="technical-tab" data-bs-toggle="tab" data-bs-target="#technical-settings" type="button" role="tab">
+                                    <i class="bi bi-cpu me-2"></i>Technical
+                                </button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="data-tab" data-bs-toggle="tab" data-bs-target="#data-settings" type="button" role="tab">
+                                    <i class="bi bi-database me-2"></i>Data Sources
+                                </button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="security-tab" data-bs-toggle="tab" data-bs-target="#security-settings" type="button" role="tab">
+                                    <i class="bi bi-shield-lock me-2"></i>Security
+                                </button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="ui-tab" data-bs-toggle="tab" data-bs-target="#ui-settings" type="button" role="tab">
+                                    <i class="bi bi-palette me-2"></i>UI/UX
+                                </button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="notifications-tab" data-bs-toggle="tab" data-bs-target="#notifications-settings" type="button" role="tab">
+                                    <i class="bi bi-bell me-2"></i>Notifications
+                                </button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="system-tab" data-bs-toggle="tab" data-bs-target="#system-settings" type="button" role="tab">
+                                    <i class="bi bi-gear me-2"></i>System
+                                </button>
+                            </li>
+                        </ul>
+
+                        <!-- Settings Content -->
+                        <div class="tab-content" id="settingsTabContent">
+                            <!-- Trading Settings -->
+                            <div class="tab-pane fade show active" id="trading-settings" role="tabpanel">
+                                <div class="card">
+                                    <div class="card-header">
+                                        <h5 class="mb-0"><i class="bi bi-graph-up me-2"></i>Trading Configuration</h5>
                                     </div>
-                                    <div class="col-md-6">
-                                        <h6>Security Settings</h6>
-                                        <p class="text-muted">Security and authentication settings will be displayed here.</p>
+                                    <div class="card-body">
+                                        <div class="row">
+                                            <div class="col-md-6">
+                                                <div class="mb-3">
+                                                    <label for="active-markets" class="form-label">Active Markets</label>
+                                                    <textarea class="form-control" id="active-markets" rows="4" placeholder="Enter markets separated by commas or new lines"></textarea>
+                                                    <div class="form-text">Supported markets: BTC/USD, ETH/USD, AAPL, GOOGL, etc.</div>
+                                                </div>
+                                                <div class="mb-3">
+                                                    <div class="form-check form-switch">
+                                                        <input class="form-check-input" type="checkbox" id="signal-generation-enabled">
+                                                        <label class="form-check-label" for="signal-generation-enabled">
+                                                            Enable Signal Generation
+                                                        </label>
+                                                    </div>
+                                                </div>
+                                                <div class="mb-3">
+                                                    <label for="generation-frequency" class="form-label">Generation Frequency (minutes)</label>
+                                                    <input type="number" class="form-control" id="generation-frequency" min="1" max="1440">
+                                                </div>
+                                            </div>
+                                            <div class="col-md-6">
+                                                <div class="mb-3">
+                                                    <label for="default-timeframe" class="form-label">Default Timeframe</label>
+                                                    <select class="form-select" id="default-timeframe">
+                                                        <option value="1m">1 Minute</option>
+                                                        <option value="5m">5 Minutes</option>
+                                                        <option value="15m">15 Minutes</option>
+                                                        <option value="1h">1 Hour</option>
+                                                        <option value="4h">4 Hours</option>
+                                                        <option value="1d">1 Day</option>
+                                                    </select>
+                                                </div>
+                                                <div class="mb-3">
+                                                    <label for="max-position-size" class="form-label">Max Position Size ($)</label>
+                                                    <input type="number" class="form-control" id="max-position-size" min="0" step="0.01">
+                                                </div>
+                                                <div class="mb-3">
+                                                    <label for="risk-per-trade" class="form-label">Risk Per Trade (%)</label>
+                                                    <input type="number" class="form-control" id="risk-per-trade" min="0" max="100" step="0.1">
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Technical Settings -->
+                            <div class="tab-pane fade" id="technical-settings" role="tabpanel">
+                                <div class="card">
+                                    <div class="card-header">
+                                        <h5 class="mb-0"><i class="bi bi-cpu me-2"></i>Technical Analysis</h5>
+                                    </div>
+                                    <div class="card-body">
+                                        <div class="row">
+                                            <div class="col-md-6">
+                                                <div class="mb-3">
+                                                    <label for="buy-threshold" class="form-label">Buy Threshold</label>
+                                                    <input type="number" class="form-control" id="buy-threshold" min="-1" max="1" step="0.1">
+                                                    <div class="form-text">Minimum score for BUY signals</div>
+                                                </div>
+                                                <div class="mb-3">
+                                                    <label for="sell-threshold" class="form-label">Sell Threshold</label>
+                                                    <input type="number" class="form-control" id="sell-threshold" min="-1" max="1" step="0.1">
+                                                    <div class="form-text">Maximum score for SELL signals</div>
+                                                </div>
+                                            </div>
+                                            <div class="col-md-6">
+                                                <div class="mb-3">
+                                                    <label for="technical-weight" class="form-label">Technical Analysis Weight</label>
+                                                    <input type="number" class="form-control" id="technical-weight" min="0" max="1" step="0.1">
+                                                    <div class="form-text">Weight for technical indicators (0-1)</div>
+                                                </div>
+                                                <div class="mb-3">
+                                                    <label for="sentiment-weight" class="form-label">Sentiment Analysis Weight</label>
+                                                    <input type="number" class="form-control" id="sentiment-weight" min="0" max="1" step="0.1">
+                                                    <div class="form-text">Weight for sentiment analysis (0-1)</div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Data Sources Settings -->
+                            <div class="tab-pane fade" id="data-settings" role="tabpanel">
+                                <div class="card">
+                                    <div class="card-header">
+                                        <h5 class="mb-0"><i class="bi bi-database me-2"></i>Data Sources</h5>
+                                    </div>
+                                    <div class="card-body">
+                                        <div class="row">
+                                            <div class="col-md-6">
+                                                <div class="mb-3">
+                                                    <label for="data-provider" class="form-label">Data Provider</label>
+                                                    <select class="form-select" id="data-provider">
+                                                        <option value="alpaca">Alpaca</option>
+                                                        <option value="ccxt">CCXT</option>
+                                                        <option value="yahoo">Yahoo Finance</option>
+                                                    </select>
+                                                </div>
+                                                <div class="mb-3">
+                                                    <label for="data-refresh-rate" class="form-label">Data Refresh Rate (minutes)</label>
+                                                    <input type="number" class="form-control" id="data-refresh-rate" min="1" max="60">
+                                                </div>
+                                                <div class="mb-3">
+                                                    <label for="historical-data-days" class="form-label">Historical Data (days)</label>
+                                                    <input type="number" class="form-control" id="historical-data-days" min="1" max="365">
+                                                </div>
+                                            </div>
+                                            <div class="col-md-6">
+                                                <div class="mb-3">
+                                                    <label for="news-weight" class="form-label">News Weight</label>
+                                                    <input type="number" class="form-control" id="news-weight" min="0" max="1" step="0.1">
+                                                    <div class="form-text">How much news affects signals (0-1)</div>
+                                                </div>
+                                                <div class="mb-3">
+                                                    <label for="news-keywords" class="form-label">News Keywords</label>
+                                                    <textarea class="form-control" id="news-keywords" rows="3" placeholder="Enter keywords separated by commas"></textarea>
+                                                    <div class="form-text">Keywords to filter relevant news</div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Security Settings -->
+                            <div class="tab-pane fade" id="security-settings" role="tabpanel">
+                                <div class="card">
+                                    <div class="card-header">
+                                        <h5 class="mb-0"><i class="bi bi-shield-lock me-2"></i>Security & Access</h5>
+                                    </div>
+                                    <div class="card-body">
+                                        <div class="row">
+                                            <div class="col-md-6">
+                                                <div class="mb-3">
+                                                    <label for="session-timeout" class="form-label">Session Timeout (hours)</label>
+                                                    <input type="number" class="form-control" id="session-timeout" min="1" max="168">
+                                                </div>
+                                                <div class="mb-3">
+                                                    <label for="max-login-attempts" class="form-label">Max Login Attempts</label>
+                                                    <input type="number" class="form-control" id="max-login-attempts" min="3" max="10">
+                                                </div>
+                                                <div class="mb-3">
+                                                    <label for="password-min-length" class="form-label">Password Min Length</label>
+                                                    <input type="number" class="form-control" id="password-min-length" min="6" max="20">
+                                                </div>
+                                            </div>
+                                            <div class="col-md-6">
+                                                <div class="mb-3">
+                                                    <label for="api-rate-limit" class="form-label">API Rate Limit (per minute)</label>
+                                                    <input type="number" class="form-control" id="api-rate-limit" min="10" max="1000">
+                                                </div>
+                                                <div class="mb-3">
+                                                    <div class="form-check form-switch">
+                                                        <input class="form-check-input" type="checkbox" id="two-factor-auth">
+                                                        <label class="form-check-label" for="two-factor-auth">
+                                                            Enable Two-Factor Authentication
+                                                        </label>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- UI/UX Settings -->
+                            <div class="tab-pane fade" id="ui-settings" role="tabpanel">
+                                <div class="card">
+                                    <div class="card-header">
+                                        <h5 class="mb-0"><i class="bi bi-palette me-2"></i>User Interface</h5>
+                                    </div>
+                                    <div class="card-body">
+                                        <div class="row">
+                                            <div class="col-md-6">
+                                                <div class="mb-3">
+                                                    <div class="form-check form-switch">
+                                                        <input class="form-check-input" type="checkbox" id="auto-refresh-enabled">
+                                                        <label class="form-check-label" for="auto-refresh-enabled">
+                                                            Enable Auto-Refresh
+                                                        </label>
+                                                    </div>
+                                                </div>
+                                                <div class="mb-3">
+                                                    <label for="refresh-interval" class="form-label">Refresh Interval (seconds)</label>
+                                                    <input type="number" class="form-control" id="refresh-interval" min="10" max="300">
+                                                </div>
+                                                <div class="mb-3">
+                                                    <label for="theme" class="form-label">Theme</label>
+                                                    <select class="form-select" id="theme">
+                                                        <option value="light">Light</option>
+                                                        <option value="dark">Dark</option>
+                                                        <option value="auto">Auto</option>
+                                                    </select>
+                                                </div>
+                                            </div>
+                                            <div class="col-md-6">
+                                                <div class="mb-3">
+                                                    <label for="date-format" class="form-label">Date Format</label>
+                                                    <select class="form-select" id="date-format">
+                                                        <option value="YYYY-MM-DD">YYYY-MM-DD</option>
+                                                        <option value="MM/DD/YYYY">MM/DD/YYYY</option>
+                                                        <option value="DD/MM/YYYY">DD/MM/YYYY</option>
+                                                    </select>
+                                                </div>
+                                                <div class="mb-3">
+                                                    <label for="timezone" class="form-label">Timezone</label>
+                                                    <select class="form-select" id="timezone">
+                                                        <option value="UTC">UTC</option>
+                                                        <option value="America/New_York">Eastern Time</option>
+                                                        <option value="America/Chicago">Central Time</option>
+                                                        <option value="America/Denver">Mountain Time</option>
+                                                        <option value="America/Los_Angeles">Pacific Time</option>
+                                                        <option value="Europe/London">London</option>
+                                                        <option value="Europe/Paris">Paris</option>
+                                                        <option value="Asia/Tokyo">Tokyo</option>
+                                                    </select>
+                                                </div>
+                                                <div class="mb-3">
+                                                    <label for="currency" class="form-label">Currency</label>
+                                                    <select class="form-select" id="currency">
+                                                        <option value="USD">USD</option>
+                                                        <option value="EUR">EUR</option>
+                                                        <option value="GBP">GBP</option>
+                                                        <option value="JPY">JPY</option>
+                                                        <option value="BTC">BTC</option>
+                                                        <option value="ETH">ETH</option>
+                                                    </select>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Notifications Settings -->
+                            <div class="tab-pane fade" id="notifications-settings" role="tabpanel">
+                                <div class="card">
+                                    <div class="card-header">
+                                        <h5 class="mb-0"><i class="bi bi-bell me-2"></i>Notifications</h5>
+                                    </div>
+                                    <div class="card-body">
+                                        <div class="row">
+                                            <div class="col-md-6">
+                                                <div class="mb-3">
+                                                    <div class="form-check form-switch">
+                                                        <input class="form-check-input" type="checkbox" id="email-notifications-enabled">
+                                                        <label class="form-check-label" for="email-notifications-enabled">
+                                                            Enable Email Notifications
+                                                        </label>
+                                                    </div>
+                                                </div>
+                                                <div class="mb-3">
+                                                    <label for="smtp-server" class="form-label">SMTP Server</label>
+                                                    <input type="text" class="form-control" id="smtp-server" placeholder="smtp.gmail.com">
+                                                </div>
+                                                <div class="mb-3">
+                                                    <label for="smtp-port" class="form-label">SMTP Port</label>
+                                                    <input type="number" class="form-control" id="smtp-port" min="1" max="65535">
+                                                </div>
+                                                <div class="mb-3">
+                                                    <label for="smtp-username" class="form-label">SMTP Username</label>
+                                                    <input type="email" class="form-control" id="smtp-username">
+                                                </div>
+                                            </div>
+                                            <div class="col-md-6">
+                                                <div class="mb-3">
+                                                    <label for="smtp-password" class="form-label">SMTP Password</label>
+                                                    <input type="password" class="form-control" id="smtp-password">
+                                                </div>
+                                                <div class="mb-3">
+                                                    <label for="alert-recipients" class="form-label">Alert Recipients</label>
+                                                    <textarea class="form-control" id="alert-recipients" rows="3" placeholder="Enter email addresses separated by commas"></textarea>
+                                                    <div class="form-text">Who receives system alerts</div>
+                                                </div>
+                                                <div class="mb-3">
+                                                    <button class="btn btn-outline-primary btn-sm" onclick="testEmailSettings()">
+                                                        <i class="bi bi-envelope me-1"></i>Test Email
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- System Settings -->
+                            <div class="tab-pane fade" id="system-settings" role="tabpanel">
+                                <div class="card">
+                                    <div class="card-header">
+                                        <h5 class="mb-0"><i class="bi bi-gear me-2"></i>System Configuration</h5>
+                                    </div>
+                                    <div class="card-body">
+                                        <div class="row">
+                                            <div class="col-md-6">
+                                                <div class="mb-3">
+                                                    <label for="log-level" class="form-label">Log Level</label>
+                                                    <select class="form-select" id="log-level">
+                                                        <option value="DEBUG">DEBUG</option>
+                                                        <option value="INFO">INFO</option>
+                                                        <option value="WARNING">WARNING</option>
+                                                        <option value="ERROR">ERROR</option>
+                                                    </select>
+                                                </div>
+                                                <div class="mb-3">
+                                                    <label for="cache-ttl" class="form-label">Cache TTL (hours)</label>
+                                                    <input type="number" class="form-control" id="cache-ttl" min="1" max="168">
+                                                </div>
+                                                <div class="mb-3">
+                                                    <div class="form-check form-switch">
+                                                        <input class="form-check-input" type="checkbox" id="backup-enabled">
+                                                        <label class="form-check-label" for="backup-enabled">
+                                                            Enable Auto Backup
+                                                        </label>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div class="col-md-6">
+                                                <div class="mb-3">
+                                                    <label for="backup-frequency" class="form-label">Backup Frequency (hours)</label>
+                                                    <input type="number" class="form-control" id="backup-frequency" min="1" max="168">
+                                                </div>
+                                                <div class="mb-3">
+                                                    <button class="btn btn-outline-warning btn-sm" onclick="clearCache()">
+                                                        <i class="bi bi-trash me-1"></i>Clear Cache
+                                                    </button>
+                                                </div>
+                                                <div class="mb-3">
+                                                    <button class="btn btn-outline-info btn-sm" onclick="viewSystemLogs()">
+                                                        <i class="bi bi-file-text me-1"></i>View Logs
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -283,26 +935,205 @@
                 </div>
                 <div class="modal-body">
                     <form id="createUserForm">
-                        <div class="mb-3">
-                            <label for="new-username" class="form-label">Username</label>
-                            <input type="text" class="form-control" id="new-username" required>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="new-username" class="form-label">Username <span class="text-danger">*</span></label>
+                                    <input type="text" class="form-control" id="new-username" required>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="new-password" class="form-label">Password <span class="text-danger">*</span></label>
+                                    <input type="password" class="form-control" id="new-password" required>
+                                </div>
+                            </div>
                         </div>
-                        <div class="mb-3">
-                            <label for="new-password" class="form-label">Password</label>
-                            <input type="password" class="form-control" id="new-password" required>
+                        
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="new-first-name" class="form-label">First Name</label>
+                                    <input type="text" class="form-control" id="new-first-name">
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="new-last-name" class="form-label">Last Name</label>
+                                    <input type="text" class="form-control" id="new-last-name">
+                                </div>
+                            </div>
                         </div>
+                        
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="new-email" class="form-label">Email</label>
+                                    <input type="email" class="form-control" id="new-email">
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="new-phone" class="form-label">Phone Number</label>
+                                    <input type="tel" class="form-control" id="new-phone">
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="new-role" class="form-label">Role <span class="text-danger">*</span></label>
+                                    <select class="form-select" id="new-role" required onchange="toggleActivationPeriod()">
+                                        <option value="user">User</option>
+                                        <option value="admin">Admin</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3" id="activation-period-group">
+                                    <label for="new-activation-days" class="form-label">Activation Period (days)</label>
+                                    <input type="number" class="form-control" id="new-activation-days" min="1" max="365" value="30">
+                                    <div class="form-text">Number of days the user account will be active</div>
+                                </div>
+                            </div>
+                        </div>
+                        
                         <div class="mb-3">
-                            <label for="new-role" class="form-label">Role</label>
-                            <select class="form-select" id="new-role" required>
-                                <option value="user">User</option>
-                                <option value="admin">Admin</option>
-                            </select>
+                            <label for="new-additional-info" class="form-label">Additional Information</label>
+                            <textarea class="form-control" id="new-additional-info" rows="3" placeholder="Any additional notes or information about this user..."></textarea>
                         </div>
                     </form>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="button" class="btn btn-primary" onclick="createUser()">Create User</button>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" title="Cancel user creation" data-bs-toggle="tooltip">Cancel</button>
+                    <button type="button" class="btn btn-primary" onclick="createUser()" title="Create the new user account" data-bs-toggle="tooltip">Create User</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit User Modal -->
+    <div class="modal fade" id="editUserModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Edit User</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="editUserForm">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="edit-username" class="form-label">Username <span class="text-danger">*</span></label>
+                                    <input type="text" class="form-control" id="edit-username" required>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="edit-password" class="form-label">Password</label>
+                                    <input type="password" class="form-control" id="edit-password" placeholder="Enter new password">
+                                    <div class="form-text">Leave blank to keep current password</div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="edit-first-name" class="form-label">First Name</label>
+                                    <input type="text" class="form-control" id="edit-first-name">
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="edit-last-name" class="form-label">Last Name</label>
+                                    <input type="text" class="form-control" id="edit-last-name">
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="edit-email" class="form-label">Email</label>
+                                    <input type="email" class="form-control" id="edit-email">
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="edit-phone" class="form-label">Phone Number</label>
+                                    <input type="tel" class="form-control" id="edit-phone">
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="edit-role" class="form-label">Role <span class="text-danger">*</span></label>
+                                    <select class="form-select" id="edit-role" required onchange="toggleEditActivationPeriod()">
+                                        <option value="user">User</option>
+                                        <option value="admin">Admin</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3" id="edit-activation-period-group">
+                                    <label for="edit-activation-days" class="form-label">Extend Activation (days)</label>
+                                    <input type="number" class="form-control" id="edit-activation-days" min="1" max="365" value="0">
+                                    <div class="form-text">Additional days to extend the activation period</div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="edit-additional-info" class="form-label">Additional Information</label>
+                            <textarea class="form-control" id="edit-additional-info" rows="3" placeholder="Any additional notes or information about this user..."></textarea>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" title="Cancel user update" data-bs-toggle="tooltip">Cancel</button>
+                    <button type="button" class="btn btn-primary" onclick="updateUser()" title="Save user changes" data-bs-toggle="tooltip">Update User</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Delete User Confirmation Modal -->
+    <div class="modal fade" id="deleteUserModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header bg-danger text-white">
+                    <h5 class="modal-title">
+                        <i class="bi bi-exclamation-triangle me-2"></i>
+                        Delete User
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="alert alert-warning">
+                        <i class="bi bi-exclamation-triangle me-2"></i>
+                        <strong>Warning:</strong> This action cannot be undone!
+                    </div>
+                    <p>Are you sure you want to delete user <strong id="delete-username-display"></strong>?</p>
+                    
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="delete-user-signals" checked>
+                        <label class="form-check-label" for="delete-user-signals">
+                            <strong>Also delete all trading tips for this user</strong>
+                        </label>
+                        <div class="form-text">If unchecked, the user's trading tips will be preserved but orphaned.</div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" title="Cancel user deletion" data-bs-toggle="tooltip">Cancel</button>
+                    <button type="button" class="btn btn-danger" onclick="confirmDeleteUser()" title="Permanently delete this user" data-bs-toggle="tooltip">
+                        <i class="bi bi-trash me-1"></i>
+                        Delete User
+                    </button>
                 </div>
             </div>
         </div>
@@ -359,6 +1190,9 @@
                 case 'signals':
                     loadAllSignals();
                     break;
+                case 'settings':
+                    loadSettings();
+                    break;
             }
         }
 
@@ -373,9 +1207,31 @@
                 if (response.ok) {
                     const data = await response.json();
                     document.getElementById('total-users').textContent = data.total_users;
-                    document.getElementById('total-signals').textContent = data.total_signals;
+                    document.getElementById('total-signals').textContent = data.total_trading_tips;
                     document.getElementById('active-users').textContent = data.active_users;
-                    document.getElementById('today-signals').textContent = data.today_signals;
+                    document.getElementById('today-signals').textContent = data.today_trading_tips;
+                    
+                    // Update system information
+                    if (data.system_info) {
+                        document.getElementById('system-uptime').textContent = data.system_info.system_uptime || '-';
+                        document.getElementById('app-uptime').textContent = data.system_info.app_uptime || '-';
+                        document.getElementById('cpu-usage').textContent = data.system_info.cpu_usage ? `${data.system_info.cpu_usage}%` : '-';
+                        document.getElementById('memory-usage').textContent = data.system_info.memory_usage ? `${data.system_info.memory_usage}%` : '-';
+                        document.getElementById('memory-available').textContent = data.system_info.memory_available || '-';
+                        document.getElementById('disk-usage').textContent = data.system_info.disk_usage ? `${data.system_info.disk_usage}%` : '-';
+                        document.getElementById('disk-free').textContent = data.system_info.disk_free || '-';
+                        document.getElementById('platform').textContent = data.system_info.platform || '-';
+                        document.getElementById('python-version').textContent = data.system_info.python_version || '-';
+                        document.getElementById('app-version').textContent = data.system_info.app_version || '-';
+                        document.getElementById('server-time').textContent = data.system_info.server_time || '-';
+                    }
+                    
+                    // Update Redis status
+                    if (data.redis_status) {
+                        const redisStatusElement = document.getElementById('redis-status');
+                        redisStatusElement.textContent = data.redis_status;
+                        redisStatusElement.className = data.redis_status === 'Connected' ? 'text-success' : 'text-danger';
+                    }
                     
                     // Load recent activity
                     loadRecentActivity();
@@ -385,8 +1241,95 @@
             }
         }
 
+        async function loadRecentActivity() {
+            try {
+                const response = await fetch('/api/admin/activities?limit=10', {
+                    headers: {
+                        'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
+                    }
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    displayRecentActivity(data.activities);
+                } else {
+                    document.getElementById('recent-activity').innerHTML = '<p class="text-muted">Failed to load recent activity</p>';
+                }
+            } catch (error) {
+                console.error('Error loading recent activity:', error);
+                document.getElementById('recent-activity').innerHTML = '<p class="text-muted">Error loading recent activity</p>';
+            }
+        }
+
+        function displayRecentActivity(activities) {
+            const container = document.getElementById('recent-activity');
+            
+            if (!activities || activities.length === 0) {
+                container.innerHTML = '<p class="text-muted">No recent activity</p>';
+                return;
+            }
+            
+            const html = activities.map(activity => {
+                const timestamp = new Date(activity.timestamp).toLocaleString();
+                const icon = getActivityIcon(activity.event_type);
+                const color = getActivityColor(activity.event_type);
+                
+                return `
+                    <div class="d-flex align-items-start mb-3">
+                        <div class="flex-shrink-0 me-3">
+                            <i class="bi ${icon} text-${color} fs-5"></i>
+                        </div>
+                        <div class="flex-grow-1">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <div>
+                                    <p class="mb-1">${activity.description}</p>
+                                    <small class="text-muted">
+                                        <i class="bi bi-person me-1"></i>${activity.user}
+                                        <span class="mx-2">•</span>
+                                        <i class="bi bi-clock me-1"></i>${timestamp}
+                                    </small>
+                                </div>
+                                <span class="badge bg-${color} bg-opacity-10 text-${color}">${activity.event_type.replace('_', ' ')}</span>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+            
+            container.innerHTML = html;
+        }
+
+        function getActivityIcon(eventType) {
+            switch (eventType) {
+                case 'user_login': return 'bi-person-check';
+                case 'user_created': return 'bi-person-plus';
+                case 'user_updated': return 'bi-person-gear';
+                case 'user_deleted': return 'bi-person-dash';
+                case 'signal_generated': return 'bi-graph-up-arrow';
+                case 'signal_deleted': return 'bi-graph-down-arrow';
+                case 'system_error': return 'bi-exclamation-triangle';
+                case 'system_startup': return 'bi-play-circle';
+                default: return 'bi-activity';
+            }
+        }
+
+        function getActivityColor(eventType) {
+            switch (eventType) {
+                case 'user_login': return 'success';
+                case 'user_created': return 'primary';
+                case 'user_updated': return 'info';
+                case 'user_deleted': return 'danger';
+                case 'signal_generated': return 'success';
+                case 'signal_deleted': return 'warning';
+                case 'system_error': return 'danger';
+                case 'system_startup': return 'success';
+                default: return 'secondary';
+            }
+        }
+
         async function loadUsers() {
             try {
+                console.log('Loading users...');
                 const response = await fetch('/api/admin/users', {
                     headers: {
                         'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
@@ -395,16 +1338,40 @@
                 
                 if (response.ok) {
                     const users = await response.json();
+                    console.log('Users loaded:', users);
                     displayUsers(users);
+                } else {
+                    console.error('Failed to load users:', response.status, response.statusText);
                 }
             } catch (error) {
                 console.error('Error loading users:', error);
             }
         }
 
+        // Global variables for signals management
+        let allSignals = [];
+        let filteredSignals = [];
+        let currentPage = 1;
+        let pageSize = 25;
+        let totalPages = 1;
+        let currentSort = { column: 'generated_at', direction: 'desc' };
+
         async function loadAllSignals() {
             try {
-                const response = await fetch('/api/signals/stats', {
+                // Load statistics
+                const statsResponse = await fetch('/api/signals/stats', {
+                    headers: {
+                        'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
+                    }
+                });
+                
+                if (statsResponse.ok) {
+                    const statsData = await statsResponse.json();
+                    updateStatistics(statsData);
+                }
+
+                // Load all signals
+                const response = await fetch('/api/admin/signals/all?limit=1000', {
                     headers: {
                         'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
                     }
@@ -412,98 +1379,435 @@
                 
                 if (response.ok) {
                     const data = await response.json();
-                    displayAllSignals(data);
+                    allSignals = data.signals;
+                    filteredSignals = [...allSignals];
+                    
+                    // Populate filter dropdowns
+                    populateFilters();
+                    
+                    // Apply current filters and display
+                    applyFilters();
                 } else {
-                    document.getElementById('all-signals').innerHTML = '<p class="text-danger">Error loading signals</p>';
+                    showSignalsError('Error loading trading tips');
                 }
             } catch (error) {
-                console.error('Error loading all signals:', error);
-                document.getElementById('all-signals').innerHTML = '<p class="text-danger">Failed to load signals</p>';
+                console.error('Error loading all trading tips:', error);
+                showSignalsError('Failed to load trading tips');
             }
         }
 
-        function displayAllSignals(data) {
-            const container = document.getElementById('all-signals');
+        function updateStatistics(data) {
+            document.getElementById('total-signals-count').textContent = data.total_signals || 0;
+            document.getElementById('buy-signals-count').textContent = data.signals_by_type?.BUY || 0;
+            document.getElementById('sell-signals-count').textContent = data.signals_by_type?.SELL || 0;
+            document.getElementById('hold-signals-count').textContent = data.signals_by_type?.HOLD || 0;
+        }
+
+        function populateFilters() {
+            // Populate user filter
+            const userFilter = document.getElementById('filter-user');
+            const users = [...new Set(allSignals.map(s => s.username))].sort();
+            userFilter.innerHTML = '<option value="">All Users</option>';
+            users.forEach(user => {
+                userFilter.innerHTML += `<option value="${user}">${user}</option>`;
+            });
+
+            // Populate market filter
+            const marketFilter = document.getElementById('filter-market');
+            const markets = [...new Set(allSignals.map(s => s.market))].sort();
+            marketFilter.innerHTML = '<option value="">All Markets</option>';
+            markets.forEach(market => {
+                marketFilter.innerHTML += `<option value="${market}">${market}</option>`;
+            });
+        }
+
+        function applyFilters() {
+            const userFilter = document.getElementById('filter-user').value;
+            const marketFilter = document.getElementById('filter-market').value;
+            const typeFilter = document.getElementById('filter-type').value;
+            const dateFilter = document.getElementById('filter-date').value;
+
+            filteredSignals = allSignals.filter(signal => {
+                if (userFilter && signal.username !== userFilter) return false;
+                if (marketFilter && signal.market !== marketFilter) return false;
+                if (typeFilter && signal.recommendation !== typeFilter) return false;
+                
+                if (dateFilter) {
+                    const signalDate = new Date(signal.generated_at);
+                    const now = new Date();
+                    
+                    switch (dateFilter) {
+                        case 'today':
+                            if (signalDate.toDateString() !== now.toDateString()) return false;
+                            break;
+                        case 'week':
+                            const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+                            if (signalDate < weekAgo) return false;
+                            break;
+                        case 'month':
+                            const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+                            if (signalDate < monthAgo) return false;
+                            break;
+                    }
+                }
+                
+                return true;
+            });
+
+            // Apply sorting
+            applySorting();
             
-            if (!data || data.total_signals === 0) {
-                container.innerHTML = '<p class="text-muted">No signals found in the system.</p>';
+            // Reset to first page
+            currentPage = 1;
+            
+            // Display results
+            displaySignals();
+        }
+
+        function applySorting() {
+            filteredSignals.sort((a, b) => {
+                let aVal = a[currentSort.column];
+                let bVal = b[currentSort.column];
+                
+                // Handle different data types
+                if (currentSort.column === 'generated_at') {
+                    aVal = new Date(aVal);
+                    bVal = new Date(bVal);
+                } else if (typeof aVal === 'string') {
+                    aVal = aVal.toLowerCase();
+                    bVal = bVal.toLowerCase();
+                }
+                
+                if (currentSort.direction === 'asc') {
+                    return aVal > bVal ? 1 : -1;
+                } else {
+                    return aVal < bVal ? 1 : -1;
+                }
+            });
+        }
+
+        function sortTable(column) {
+            if (currentSort.column === column) {
+                currentSort.direction = currentSort.direction === 'asc' ? 'desc' : 'asc';
+            } else {
+                currentSort.column = column;
+                currentSort.direction = 'asc';
+            }
+            
+            applySorting();
+            displaySignals();
+        }
+
+        function displaySignals() {
+            const tbody = document.getElementById('signals-table-body');
+            
+            if (filteredSignals.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="6" class="text-center text-muted py-4">
+                            <i class="bi bi-inbox fs-1"></i>
+                            <p class="mt-2">No trading tips found</p>
+                        </td>
+                    </tr>
+                `;
+                updatePagination();
                 return;
             }
             
-            // Create a summary of all signals
-            let html = `
-                <div class="row mb-3">
-                    <div class="col-md-3">
-                        <div class="card bg-primary text-white">
-                            <div class="card-body text-center">
-                                <h4>${data.total_signals}</h4>
-                                <p class="mb-0">Total Signals</p>
+            // Calculate pagination
+            totalPages = Math.ceil(filteredSignals.length / pageSize);
+            const startIndex = (currentPage - 1) * pageSize;
+            const endIndex = Math.min(startIndex + pageSize, filteredSignals.length);
+            const pageSignals = filteredSignals.slice(startIndex, endIndex);
+            
+            // Display signals
+            tbody.innerHTML = pageSignals.map(signal => `
+                <tr>
+                    <td>
+                        <strong>${signal.market}</strong>
+                        <br><small class="text-muted">${signal.timeframe}</small>
+                    </td>
+                    <td>
+                        <span class="badge bg-${getSignalColor(signal.recommendation)}">${signal.recommendation}</span>
+                    </td>
+                    <td>
+                        <div class="d-flex align-items-center">
+                            <div class="progress me-2" style="width: 60px; height: 8px;">
+                                <div class="progress-bar bg-${signal.confidence > 0.7 ? 'success' : signal.confidence > 0.4 ? 'warning' : 'danger'}" 
+                                     style="width: ${(signal.confidence * 100)}%"></div>
+                            </div>
+                            <small>${(signal.confidence * 100).toFixed(1)}%</small>
+                        </div>
+                    </td>
+                    <td>
+                        <i class="bi bi-person-circle me-1"></i>${signal.username}
+                    </td>
+                    <td>
+                        <small>${new Date(signal.generated_at).toLocaleString()}</small>
+                    </td>
+                    <td>
+                        <button class="btn btn-sm btn-outline-info" onclick="viewSignalDetails('${signal.id}')" title="View Details">
+                            <i class="bi bi-eye"></i>
+                        </button>
+                    </td>
+                </tr>
+            `).join('');
+            
+            updatePagination();
+        }
+
+        function updatePagination() {
+            const startIndex = (currentPage - 1) * pageSize + 1;
+            const endIndex = Math.min(currentPage * pageSize, filteredSignals.length);
+            
+            document.getElementById('page-info').textContent = `Page ${currentPage} of ${totalPages}`;
+            document.getElementById('pagination-info').textContent = `Showing ${startIndex}-${endIndex} of ${filteredSignals.length} trading tips`;
+            
+            document.getElementById('prev-btn').disabled = currentPage === 1;
+            document.getElementById('next-btn').disabled = currentPage === totalPages;
+        }
+
+        function changePageSize(newSize) {
+            pageSize = newSize;
+            currentPage = 1;
+            displaySignals();
+        }
+
+        function previousPage() {
+            if (currentPage > 1) {
+                currentPage--;
+                displaySignals();
+            }
+        }
+
+        function nextPage() {
+            if (currentPage < totalPages) {
+                currentPage++;
+                displaySignals();
+            }
+        }
+
+        function refreshAllSignals() {
+            loadAllSignals();
+        }
+
+        function exportSignals() {
+            // Simple CSV export
+            const csvContent = [
+                ['Market', 'Type', 'Confidence', 'User', 'Generated At', 'Technical Score', 'Sentiment Score', 'Fused Score'],
+                ...filteredSignals.map(signal => [
+                    signal.market,
+                    signal.recommendation,
+                    (signal.confidence * 100).toFixed(1) + '%',
+                    signal.username,
+                    new Date(signal.generated_at).toLocaleString(),
+                    signal.technical_score.toFixed(4),
+                    signal.sentiment_score.toFixed(4),
+                    signal.fused_score.toFixed(4)
+                ])
+            ].map(row => row.join(',')).join('\n');
+            
+            const blob = new Blob([csvContent], { type: 'text/csv' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `trading-tips-${new Date().toISOString().split('T')[0]}.csv`;
+            a.click();
+            window.URL.revokeObjectURL(url);
+        }
+
+        function viewSignalDetails(signalId) {
+            const signal = allSignals.find(s => s.id === signalId);
+            if (!signal) return;
+            
+            // Create modal content
+            const modalContent = `
+                <div class="modal fade" id="signalDetailsModal" tabindex="-1">
+                    <div class="modal-dialog modal-lg">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h5 class="modal-title">Trading Tip Details</h5>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                            </div>
+                            <div class="modal-body">
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <h6>Basic Information</h6>
+                                        <p><strong>Market:</strong> ${signal.market}</p>
+                                        <p><strong>Type:</strong> <span class="badge bg-${getSignalColor(signal.recommendation)}">${signal.recommendation}</span></p>
+                                        <p><strong>Confidence:</strong> ${(signal.confidence * 100).toFixed(1)}%</p>
+                                        <p><strong>User:</strong> ${signal.username}</p>
+                                        <p><strong>Generated:</strong> ${new Date(signal.generated_at).toLocaleString()}</p>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <h6>Analysis Scores</h6>
+                                        <p><strong>Technical Score:</strong> ${signal.technical_score.toFixed(4)}</p>
+                                        <p><strong>Sentiment Score:</strong> ${signal.sentiment_score.toFixed(4)}</p>
+                                        <p><strong>Fused Score:</strong> ${signal.fused_score.toFixed(4)}</p>
+                                        <p><strong>Reasoning:</strong> ${signal.reasoning}</p>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>
                 </div>
             `;
             
-            // Add signal type breakdown if available
-            if (data.signals_by_type && Object.keys(data.signals_by_type).length > 0) {
-                html += '<h6>Signals by Type:</h6><ul>';
-                for (const [type, count] of Object.entries(data.signals_by_type)) {
-                    html += `<li><strong>${type}:</strong> ${count}</li>`;
-                }
-                html += '</ul>';
+            // Remove existing modal if any
+            const existingModal = document.getElementById('signalDetailsModal');
+            if (existingModal) {
+                existingModal.remove();
             }
             
-            // Add symbol breakdown if available
-            if (data.signals_by_symbol && Object.keys(data.signals_by_symbol).length > 0) {
-                html += '<h6>Signals by Symbol:</h6><ul>';
-                for (const [symbol, count] of Object.entries(data.signals_by_symbol)) {
-                    html += `<li><strong>${symbol}:</strong> ${count}</li>`;
-                }
-                html += '</ul>';
-            }
+            // Add new modal
+            document.body.insertAdjacentHTML('beforeend', modalContent);
             
-            container.innerHTML = html;
+            // Show modal
+            const modal = new bootstrap.Modal(document.getElementById('signalDetailsModal'));
+            modal.show();
+        }
+
+        function showSignalsError(message) {
+            document.getElementById('signals-table-body').innerHTML = `
+                <tr>
+                    <td colspan="6" class="text-center text-danger py-4">
+                        <i class="bi bi-exclamation-triangle fs-1"></i>
+                        <p class="mt-2">${message}</p>
+                    </td>
+                </tr>
+            `;
         }
 
         function displayUsers(users) {
+            console.log('Displaying users:', users);
             const tbody = document.getElementById('users-table-body');
             
             if (users.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4">No users found</td></tr>';
+                console.log('No users found, showing empty message');
+                tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-4">No users found</td></tr>';
                 return;
             }
             
-            tbody.innerHTML = users.map(user => `
-                <tr>
-                    <td><strong>${user.username}</strong></td>
-                    <td><span class="badge bg-${user.role === 'admin' ? 'danger' : 'primary'}">${user.role}</span></td>
-                    <td><span class="badge bg-${user.status === 'active' ? 'success' : 'secondary'}">${user.status}</span></td>
-                    <td>${new Date(user.created_at).toLocaleDateString()}</td>
-                    <td>${user.last_login ? new Date(user.last_login).toLocaleDateString() : 'Never'}</td>
-                    <td>
-                        <button class="btn btn-sm btn-outline-primary me-1" onclick="editUser('${user.username}')">
-                            <i class="bi bi-pencil"></i>
-                        </button>
-                        <button class="btn btn-sm btn-outline-warning me-1" onclick="clearUserSignals('${user.username}')" title="Clear user signals">
-                            <i class="bi bi-eraser"></i>
-                        </button>
-                        <button class="btn btn-sm btn-outline-danger" onclick="deleteUser('${user.username}')">
-                            <i class="bi bi-trash"></i>
-                        </button>
-                    </td>
-                </tr>
-            `).join('');
+            // Count admin users
+            const adminCount = users.filter(user => user.role === 'admin').length;
+            
+            tbody.innerHTML = users.map(user => {
+                const isLastAdmin = user.role === 'admin' && adminCount <= 1;
+                const deleteButtonDisabled = isLastAdmin ? 'disabled' : '';
+                const deleteButtonTitle = isLastAdmin ? 'Cannot delete the last admin user' : 'Delete user';
+                
+                const fullName = [user.first_name, user.last_name].filter(Boolean).join(' ') || 'N/A';
+                const contactInfo = [];
+                if (user.email) contactInfo.push(`<i class="bi bi-envelope me-1"></i>${user.email}`);
+                if (user.phone) contactInfo.push(`<i class="bi bi-telephone me-1"></i>${user.phone}`);
+                const contactDisplay = contactInfo.length > 0 ? contactInfo.join('<br>') : '<span class="text-muted">No contact info</span>';
+                
+                // Activation period display
+                let activationDisplay = '<span class="text-muted">N/A</span>';
+                if (user.role !== 'admin') {
+                    if (user.activation_days === 0) {
+                        activationDisplay = '<span class="badge bg-danger">Deactivated</span><br><small class="text-muted">Manually deactivated</small>';
+                    } else if (user.activation_expires_at) {
+                        const expiryDate = new Date(user.activation_expires_at);
+                        const now = new Date();
+                        const daysLeft = Math.ceil((expiryDate - now) / (1000 * 60 * 60 * 24));
+                        
+                        if (daysLeft > 0) {
+                            const badgeClass = daysLeft <= 7 ? 'warning' : daysLeft <= 30 ? 'info' : 'success';
+                            activationDisplay = `<span class="badge bg-${badgeClass}">${daysLeft} days left</span><br><small class="text-muted">Expires: ${expiryDate.toLocaleDateString()}</small>`;
+                        } else {
+                            activationDisplay = '<span class="badge bg-danger">Expired</span><br><small class="text-muted">Expired: ' + expiryDate.toLocaleDateString() + '</small>';
+                        }
+                    }
+                } else if (user.role === 'admin') {
+                    activationDisplay = '<span class="badge bg-success">Permanent</span>';
+                }
+                
+                return `
+                    <tr>
+                        <td>
+                            <div>
+                                <strong>${user.username}</strong>
+                                ${isLastAdmin ? '<span class="badge bg-warning ms-2" title="Last admin user - cannot be deleted">Last Admin</span>' : ''}
+                            </div>
+                            <div class="text-muted small">
+                                <i class="bi bi-person me-1"></i>${fullName}
+                            </div>
+                            ${user.additional_info ? `<div class="text-muted small mt-1" title="${user.additional_info}"><i class="bi bi-info-circle me-1"></i>${user.additional_info.length > 50 ? user.additional_info.substring(0, 50) + '...' : user.additional_info}</div>` : ''}
+                        </td>
+                        <td>
+                            ${contactDisplay}
+                        </td>
+                        <td><span class="badge bg-${user.role === 'admin' ? 'danger' : 'primary'}">${user.role}</span></td>
+                        <td><span class="badge bg-${user.status === 'active' ? 'success' : 'secondary'}">${user.status}</span></td>
+                        <td>${activationDisplay}</td>
+                        <td>${new Date(user.created_at).toLocaleDateString()}</td>
+                        <td>${user.last_login ? new Date(user.last_login).toLocaleDateString() : 'Never'}</td>
+                        <td>
+                            <button class="btn btn-sm btn-outline-info me-1" onclick="viewUserSignals('${user.username}')" title="View user trading tips" data-bs-toggle="tooltip" data-bs-placement="top">
+                                <i class="bi bi-eye"></i>
+                            </button>
+                            <button class="btn btn-sm btn-outline-primary me-1" onclick="editUser('${user.username}')" title="Edit user information" data-bs-toggle="tooltip" data-bs-placement="top">
+                                <i class="bi bi-pencil"></i>
+                            </button>
+                            ${user.role !== 'admin' ? `<button class="btn btn-sm btn-outline-success me-1" onclick="extendUserActivation('${user.username}')" title="Extend activation period" data-bs-toggle="tooltip" data-bs-placement="top">
+                                <i class="bi bi-calendar-plus"></i>
+                            </button>` : ''}
+                            <button class="btn btn-sm btn-outline-warning me-1" onclick="clearUserSignals('${user.username}')" title="Clear user trading tips" data-bs-toggle="tooltip" data-bs-placement="top">
+                                <i class="bi bi-eraser"></i>
+                            </button>
+                            <button class="btn btn-sm btn-outline-danger ${deleteButtonDisabled}" onclick="${isLastAdmin ? '' : `deleteUser('${user.username}')`}" title="${deleteButtonTitle}" data-bs-toggle="tooltip" data-bs-placement="top">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+            
+            // Initialize tooltips for action buttons
+            setTimeout(() => {
+                const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+                tooltipTriggerList.map(function (tooltipTriggerEl) {
+                    return new bootstrap.Tooltip(tooltipTriggerEl);
+                });
+            }, 100);
         }
 
         function showCreateUserModal() {
             const modal = new bootstrap.Modal(document.getElementById('createUserModal'));
             modal.show();
+            
+            // Initialize tooltips in the modal
+            setTimeout(() => {
+                const tooltipTriggerList = [].slice.call(document.querySelectorAll('#createUserModal [data-bs-toggle="tooltip"]'));
+                tooltipTriggerList.map(function (tooltipTriggerEl) {
+                    return new bootstrap.Tooltip(tooltipTriggerEl);
+                });
+            }, 100);
         }
 
         async function createUser() {
-            const username = document.getElementById('new-username').value;
-            const password = document.getElementById('new-password').value;
-            const role = document.getElementById('new-role').value;
+                    const username = document.getElementById('new-username').value;
+        const password = document.getElementById('new-password').value;
+        const role = document.getElementById('new-role').value;
+        const firstName = document.getElementById('new-first-name').value;
+        const lastName = document.getElementById('new-last-name').value;
+        const email = document.getElementById('new-email').value;
+        const phone = document.getElementById('new-phone').value;
+        const additionalInfo = document.getElementById('new-additional-info').value;
+        const activationDays = parseInt(document.getElementById('new-activation-days').value) || 30;
+            
+            // Debug logging
+            console.log('Creating user with data:', {
+                username, 
+                password: '***', 
+                role,
+                first_name: firstName,
+                last_name: lastName,
+                email: email,
+                phone: phone,
+                additional_info: additionalInfo
+            });
             
             try {
                 const response = await fetch('/api/admin/users', {
@@ -512,7 +1816,17 @@
                         'Content-Type': 'application/json',
                         'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
                     },
-                    body: JSON.stringify({ username, password, role })
+                    body: JSON.stringify({ 
+                        username, 
+                        password, 
+                        role,
+                        first_name: firstName.trim() || null,
+                        last_name: lastName.trim() || null,
+                        email: email.trim() || null,
+                        phone: phone.trim() || null,
+                        additional_info: additionalInfo.trim() || null,
+                        activation_days: role === 'admin' ? null : activationDays
+                    })
                 });
                 
                 if (response.ok) {
@@ -545,7 +1859,7 @@
         }
 
         async function clearUserSignals(username) {
-            if (!confirm(`Are you sure you want to clear all signals for user "${username}"? This action cannot be undone.`)) {
+            if (!confirm(`Are you sure you want to clear all trading tips for user "${username}"? This action cannot be undone.`)) {
                 return;
             }
             
@@ -559,7 +1873,7 @@
                 
                 if (response.ok) {
                     const result = await response.json();
-                    showAlert(`Successfully cleared ${result.cleared_count} signals for user ${username}`);
+                    showAlert(`Successfully cleared ${result.cleared_count} trading tips for user ${username}`);
                     
                     // Refresh dashboard to update signal counts
                     loadDashboard();
@@ -568,8 +1882,782 @@
                     showAlert(`Error: ${error.detail}`);
                 }
             } catch (error) {
-                console.error('Error clearing user signals:', error);
-                showAlert('Error clearing user signals');
+                console.error('Error clearing user trading tips:', error);
+                showAlert('Error clearing user trading tips');
+            }
+        }
+
+        // View user signals function
+        async function viewUserSignals(username) {
+            try {
+                // Show the user signals section
+                document.getElementById('user-signals-section').style.display = 'block';
+                document.getElementById('selected-username').textContent = username;
+                
+                // Show loading state
+                document.getElementById('user-signals-content').innerHTML = `
+                    <div class="text-center py-4">
+                        <i class="bi bi-hourglass-split fs-1 text-muted"></i>
+                        <p class="text-muted mt-2">Loading trading tips for ${username}...</p>
+                    </div>
+                `;
+                
+                // Fetch user signals
+                const response = await fetch(`/api/admin/users/${username}/signals`, {
+                    headers: {
+                        'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
+                    }
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    displayUserSignals(data);
+                } else {
+                    const error = await response.json();
+                    document.getElementById('user-signals-content').innerHTML = `
+                        <div class="alert alert-danger">
+                            <i class="bi bi-exclamation-triangle me-2"></i>
+                            Error loading trading tips: ${error.detail}
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                console.error('Error loading user trading tips:', error);
+                document.getElementById('user-signals-content').innerHTML = `
+                    <div class="alert alert-danger">
+                        <i class="bi bi-exclamation-triangle me-2"></i>
+                        Failed to load trading tips
+                    </div>
+                `;
+            }
+        }
+
+        // Display user signals with detailed configuration
+        function displayUserSignals(data) {
+            const container = document.getElementById('user-signals-content');
+            const { username, total_signals, signals } = data;
+            
+            if (signals.length === 0) {
+                container.innerHTML = `
+                    <div class="text-center py-4">
+                        <i class="bi bi-inbox fs-1 text-muted"></i>
+                        <p class="text-muted mt-2">No trading tips found for ${username}</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            let html = `
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <div class="card bg-primary text-white">
+                            <div class="card-body text-center">
+                                <h4>${total_signals}</h4>
+                                <p class="mb-0">Total Trading Tips</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="card bg-info text-white">
+                            <div class="card-body text-center">
+                                <h4>${new Date().toLocaleDateString()}</h4>
+                                <p class="mb-0">Last Updated</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="accordion" id="signalsAccordion">
+            `;
+            
+            signals.forEach((signal, index) => {
+                const signalId = `signal-${index}`;
+                const isExpanded = index === 0 ? 'show' : '';
+                const isCollapsed = index === 0 ? '' : 'collapsed';
+                
+                html += `
+                    <div class="accordion-item">
+                        <h2 class="accordion-header" id="heading-${signalId}">
+                            <button class="accordion-button ${isCollapsed}" type="button" data-bs-toggle="collapse" data-bs-target="#collapse-${signalId}" aria-expanded="${index === 0}" aria-controls="collapse-${signalId}">
+                                <div class="d-flex align-items-center w-100">
+                                    <span class="badge bg-${getSignalColor(signal.recommendation)} me-3">${signal.recommendation}</span>
+                                    <strong class="me-3">${signal.market}</strong>
+                                    <span class="badge bg-secondary me-3">${signal.timeframe}</span>
+                                    <span class="text-muted me-3">${(signal.confidence * 100).toFixed(1)}% confidence</span>
+                                    <small class="text-muted ms-auto">${new Date(signal.generated_at).toLocaleString()}</small>
+                                </div>
+                            </button>
+                        </h2>
+                        <div id="collapse-${signalId}" class="accordion-collapse collapse ${isExpanded}" aria-labelledby="heading-${signalId}" data-bs-parent="#signalsAccordion">
+                            <div class="accordion-body">
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <h6 class="text-primary mb-3">📊 Analysis Scores</h6>
+                                        <div class="row mb-3">
+                                            <div class="col-6">
+                                                <div class="card bg-light">
+                                                    <div class="card-body text-center py-2">
+                                                        <h6 class="text-muted mb-1">Technical</h6>
+                                                        <h5 class="mb-0 ${signal.technical_score >= 0 ? 'text-success' : 'text-danger'}">${signal.technical_score.toFixed(4)}</h5>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div class="col-6">
+                                                <div class="card bg-light">
+                                                    <div class="card-body text-center py-2">
+                                                        <h6 class="text-muted mb-1">Sentiment</h6>
+                                                        <h5 class="mb-0 ${signal.sentiment_score >= 0 ? 'text-success' : 'text-danger'}">${signal.sentiment_score.toFixed(4)}</h5>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="card bg-light">
+                                            <div class="card-body text-center py-2">
+                                                <h6 class="text-muted mb-1">Fused Score</h6>
+                                                <h4 class="mb-0 ${signal.fused_score >= 0 ? 'text-success' : 'text-danger'}">${signal.fused_score.toFixed(4)}</h4>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <h6 class="text-success mb-3">⚙️ Configuration</h6>
+                                        <div class="row mb-2">
+                                            <div class="col-6">
+                                                <small class="text-muted">Buy Threshold</small><br>
+                                                <strong class="text-success">≥ ${signal.configuration.buy_threshold.toFixed(2)}</strong>
+                                            </div>
+                                            <div class="col-6">
+                                                <small class="text-muted">Sell Threshold</small><br>
+                                                <strong class="text-danger">≤ ${signal.configuration.sell_threshold.toFixed(2)}</strong>
+                                            </div>
+                                        </div>
+                                        <div class="row mb-2">
+                                            <div class="col-6">
+                                                <small class="text-muted">Tech Weight</small><br>
+                                                <strong class="text-primary">${(signal.configuration.tech_weight * 100).toFixed(0)}%</strong>
+                                            </div>
+                                            <div class="col-6">
+                                                <small class="text-muted">Sentiment Weight</small><br>
+                                                <strong class="text-info">${(signal.configuration.sentiment_weight * 100).toFixed(0)}%</strong>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="row mt-3">
+                                    <div class="col-12">
+                                        <h6 class="text-warning mb-2">💡 Reasoning</h6>
+                                        <p class="mb-0">${signal.reasoning}</p>
+                                    </div>
+                                </div>
+                                ${signal.risk_management.stop_loss || signal.risk_management.take_profit ? `
+                                <div class="row mt-3">
+                                    <div class="col-12">
+                                        <h6 class="text-danger mb-2">🛡️ Risk Management</h6>
+                                        <div class="row">
+                                            ${signal.risk_management.stop_loss ? `
+                                            <div class="col-6">
+                                                <small class="text-muted">Stop Loss</small><br>
+                                                <strong class="text-danger">${signal.risk_management.stop_loss.toFixed(2)}</strong>
+                                            </div>
+                                            ` : ''}
+                                            ${signal.risk_management.take_profit ? `
+                                            <div class="col-6">
+                                                <small class="text-muted">Take Profit</small><br>
+                                                <strong class="text-success">${signal.risk_management.take_profit.toFixed(2)}</strong>
+                                            </div>
+                                            ` : ''}
+                                        </div>
+                                    </div>
+                                </div>
+                                ` : ''}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            html += '</div>';
+            container.innerHTML = html;
+        }
+
+        // Hide user signals section
+        function hideUserSignals() {
+            document.getElementById('user-signals-section').style.display = 'none';
+        }
+
+        // Helper function to get signal color
+        function getSignalColor(signalType) {
+            switch (signalType) {
+                case 'BUY': return 'success';
+                case 'SELL': return 'danger';
+                case 'HOLD': return 'secondary';
+                default: return 'secondary';
+            }
+        }
+
+        // Global variables to store current user being edited/deleted
+        let currentEditUser = null;
+        let currentDeleteUser = null;
+
+        // Edit user function
+        async function editUser(username) {
+            try {
+                // Get user data from the users list (we already have it from loadUsers)
+                const response = await fetch('/api/admin/users', {
+                    headers: {
+                        'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
+                    }
+                });
+                
+                if (response.ok) {
+                    const users = await response.json();
+                    const user = users.find(u => u.username === username);
+                    
+                    if (user) {
+                        currentEditUser = username;
+                        
+                        // Debug logging
+                        console.log('Editing user:', user);
+                        
+                        // Populate the edit form
+                        document.getElementById('edit-username').value = user.username || '';
+                        document.getElementById('edit-password').value = '';
+                        document.getElementById('edit-role').value = user.role || 'user';
+                        document.getElementById('edit-first-name').value = user.first_name || '';
+                        document.getElementById('edit-last-name').value = user.last_name || '';
+                        document.getElementById('edit-email').value = user.email || '';
+                        document.getElementById('edit-phone').value = user.phone || '';
+                        document.getElementById('edit-additional-info').value = user.additional_info || '';
+                        document.getElementById('edit-activation-days').value = user.activation_days || 0;
+                        
+                        // Debug logging - check if fields were populated
+                        console.log('Form fields populated:', {
+                            username: document.getElementById('edit-username').value,
+                            role: document.getElementById('edit-role').value,
+                            firstName: document.getElementById('edit-first-name').value,
+                            lastName: document.getElementById('edit-last-name').value,
+                            email: document.getElementById('edit-email').value,
+                            phone: document.getElementById('edit-phone').value,
+                            additionalInfo: document.getElementById('edit-additional-info').value,
+                            activationDays: document.getElementById('edit-activation-days').value
+                        });
+                        
+                        // Show the modal
+                        const modal = new bootstrap.Modal(document.getElementById('editUserModal'));
+                        modal.show();
+                        
+                        // Initialize tooltips in the modal
+                        setTimeout(() => {
+                            const tooltipTriggerList = [].slice.call(document.querySelectorAll('#editUserModal [data-bs-toggle="tooltip"]'));
+                            tooltipTriggerList.map(function (tooltipTriggerEl) {
+                                return new bootstrap.Tooltip(tooltipTriggerEl);
+                            });
+                        }, 100);
+                    } else {
+                        showAlert('User not found', 'danger');
+                    }
+                } else {
+                    showAlert('Failed to load user data', 'danger');
+                }
+            } catch (error) {
+                console.error('Error loading user for edit:', error);
+                showAlert('Error loading user data', 'danger');
+            }
+        }
+
+        // Update user function
+        async function updateUser() {
+            const username = document.getElementById('edit-username').value;
+            const password = document.getElementById('edit-password').value;
+            const role = document.getElementById('edit-role').value;
+            const firstName = document.getElementById('edit-first-name').value;
+            const lastName = document.getElementById('edit-last-name').value;
+            const email = document.getElementById('edit-email').value;
+            const phone = document.getElementById('edit-phone').value;
+            const additionalInfo = document.getElementById('edit-additional-info').value;
+            const activationDays = parseInt(document.getElementById('edit-activation-days').value) || 0;
+            
+            if (!username || !role) {
+                showAlert('Please fill in all required fields', 'danger');
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/api/admin/users/${currentEditUser}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
+                    },
+                    body: JSON.stringify({ 
+                        username, 
+                        password, 
+                        role,
+                        first_name: firstName.trim() || null,
+                        last_name: lastName.trim() || null,
+                        email: email.trim() || null,
+                        phone: phone.trim() || null,
+                        additional_info: additionalInfo.trim() || null,
+                        activation_days: activationDays
+                    })
+                });
+                
+                if (response.ok) {
+                    const modal = bootstrap.Modal.getInstance(document.getElementById('editUserModal'));
+                    modal.hide();
+                    document.getElementById('editUserForm').reset();
+                    currentEditUser = null;
+                    loadUsers();
+                    loadDashboard();
+                    showAlert('User updated successfully!', 'success');
+                } else {
+                    const error = await response.json();
+                    showAlert(error.detail || 'Failed to update user', 'danger');
+                }
+            } catch (error) {
+                console.error('Error updating user:', error);
+                showAlert('Network error. Please try again.', 'danger');
+            }
+        }
+
+        // Delete user function - shows confirmation modal
+        function deleteUser(username) {
+            // Check if this is the last admin user
+            const users = Array.from(document.querySelectorAll('#users-table-body tr')).map(row => {
+                const cells = row.querySelectorAll('td');
+                if (cells.length >= 2) {
+                    const usernameCell = cells[0].textContent.trim();
+                    const roleCell = cells[1].textContent.trim();
+                    return {
+                        username: usernameCell.replace('Last Admin', '').trim(),
+                        role: roleCell.toLowerCase()
+                    };
+                }
+                return null;
+            }).filter(user => user && user.username);
+            
+            const adminCount = users.filter(user => user.role === 'admin').length;
+            const isLastAdmin = adminCount <= 1 && users.find(user => user.username === username)?.role === 'admin';
+            
+            if (isLastAdmin) {
+                showAlert('Cannot delete the last admin user. At least one admin must remain in the system.', 'warning');
+                return;
+            }
+            
+            currentDeleteUser = username;
+            document.getElementById('delete-username-display').textContent = username;
+            
+            // Reset checkbox to checked by default
+            document.getElementById('delete-user-signals').checked = true;
+            
+            // Show the modal
+            const modal = new bootstrap.Modal(document.getElementById('deleteUserModal'));
+            modal.show();
+            
+            // Initialize tooltips in the modal
+            setTimeout(() => {
+                const tooltipTriggerList = [].slice.call(document.querySelectorAll('#deleteUserModal [data-bs-toggle="tooltip"]'));
+                tooltipTriggerList.map(function (tooltipTriggerEl) {
+                    return new bootstrap.Tooltip(tooltipTriggerEl);
+                });
+            }, 100);
+        }
+
+        // Confirm delete user function
+        async function confirmDeleteUser() {
+            if (!currentDeleteUser) {
+                showAlert('No user selected for deletion', 'danger');
+                return;
+            }
+            
+            const deleteSignals = document.getElementById('delete-user-signals').checked;
+            
+            try {
+                const url = `/api/admin/users/${currentDeleteUser}?delete_signals=${deleteSignals}`;
+                const response = await fetch(url, {
+                    method: 'DELETE',
+                    headers: {
+                        'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
+                    }
+                });
+                
+                if (response.ok) {
+                    const result = await response.json();
+                    let message = `User ${currentDeleteUser} deleted successfully.`;
+                    if (result.signals_deleted > 0) {
+                        message += ` Also deleted ${result.signals_deleted} trading tips.`;
+                    }
+                    showAlert(message, 'success');
+                    
+                    // Close modal
+                    const modal = bootstrap.Modal.getInstance(document.getElementById('deleteUserModal'));
+                    modal.hide();
+                    
+                    // Reset variables
+                    currentDeleteUser = null;
+                    
+                    // Refresh the users list and dashboard
+                    console.log('Refreshing user list after deletion...');
+                    await loadUsers();
+                    await loadDashboard();
+                    console.log('User list and dashboard refreshed');
+                } else {
+                    const error = await response.json();
+                    showAlert(error.detail || 'Failed to delete user', 'danger');
+                }
+            } catch (error) {
+                console.error('Error deleting user:', error);
+                showAlert('Network error. Please try again.', 'danger');
+            }
+        }
+
+        // Settings Functions
+        let currentSettings = {};
+        let settingsChanged = false;
+
+        async function loadSettings() {
+            try {
+                console.log('Loading settings...');
+                const response = await fetch('/api/admin/settings', {
+                    headers: {
+                        'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
+                    }
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    currentSettings = data.config;
+                    populateSettingsForm(data.config);
+                    console.log('Settings loaded:', data.config);
+                } else {
+                    console.error('Failed to load settings:', response.status, response.statusText);
+                    showAlert('Failed to load settings', 'danger');
+                }
+            } catch (error) {
+                console.error('Error loading settings:', error);
+                showAlert('Network error. Please try again.', 'danger');
+            }
+        }
+
+        function populateSettingsForm(config) {
+            // Trading Settings
+            document.getElementById('active-markets').value = Array.isArray(config.active_markets) ? config.active_markets.join('\n') : '';
+            document.getElementById('signal-generation-enabled').checked = config.signal_generation_enabled;
+            document.getElementById('generation-frequency').value = config.generation_frequency_minutes;
+            document.getElementById('default-timeframe').value = config.default_timeframe;
+            document.getElementById('max-position-size').value = config.max_position_size;
+            document.getElementById('risk-per-trade').value = config.risk_per_trade_percent;
+
+            // Technical Settings
+            document.getElementById('buy-threshold').value = config.buy_threshold;
+            document.getElementById('sell-threshold').value = config.sell_threshold;
+            document.getElementById('technical-weight').value = config.technical_weight;
+            document.getElementById('sentiment-weight').value = config.sentiment_weight;
+
+            // Data Sources
+            document.getElementById('data-provider').value = config.data_provider;
+            document.getElementById('data-refresh-rate').value = config.data_refresh_rate_minutes;
+            document.getElementById('historical-data-days').value = config.historical_data_days;
+            document.getElementById('news-weight').value = config.news_weight;
+            document.getElementById('news-keywords').value = Array.isArray(config.news_keywords) ? config.news_keywords.join(', ') : '';
+
+            // Security Settings
+            document.getElementById('session-timeout').value = config.session_timeout_hours;
+            document.getElementById('max-login-attempts').value = config.max_login_attempts;
+            document.getElementById('password-min-length').value = config.password_min_length;
+            document.getElementById('api-rate-limit').value = config.api_rate_limit_per_minute;
+
+            // UI Settings
+            document.getElementById('auto-refresh-enabled').checked = config.auto_refresh_enabled;
+            document.getElementById('refresh-interval').value = config.refresh_interval_seconds;
+            document.getElementById('theme').value = config.theme;
+            document.getElementById('date-format').value = config.date_format;
+            document.getElementById('timezone').value = config.timezone;
+            document.getElementById('currency').value = config.currency;
+
+            // Notifications
+            document.getElementById('email-notifications-enabled').checked = config.email_notifications_enabled;
+            document.getElementById('smtp-server').value = config.smtp_server || '';
+            document.getElementById('smtp-port').value = config.smtp_port;
+            document.getElementById('smtp-username').value = config.smtp_username || '';
+            document.getElementById('smtp-password').value = config.smtp_password || '';
+            document.getElementById('alert-recipients').value = Array.isArray(config.alert_recipients) ? config.alert_recipients.join(', ') : '';
+
+            // System Settings
+            document.getElementById('log-level').value = config.log_level;
+            document.getElementById('cache-ttl').value = config.cache_ttl_hours;
+            document.getElementById('backup-enabled').checked = config.backup_enabled;
+            document.getElementById('backup-frequency').value = config.backup_frequency_hours;
+
+            settingsChanged = false;
+        }
+
+        async function saveAllSettings() {
+            try {
+                const updates = [];
+                
+                // Collect all form values
+                const formData = {
+                    active_markets: document.getElementById('active-markets').value.split(/[,\n]/).map(s => s.trim()).filter(s => s),
+                    signal_generation_enabled: document.getElementById('signal-generation-enabled').checked,
+                    generation_frequency_minutes: parseInt(document.getElementById('generation-frequency').value),
+                    default_timeframe: document.getElementById('default-timeframe').value,
+                    max_position_size: parseFloat(document.getElementById('max-position-size').value),
+                    risk_per_trade_percent: parseFloat(document.getElementById('risk-per-trade').value),
+                    buy_threshold: parseFloat(document.getElementById('buy-threshold').value),
+                    sell_threshold: parseFloat(document.getElementById('sell-threshold').value),
+                    technical_weight: parseFloat(document.getElementById('technical-weight').value),
+                    sentiment_weight: parseFloat(document.getElementById('sentiment-weight').value),
+                    data_provider: document.getElementById('data-provider').value,
+                    data_refresh_rate_minutes: parseInt(document.getElementById('data-refresh-rate').value),
+                    historical_data_days: parseInt(document.getElementById('historical-data-days').value),
+                    news_weight: parseFloat(document.getElementById('news-weight').value),
+                    news_keywords: document.getElementById('news-keywords').value.split(',').map(s => s.trim()).filter(s => s),
+                    session_timeout_hours: parseInt(document.getElementById('session-timeout').value),
+                    max_login_attempts: parseInt(document.getElementById('max-login-attempts').value),
+                    password_min_length: parseInt(document.getElementById('password-min-length').value),
+                    api_rate_limit_per_minute: parseInt(document.getElementById('api-rate-limit').value),
+                    auto_refresh_enabled: document.getElementById('auto-refresh-enabled').checked,
+                    refresh_interval_seconds: parseInt(document.getElementById('refresh-interval').value),
+                    theme: document.getElementById('theme').value,
+                    date_format: document.getElementById('date-format').value,
+                    timezone: document.getElementById('timezone').value,
+                    currency: document.getElementById('currency').value,
+                    email_notifications_enabled: document.getElementById('email-notifications-enabled').checked,
+                    smtp_server: document.getElementById('smtp-server').value,
+                    smtp_port: parseInt(document.getElementById('smtp-port').value),
+                    smtp_username: document.getElementById('smtp-username').value,
+                    smtp_password: document.getElementById('smtp-password').value,
+                    alert_recipients: document.getElementById('alert-recipients').value.split(',').map(s => s.trim()).filter(s => s),
+                    log_level: document.getElementById('log-level').value,
+                    cache_ttl_hours: parseInt(document.getElementById('cache-ttl').value),
+                    backup_enabled: document.getElementById('backup-enabled').checked,
+                    backup_frequency_hours: parseInt(document.getElementById('backup-frequency').value)
+                };
+
+                // Create updates array
+                for (const [key, value] of Object.entries(formData)) {
+                    if (JSON.stringify(currentSettings[key]) !== JSON.stringify(value)) {
+                        updates.push({
+                            key: key,
+                            value: value,
+                            category: getCategoryForKey(key)
+                        });
+                    }
+                }
+
+                if (updates.length === 0) {
+                    showAlert('No changes to save', 'info');
+                    return;
+                }
+
+                const response = await fetch('/api/admin/settings/bulk', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
+                    },
+                    body: JSON.stringify(updates)
+                });
+
+                if (response.ok) {
+                    const result = await response.json();
+                    showAlert(`Successfully updated ${result.results.length} settings`, 'success');
+                    await loadSettings(); // Reload to get updated values
+                } else {
+                    const error = await response.json();
+                    showAlert(error.detail || 'Failed to save settings', 'danger');
+                }
+            } catch (error) {
+                console.error('Error saving settings:', error);
+                showAlert('Network error. Please try again.', 'danger');
+            }
+        }
+
+        function getCategoryForKey(key) {
+            const categories = {
+                'active_markets': 'trading',
+                'signal_generation_enabled': 'trading',
+                'generation_frequency_minutes': 'trading',
+                'default_timeframe': 'trading',
+                'max_position_size': 'trading',
+                'risk_per_trade_percent': 'trading',
+                'buy_threshold': 'technical',
+                'sell_threshold': 'technical',
+                'technical_weight': 'technical',
+                'sentiment_weight': 'technical',
+                'data_provider': 'data',
+                'data_refresh_rate_minutes': 'data',
+                'historical_data_days': 'data',
+                'news_weight': 'data',
+                'news_keywords': 'data',
+                'session_timeout_hours': 'security',
+                'max_login_attempts': 'security',
+                'password_min_length': 'security',
+                'api_rate_limit_per_minute': 'security',
+                'auto_refresh_enabled': 'ui',
+                'refresh_interval_seconds': 'ui',
+                'theme': 'ui',
+                'date_format': 'ui',
+                'timezone': 'ui',
+                'currency': 'ui',
+                'email_notifications_enabled': 'notifications',
+                'smtp_server': 'notifications',
+                'smtp_port': 'notifications',
+                'smtp_username': 'notifications',
+                'smtp_password': 'notifications',
+                'alert_recipients': 'notifications',
+                'log_level': 'system',
+                'cache_ttl_hours': 'system',
+                'backup_enabled': 'system',
+                'backup_frequency_hours': 'system'
+            };
+            return categories[key] || 'general';
+        }
+
+        async function exportSettings() {
+            try {
+                const response = await fetch('/api/admin/settings/export', {
+                    headers: {
+                        'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
+                    }
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `trading-ai-settings-${new Date().toISOString().split('T')[0]}.json`;
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                    document.body.removeChild(a);
+                    showAlert('Settings exported successfully', 'success');
+                } else {
+                    showAlert('Failed to export settings', 'danger');
+                }
+            } catch (error) {
+                console.error('Error exporting settings:', error);
+                showAlert('Network error. Please try again.', 'danger');
+            }
+        }
+
+        async function resetSettings() {
+            if (confirm('Are you sure you want to reset all settings to defaults? This action cannot be undone.')) {
+                try {
+                    const response = await fetch('/api/admin/settings/reset', {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
+                        }
+                    });
+
+                    if (response.ok) {
+                        showAlert('Settings reset to defaults', 'success');
+                        await loadSettings();
+                    } else {
+                        const error = await response.json();
+                        showAlert(error.detail || 'Failed to reset settings', 'danger');
+                    }
+                } catch (error) {
+                    console.error('Error resetting settings:', error);
+                    showAlert('Network error. Please try again.', 'danger');
+                }
+            }
+        }
+
+        async function testEmailSettings() {
+            showAlert('Email test functionality will be implemented', 'info');
+        }
+
+        async function clearCache() {
+            if (confirm('Are you sure you want to clear the system cache?')) {
+                showAlert('Cache cleared successfully', 'success');
+            }
+        }
+
+        async function viewSystemLogs() {
+            showAlert('System logs viewer will be implemented', 'info');
+        }
+
+        // Add change detection to form fields
+        document.addEventListener('DOMContentLoaded', function() {
+            const settingsInputs = document.querySelectorAll('#settings-section input, #settings-section select, #settings-section textarea');
+            settingsInputs.forEach(input => {
+                input.addEventListener('change', function() {
+                    settingsChanged = true;
+                });
+            });
+        });
+
+        // Activation period functions
+        function toggleActivationPeriod() {
+            const role = document.getElementById('new-role').value;
+            const activationGroup = document.getElementById('activation-period-group');
+            if (role === 'admin') {
+                activationGroup.style.display = 'none';
+            } else {
+                activationGroup.style.display = 'block';
+            }
+        }
+
+        function toggleEditActivationPeriod() {
+            const role = document.getElementById('edit-role').value;
+            const activationGroup = document.getElementById('edit-activation-period-group');
+            if (role === 'admin') {
+                activationGroup.style.display = 'none';
+            } else {
+                activationGroup.style.display = 'block';
+            }
+        }
+
+        async function extendUserActivation(username) {
+            const additionalDays = prompt(`Enter number of days to extend activation for user "${username}" (enter 0 to deactivate):`, '30');
+            if (additionalDays === null) return; // User cancelled
+            
+            const days = parseInt(additionalDays);
+            if (isNaN(days) || days < 0) {
+                showAlert('Please enter a valid number of days (0 or greater)', 'danger');
+                return;
+            }
+
+            let reason = '';
+            if (days === 0) {
+                reason = prompt('Enter reason for deactivation (optional):', '');
+            } else {
+                reason = prompt('Enter reason for extension (optional):', '');
+            }
+            
+            try {
+                const response = await fetch(`/api/admin/users/${username}/extend-activation`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
+                    },
+                    body: JSON.stringify({
+                        username: username,
+                        additional_days: days,
+                        reason: reason || null
+                    })
+                });
+
+                if (response.ok) {
+                    const result = await response.json();
+                    if (days === 0) {
+                        showAlert(`Successfully deactivated user ${username}`, 'success');
+                    } else {
+                        showAlert(`Successfully extended activation for ${username} by ${days} days. New expiry: ${new Date(result.new_expiry).toLocaleDateString()}`, 'success');
+                    }
+                    await loadUsers(); // Refresh user list
+                } else {
+                    const error = await response.json();
+                    showAlert(error.detail || 'Failed to update activation', 'danger');
+                }
+            } catch (error) {
+                console.error('Error updating activation:', error);
+                showAlert('Network error. Please try again.', 'danger');
             }
         }
     </script>

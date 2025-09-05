@@ -24,3 +24,6 @@ python-multipart>=0.0.5
 redis>=4.5.0
 aioredis>=2.0.0
 
+# System Information
+psutil>=5.9.0
+

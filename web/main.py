@@ -15,7 +15,14 @@ import uvicorn
 import asyncio
 import json
 import os
+import math
 from datetime import datetime, timedelta
+
+# Application version
+APP_VERSION = "1.0.0"
+
+# Application startup time
+APP_START_TIME = datetime.now()
 import logging
 import hashlib
 import secrets
@@ -69,10 +76,96 @@ class UserLogin(BaseModel):
     username: str
     password: str
 
+class SystemConfig(BaseModel):
+    # Trading Agent Settings
+    active_markets: List[str] = ["BTC/USD", "ETH/USD", "AAPL", "GOOGL", "MSFT", "TSLA", "AMZN", "NVDA"]
+    signal_generation_enabled: bool = True
+    generation_frequency_minutes: int = 30
+    default_timeframe: str = "1h"
+    
+    # Technical Analysis Settings
+    buy_threshold: float = 0.7
+    sell_threshold: float = -0.7
+    technical_weight: float = 0.6
+    sentiment_weight: float = 0.4
+    
+    # Data Sources
+    data_provider: str = "alpaca"
+    data_refresh_rate_minutes: int = 5
+    historical_data_days: int = 30
+    
+    # News Sources
+    news_weight: float = 0.3
+    news_keywords: List[str] = ["bitcoin", "ethereum", "crypto", "stock", "market", "trading"]
+    
+    # Security Settings
+    session_timeout_hours: int = 24
+    max_login_attempts: int = 5
+    password_min_length: int = 8
+    api_rate_limit_per_minute: int = 100
+    
+    # UI Settings
+    auto_refresh_enabled: bool = True
+    refresh_interval_seconds: int = 30
+    theme: str = "light"
+    date_format: str = "YYYY-MM-DD"
+    timezone: str = "UTC"
+    currency: str = "USD"
+    
+    # Trading Configuration
+    max_position_size: float = 10000.0
+    default_stop_loss_percent: float = 5.0
+    default_take_profit_percent: float = 10.0
+    risk_per_trade_percent: float = 2.0
+    
+    # Notifications
+    email_notifications_enabled: bool = False
+    smtp_server: str = ""
+    smtp_port: int = 587
+    smtp_username: str = ""
+    smtp_password: str = ""
+    alert_recipients: List[str] = []
+    
+    # System Settings
+    log_level: str = "INFO"
+    cache_ttl_hours: int = 24
+    backup_enabled: bool = True
+    backup_frequency_hours: int = 24
+
+class ConfigUpdate(BaseModel):
+    key: str
+    value: Any
+    category: str
+
 class UserCreate(BaseModel):
     username: str
     password: str
     role: str = "user"
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    additional_info: Optional[str] = None
+    activation_days: Optional[int] = 30  # Default 30 days activation period
+
+class UserUpdate(BaseModel):
+    username: str
+    password: Optional[str] = None
+    role: str = "user"
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    additional_info: Optional[str] = None
+    activation_days: Optional[int] = None  # For extending activation period
+
+class UserProfileUpdate(BaseModel):
+    password: Optional[str] = None
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    additional_info: Optional[str] = None
 
 class User(BaseModel):
     username: str
@@ -80,6 +173,18 @@ class User(BaseModel):
     status: str
     created_at: str
     last_login: Optional[str] = None
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    additional_info: Optional[str] = None
+    activation_expires_at: Optional[str] = None
+    activation_days: Optional[int] = None
+
+class UserActivationExtension(BaseModel):
+    username: str
+    additional_days: int
+    reason: Optional[str] = None
 
 class SignalRequest(BaseModel):
     symbol: str
@@ -110,7 +215,7 @@ class AgentStatus(BaseModel):
     status: str
     last_update: str
     active_symbols: List[str]
-    total_signals: int
+    total_trading_tips: int
     uptime: str
 
 # JWT tokens (in production, use proper JWT library)
@@ -138,6 +243,14 @@ async def initialize_default_admin():
                 logger.info("Default admin user created in Redis")
             else:
                 logger.info("Admin user already exists in Redis")
+            
+            # Log system startup
+            await redis_client.log_activity(
+                "system_startup",
+                "Trading AI Tips system started successfully",
+                "system",
+                {"version": "1.0.0", "startup_time": datetime.now().isoformat()}
+            )
     except Exception as e:
         logger.error(f"Failed to initialize default admin user: {e}")
 
@@ -253,8 +366,21 @@ async def login(user_data: UserLogin):
     
     password_hash = hashlib.sha256(password.encode()).hexdigest()
     
-    if user["password_hash"] != password_hash:
+    # Handle both old and new password field formats
+    stored_password_hash = user.get("password_hash") or user.get("password")
+    if not stored_password_hash or stored_password_hash != password_hash:
         raise HTTPException(status_code=401, detail="Invalid credentials")
+    
+    # Check if user is active (considering activation period)
+    user_status = get_user_status_with_activation(user)
+    if user_status != "active":
+        if not is_user_activation_valid(user.get("activation_expires_at"), user.get("activation_days")):
+            if user.get("activation_days") == 0:
+                raise HTTPException(status_code=403, detail="Account has been deactivated. Please contact administrator to reactivate your access.")
+            else:
+                raise HTTPException(status_code=403, detail="Account activation period has expired. Please contact administrator to extend your access.")
+        else:
+            raise HTTPException(status_code=403, detail="Account is inactive")
     
     # Update last login in Redis
     try:
@@ -266,6 +392,16 @@ async def login(user_data: UserLogin):
     
     # Create access token
     access_token = create_access_token(username, user["role"])
+    
+    # Log activity
+    redis_client = await get_redis_client()
+    if redis_client:
+        await redis_client.log_activity(
+            "user_login",
+            f"User '{username}' logged in successfully",
+            username,
+            {"username": username, "role": user["role"]}
+        )
     
     return {
         "access_token": access_token,
@@ -292,32 +428,118 @@ async def admin_dashboard(current_user: Dict[str, Any] = Depends(verify_token)):
         all_users = await get_all_users_from_redis()
         total_users = len(all_users)
         active_users = len([u for u in all_users if u["status"] == "active"])
+        inactive_users = len([u for u in all_users if u["status"] == "inactive"])
+        expired_users = len([u for u in all_users if u["status"] == "expired"])
     except Exception:
         total_users = 0
         active_users = 0
+        inactive_users = 0
+        expired_users = 0
     
     # Get signal stats from Redis
     try:
         redis_client = await get_redis_client()
         if redis_client:
             total_signals = await redis_client.get_signal_count()
+            logger.info(f"Admin dashboard: total_signals = {total_signals}")
             # Get today's signals
             today = datetime.now().date()
             all_signals = await redis_client.get_signals(1000)
+            logger.info(f"Admin dashboard: all_signals count = {len(all_signals)}")
             today_signals = len([s for s in all_signals if datetime.fromisoformat(s['timestamp']).date() == today])
+            logger.info(f"Admin dashboard: today_signals = {today_signals}")
         else:
+            logger.warning("Admin dashboard: Redis client not available")
             total_signals = 0
             today_signals = 0
-    except Exception:
+    except Exception as e:
+        logger.error(f"Admin dashboard: Exception getting signal stats: {e}")
         total_signals = 0
         today_signals = 0
+    
+    # Get system information
+    import psutil
+    import platform
+    
+    try:
+        # System uptime
+        boot_time = datetime.fromtimestamp(psutil.boot_time())
+        uptime = datetime.now() - boot_time
+        uptime_str = str(uptime).split('.')[0]  # Remove microseconds
+        
+        # System resources
+        cpu_percent = psutil.cpu_percent(interval=0.1)  # Reduced interval for faster response
+        memory = psutil.virtual_memory()
+        disk = psutil.disk_usage('/')
+        
+        # Application uptime (since last restart)
+        app_uptime = datetime.now() - APP_START_TIME
+        app_uptime_str = str(app_uptime).split('.')[0]
+        
+        system_info = {
+            "system_uptime": uptime_str,
+            "app_uptime": app_uptime_str,
+            "cpu_usage": round(cpu_percent, 1),
+            "memory_usage": round(memory.percent, 1),
+            "memory_available": f"{memory.available // (1024**3)} GB",
+            "disk_usage": round(disk.percent, 1),
+            "disk_free": f"{disk.free // (1024**3)} GB",
+            "platform": platform.system(),
+            "python_version": platform.python_version(),
+            "app_version": APP_VERSION,
+            "server_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        }
+    except Exception as e:
+        logger.warning(f"Could not get system information: {e}")
+        system_info = {
+            "system_uptime": "Unknown",
+            "app_uptime": "Unknown",
+            "cpu_usage": 0,
+            "memory_usage": 0,
+            "memory_available": "Unknown",
+            "disk_usage": 0,
+            "disk_free": "Unknown",
+            "platform": "Unknown",
+            "python_version": "Unknown",
+            "app_version": APP_VERSION,
+            "server_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        }
+    
+    # Get Redis connection status
+    try:
+        redis_client = await get_redis_client()
+        redis_status = "Connected" if redis_client and await redis_client.is_connected() else "Disconnected"
+    except Exception:
+        redis_status = "Error"
     
     return {
         "total_users": total_users,
         "active_users": active_users,
-        "total_signals": total_signals,
-        "today_signals": today_signals
+        "inactive_users": inactive_users,
+        "expired_users": expired_users,
+        "total_trading_tips": total_signals,
+        "today_trading_tips": today_signals,
+        "system_info": system_info,
+        "redis_status": redis_status,
+        "last_updated": datetime.now().isoformat()
     }
+
+@app.get("/api/admin/activities")
+async def admin_get_activities(limit: int = 20, current_user: Dict[str, Any] = Depends(verify_token)):
+    """Get recent activities (admin only)"""
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    try:
+        redis_client = await get_redis_client()
+        if not redis_client:
+            raise HTTPException(status_code=500, detail="Redis not available")
+        
+        activities = await redis_client.get_recent_activities(limit)
+        return {"activities": activities}
+    except Exception as e:
+        logger.error(f"Failed to get recent activities: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get activities")
 
 @app.get("/api/user/dashboard")
 async def user_dashboard(current_user: Dict[str, Any] = Depends(verify_token)):
@@ -343,8 +565,8 @@ async def user_dashboard(current_user: Dict[str, Any] = Depends(verify_token)):
     return {
         "username": current_user["username"],
         "role": current_user["role"],
-        "total_signals": total_user_signals,
-        "today_signals": today_user_signals
+        "total_trading_tips": total_user_signals,
+        "today_trading_tips": today_user_signals
     }
 
 @app.get("/api/admin/users")
@@ -357,12 +579,22 @@ async def admin_get_users(current_user: Dict[str, Any] = Depends(verify_token)):
         all_users = await get_all_users_from_redis()
         users = []
         for user_data in all_users:
+            # Get actual status considering activation period
+            actual_status = get_user_status_with_activation(user_data)
+            
             users.append({
                 "username": user_data["username"],
                 "role": user_data["role"],
-                "status": user_data["status"],
+                "status": actual_status,
                 "created_at": user_data["created_at"],
-                "last_login": user_data["last_login"]
+                "last_login": user_data["last_login"],
+                "first_name": user_data.get("first_name"),
+                "last_name": user_data.get("last_name"),
+                "email": user_data.get("email"),
+                "phone": user_data.get("phone"),
+                "additional_info": user_data.get("additional_info"),
+                "activation_expires_at": user_data.get("activation_expires_at"),
+                "activation_days": user_data.get("activation_days")
             })
         return users
     except Exception as e:
@@ -384,20 +616,107 @@ async def admin_create_user(user_data: UserCreate, current_user: Dict[str, Any] 
     
     # Create new user
     password_hash = hashlib.sha256(user_data.password.encode()).hexdigest()
+    
+    # Calculate activation expiry (only for non-admin users)
+    activation_expires_at = None
+    activation_days = user_data.activation_days or 30
+    
+    if user_data.role != "admin":
+        activation_expires_at = calculate_activation_expiry(activation_days)
+        # If activation_days is 0, user will be immediately deactivated
+    
     new_user = {
         "username": username,
         "password_hash": password_hash,
         "role": user_data.role,
         "status": "active",
         "created_at": datetime.now().isoformat(),
-        "last_login": None
+        "last_login": None,
+        "first_name": user_data.first_name,
+        "last_name": user_data.last_name,
+        "email": user_data.email,
+        "phone": user_data.phone,
+        "additional_info": user_data.additional_info,
+        "activation_expires_at": activation_expires_at,
+        "activation_days": activation_days
     }
+    
+    # Debug logging
+    logger.info(f"Creating user {username} with data: {new_user}")
     
     # Store user in Redis
     if await store_user_in_redis(username, new_user):
+        # Log activity
+        redis_client = await get_redis_client()
+        if redis_client:
+            await redis_client.log_activity(
+                "user_created",
+                f"Created new user '{username}' with role '{user_data.role}'",
+                current_user["username"],
+                {"username": username, "role": user_data.role}
+            )
+        
         return {"message": "User created successfully", "username": username}
     else:
         raise HTTPException(status_code=500, detail="Failed to create user")
+
+@app.get("/api/admin/users/{username}/signals")
+async def admin_get_user_signals(username: str, current_user: Dict[str, Any] = Depends(verify_token)):
+    """Get all signals for a specific user with configurations (admin only)"""
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    try:
+        # Check if user exists
+        user_data = await get_user_from_redis(username)
+        if not user_data:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        redis_client = await get_redis_client()
+        if not redis_client:
+            raise HTTPException(status_code=500, detail="Redis not available")
+        
+        # Get all signals for the user
+        signals = await redis_client.get_signals(1000, username=username)
+        
+        # Format signals with detailed configuration information
+        formatted_signals = []
+        for signal in signals:
+            formatted_signal = {
+                "id": signal.get('timestamp', 'unknown'),
+                "market": signal.get('symbol', 'unknown'),
+                "timeframe": signal.get('timeframe', '1h'),
+                "recommendation": signal.get('signal_type', 'HOLD'),
+                "confidence": signal.get('confidence', 0.0),
+                "technical_score": signal.get('technical_score', 0.0),
+                "sentiment_score": signal.get('sentiment_score', 0.0),
+                "fused_score": signal.get('fused_score', 0.0),
+                "reasoning": signal.get('reasoning', 'No reasoning provided'),
+                "generated_at": signal.get('timestamp', ''),
+                "configuration": {
+                    "buy_threshold": signal.get('applied_buy_threshold', 0.5),
+                    "sell_threshold": signal.get('applied_sell_threshold', -0.5),
+                    "tech_weight": signal.get('applied_tech_weight', 0.6),
+                    "sentiment_weight": signal.get('applied_sentiment_weight', 0.4)
+                },
+                "risk_management": {
+                    "stop_loss": signal.get('stop_loss'),
+                    "take_profit": signal.get('take_profit')
+                }
+            }
+            formatted_signals.append(formatted_signal)
+        
+        return {
+            "username": username,
+            "total_signals": len(formatted_signals),
+            "signals": formatted_signals
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get signals for user {username}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve signals: {str(e)}")
 
 @app.delete("/api/admin/users/{username}/signals")
 async def admin_clear_user_signals(username: str, current_user: Dict[str, Any] = Depends(verify_token)):
@@ -405,10 +724,12 @@ async def admin_clear_user_signals(username: str, current_user: Dict[str, Any] =
     if current_user["role"] != "admin":
         raise HTTPException(status_code=403, detail="Admin access required")
     
-    if username not in USERS_DB:
-        raise HTTPException(status_code=404, detail="User not found")
-    
     try:
+        # Check if user exists
+        user_data = await get_user_from_redis(username)
+        if not user_data:
+            raise HTTPException(status_code=404, detail="User not found")
+        
         redis_client = await get_redis_client()
         if redis_client:
             # Clear user-specific signals
@@ -418,9 +739,523 @@ async def admin_clear_user_signals(username: str, current_user: Dict[str, Any] =
             return {"message": f"Cleared {cleared_count} signals for user {username}", "cleared_count": cleared_count}
         else:
             raise HTTPException(status_code=500, detail="Redis not available")
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Failed to clear signals for user {username}: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to clear signals: {str(e)}")
+
+@app.put("/api/admin/users/{username}")
+async def admin_edit_user(username: str, user_data: UserUpdate, current_user: Dict[str, Any] = Depends(verify_token)):
+    """Edit user details (admin only)"""
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    try:
+        # Check if user exists
+        existing_user = await get_user_from_redis(username)
+        if not existing_user:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        # Check if new username already exists (if username is being changed)
+        if user_data.username != username:
+            existing_new_user = await get_user_from_redis(user_data.username)
+            if existing_new_user:
+                raise HTTPException(status_code=400, detail="Username already exists")
+        
+        # Hash the password only if provided
+        if user_data.password and user_data.password.strip():
+            password_hash = hashlib.sha256(user_data.password.encode()).hexdigest()
+        else:
+            # Keep existing password
+            password_hash = existing_user.get("password_hash")
+        
+        # Handle activation period extension
+        activation_expires_at = existing_user.get("activation_expires_at")
+        activation_days = existing_user.get("activation_days", 30)
+        
+        if user_data.activation_days is not None and user_data.role != "admin":
+            # Update activation period (can be extension or deactivation)
+            if user_data.activation_days <= 0:
+                # Deactivate user by setting activation_days to 0
+                activation_expires_at = None
+                activation_days = 0
+            else:
+                # Extend activation period
+                activation_expires_at = extend_user_activation(activation_expires_at, user_data.activation_days)
+                activation_days = user_data.activation_days
+        
+        # Update user data
+        updated_user_data = {
+            "username": user_data.username,
+            "password_hash": password_hash,
+            "role": user_data.role,
+            "created_at": existing_user.get("created_at", datetime.now().isoformat()),
+            "last_login": existing_user.get("last_login"),
+            "status": existing_user.get("status", "active"),
+            "first_name": user_data.first_name,
+            "last_name": user_data.last_name,
+            "email": user_data.email,
+            "phone": user_data.phone,
+            "additional_info": user_data.additional_info,
+            "activation_expires_at": activation_expires_at,
+            "activation_days": activation_days
+        }
+        
+        # Store updated user in Redis
+        success = await store_user_in_redis(user_data.username, updated_user_data)
+        
+        if success:
+            # If username changed, remove old user entry
+            if user_data.username != username:
+                redis_client = await get_redis_client()
+                if redis_client:
+                    await redis_client.delete(f"user:{username}")
+            
+            # Log activity
+            redis_client = await get_redis_client()
+            if redis_client:
+                await redis_client.log_activity(
+                    "user_updated",
+                    f"Updated user '{user_data.username}' (role: {user_data.role})",
+                    current_user["username"],
+                    {"username": user_data.username, "role": user_data.role, "old_username": username if user_data.username != username else None}
+                )
+            
+            logger.info(f"Updated user {user_data.username}")
+            return {"message": f"User {user_data.username} updated successfully"}
+        else:
+            raise HTTPException(status_code=500, detail="Failed to update user")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to update user {username}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to update user: {str(e)}")
+
+@app.delete("/api/admin/users/{username}")
+async def admin_delete_user(username: str, delete_signals: bool = False, current_user: Dict[str, Any] = Depends(verify_token)):
+    """Delete user (admin only)"""
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    # Prevent admin from deleting themselves
+    if username == current_user["username"]:
+        raise HTTPException(status_code=400, detail="Cannot delete your own account")
+    
+    try:
+        # Check if user exists
+        user_data = await get_user_from_redis(username)
+        if not user_data:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        # Check if this is the last admin user
+        if user_data.get("role") == "admin":
+            all_users = await get_all_users_from_redis()
+            admin_count = sum(1 for user in all_users if user.get("role") == "admin")
+            
+            if admin_count <= 1:
+                raise HTTPException(
+                    status_code=400, 
+                    detail="Cannot delete the last admin user. At least one admin must remain in the system."
+                )
+        
+        redis_client = await get_redis_client()
+        if not redis_client:
+            raise HTTPException(status_code=500, detail="Redis not available")
+        
+        # Delete user signals if requested
+        signals_deleted = 0
+        if delete_signals:
+            signals_deleted = await redis_client.clear_user_signals(username)
+            logger.info(f"Deleted {signals_deleted} signals for user {username}")
+        
+        # Delete user from Redis using the proper method
+        await redis_client.delete_user(username)
+        
+        # Log activity
+        await redis_client.log_activity(
+            "user_deleted",
+            f"Deleted user '{username}'" + (f" and {signals_deleted} trading tips" if signals_deleted > 0 else ""),
+            current_user["username"],
+            {"username": username, "signals_deleted": signals_deleted}
+        )
+        
+        logger.info(f"Deleted user {username}")
+        return {
+            "message": f"User {username} deleted successfully",
+            "signals_deleted": signals_deleted
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to delete user {username}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to delete user: {str(e)}")
+
+@app.post("/api/admin/users/{username}/extend-activation")
+async def admin_extend_user_activation(username: str, extension_data: UserActivationExtension, current_user: Dict[str, Any] = Depends(verify_token)):
+    """Extend user activation period (admin only)"""
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    try:
+        # Get existing user
+        user_data = await get_user_from_redis(username)
+        if not user_data:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        # Check if user is admin (admins don't have activation periods)
+        if user_data.get("role") == "admin":
+            raise HTTPException(status_code=400, detail="Admin users do not have activation periods")
+        
+        # Extend or deactivate user
+        current_expiry = user_data.get("activation_expires_at")
+        current_days = user_data.get("activation_days", 0)
+        
+        if extension_data.additional_days <= 0:
+            # Deactivate user
+            user_data["activation_expires_at"] = None
+            user_data["activation_days"] = 0
+            new_expiry = None
+        else:
+            # Extend activation period
+            new_expiry = extend_user_activation(current_expiry, extension_data.additional_days)
+            user_data["activation_expires_at"] = new_expiry
+            user_data["activation_days"] = extension_data.additional_days
+        
+        # Store updated user
+        success = await store_user_in_redis(username, user_data)
+        
+        if success:
+            # Log activity
+            redis_client = await get_redis_client()
+            if redis_client:
+                await redis_client.log_activity(
+                    "user_activation_extended",
+                    f"Extended activation period for user '{username}' by {extension_data.additional_days} days",
+                    current_user["username"],
+                    {
+                        "username": username,
+                        "additional_days": extension_data.additional_days,
+                        "new_expiry": new_expiry,
+                        "reason": extension_data.reason
+                    }
+                )
+            
+            if extension_data.additional_days <= 0:
+                return {
+                    "message": f"User {username} has been deactivated",
+                    "new_expiry": None,
+                    "additional_days": 0
+                }
+            else:
+                return {
+                    "message": f"User {username} activation extended by {extension_data.additional_days} days",
+                    "new_expiry": new_expiry,
+                    "additional_days": extension_data.additional_days
+                }
+        else:
+            raise HTTPException(status_code=500, detail="Failed to update user activation")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to extend user activation for {username}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to extend user activation: {str(e)}")
+
+# User Profile API endpoints
+@app.get("/api/user/profile")
+async def get_user_profile(current_user: Dict[str, Any] = Depends(verify_token)):
+    """Get current user's profile information"""
+    try:
+        redis_client = await get_redis_client()
+        if not redis_client:
+            raise HTTPException(status_code=500, detail="Redis not available")
+        
+        username = current_user["username"]
+        user_data = await redis_client.get_user(username)
+        
+        if not user_data:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        # Get user status with activation info
+        actual_status = get_user_status_with_activation(user_data)
+        
+        return {
+            "username": user_data.get("username"),
+            "role": user_data.get("role"),
+            "status": actual_status,
+            "created_at": user_data.get("created_at"),
+            "last_login": user_data.get("last_login"),
+            "first_name": user_data.get("first_name"),
+            "last_name": user_data.get("last_name"),
+            "email": user_data.get("email"),
+            "phone": user_data.get("phone"),
+            "additional_info": user_data.get("additional_info"),
+            "activation_expires_at": user_data.get("activation_expires_at"),
+            "activation_days": user_data.get("activation_days")
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get user profile for {username}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get user profile: {str(e)}")
+
+@app.put("/api/user/profile")
+async def update_user_profile(profile_data: UserProfileUpdate, current_user: Dict[str, Any] = Depends(verify_token)):
+    """Update current user's profile information (excluding activation period)"""
+    try:
+        redis_client = await get_redis_client()
+        if not redis_client:
+            raise HTTPException(status_code=500, detail="Redis not available")
+        
+        username = current_user["username"]
+        user_data = await redis_client.get_user(username)
+        
+        if not user_data:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        # Update user data (excluding activation period - only admin can manage that)
+        updated_data = {
+            "username": username,
+            "password_hash": user_data.get("password_hash") or user_data.get("password"),  # Keep existing password hash
+            "role": user_data.get("role"),  # Keep existing role
+            "created_at": user_data.get("created_at"),  # Keep original creation date
+            "last_login": user_data.get("last_login"),  # Keep last login
+            "first_name": profile_data.first_name if profile_data.first_name is not None else user_data.get("first_name"),
+            "last_name": profile_data.last_name if profile_data.last_name is not None else user_data.get("last_name"),
+            "email": profile_data.email if profile_data.email is not None else user_data.get("email"),
+            "phone": profile_data.phone if profile_data.phone is not None else user_data.get("phone"),
+            "additional_info": profile_data.additional_info if profile_data.additional_info is not None else user_data.get("additional_info"),
+            "activation_expires_at": user_data.get("activation_expires_at"),  # Keep activation info
+            "activation_days": user_data.get("activation_days")  # Keep activation info
+        }
+        
+        # Update password if provided
+        if profile_data.password:
+            updated_data["password_hash"] = hashlib.sha256(profile_data.password.encode()).hexdigest()
+        
+        # Store updated user data
+        success = await redis_client.store_user(username, updated_data)
+        
+        if success:
+            # Log the activity
+            await redis_client.log_activity(
+                "user_profile_updated",
+                f"User '{username}' updated their profile",
+                username,
+                {
+                    "updated_fields": [k for k, v in profile_data.dict().items() if v is not None]
+                }
+            )
+            
+            return {
+                "message": "Profile updated successfully",
+                "username": username
+            }
+        else:
+            raise HTTPException(status_code=500, detail="Failed to update profile")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to update user profile for {username}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to update profile: {str(e)}")
+
+@app.put("/api/user/change-password")
+async def change_user_password(password_data: dict, current_user: Dict[str, Any] = Depends(verify_token)):
+    """Change current user's password"""
+    try:
+        redis_client = await get_redis_client()
+        if not redis_client:
+            raise HTTPException(status_code=500, detail="Redis not available")
+        
+        username = current_user["username"]
+        user_data = await redis_client.get_user(username)
+        
+        if not user_data:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        # Verify current password
+        current_password = password_data.get("current_password")
+        new_password = password_data.get("new_password")
+        
+        if not current_password or not new_password:
+            raise HTTPException(status_code=400, detail="Current password and new password are required")
+        
+        current_password_hash = hashlib.sha256(current_password.encode()).hexdigest()
+        if user_data.get("password_hash") != current_password_hash:
+            raise HTTPException(status_code=400, detail="Current password is incorrect")
+        
+        if len(new_password) < 6:
+            raise HTTPException(status_code=400, detail="New password must be at least 6 characters long")
+        
+        # Update password
+        updated_data = user_data.copy()
+        updated_data["password_hash"] = hashlib.sha256(new_password.encode()).hexdigest()
+        
+        success = await redis_client.store_user(username, updated_data)
+        
+        if success:
+            # Log the activity
+            await redis_client.log_activity(
+                "user_password_changed",
+                f"User '{username}' changed their password",
+                username,
+                {}
+            )
+            
+            return {
+                "message": "Password changed successfully",
+                "username": username
+            }
+        else:
+            raise HTTPException(status_code=500, detail="Failed to change password")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to change password for {username}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to change password: {str(e)}")
+
+# Settings API endpoints
+@app.get("/api/admin/settings")
+async def admin_get_settings(current_user: Dict[str, Any] = Depends(verify_token)):
+    """Get all system settings (admin only)"""
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    try:
+        return {
+            "config": system_config.dict(),
+            "categories": {
+                "trading": ["active_markets", "signal_generation_enabled", "generation_frequency_minutes", "default_timeframe"],
+                "technical": ["buy_threshold", "sell_threshold", "technical_weight", "sentiment_weight"],
+                "data": ["data_provider", "data_refresh_rate_minutes", "historical_data_days"],
+                "news": ["news_weight", "news_keywords"],
+                "security": ["session_timeout_hours", "max_login_attempts", "password_min_length", "api_rate_limit_per_minute"],
+                "ui": ["auto_refresh_enabled", "refresh_interval_seconds", "theme", "date_format", "timezone", "currency"],
+                "trading_config": ["max_position_size", "default_stop_loss_percent", "default_take_profit_percent", "risk_per_trade_percent"],
+                "notifications": ["email_notifications_enabled", "smtp_server", "smtp_port", "smtp_username", "smtp_password", "alert_recipients"],
+                "system": ["log_level", "cache_ttl_hours", "backup_enabled", "backup_frequency_hours"]
+            }
+        }
+    except Exception as e:
+        logger.error(f"Failed to get settings: {e}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve settings")
+
+@app.put("/api/admin/settings/{key}")
+async def admin_update_setting(key: str, config_update: ConfigUpdate, current_user: Dict[str, Any] = Depends(verify_token)):
+    """Update a specific setting (admin only)"""
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    try:
+        success = await update_config(key, config_update.value, config_update.category)
+        if success:
+            return {"message": f"Setting {key} updated successfully", "value": config_update.value}
+        else:
+            raise HTTPException(status_code=400, detail=f"Failed to update setting {key}")
+    except Exception as e:
+        logger.error(f"Failed to update setting {key}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to update setting: {str(e)}")
+
+@app.post("/api/admin/settings/bulk")
+async def admin_bulk_update_settings(updates: List[ConfigUpdate], current_user: Dict[str, Any] = Depends(verify_token)):
+    """Update multiple settings at once (admin only)"""
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    try:
+        results = []
+        for update in updates:
+            success = await update_config(update.key, update.value, update.category)
+            results.append({"key": update.key, "success": success})
+        
+        # Log activity
+        redis_client = await get_redis_client()
+        if redis_client:
+            await redis_client.log_activity(
+                "settings_updated",
+                f"Bulk updated {len(updates)} settings",
+                current_user["username"],
+                {"updated_keys": [u.key for u in updates]}
+            )
+        
+        return {"message": f"Updated {len(updates)} settings", "results": results}
+    except Exception as e:
+        logger.error(f"Failed to bulk update settings: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to update settings: {str(e)}")
+
+@app.post("/api/admin/settings/reset")
+async def admin_reset_settings(current_user: Dict[str, Any] = Depends(verify_token)):
+    """Reset all settings to defaults (admin only)"""
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    try:
+        global system_config
+        system_config = SystemConfig()
+        await save_config_to_redis()
+        
+        # Log activity
+        redis_client = await get_redis_client()
+        if redis_client:
+            await redis_client.log_activity(
+                "settings_reset",
+                "Reset all settings to defaults",
+                current_user["username"],
+                {}
+            )
+        
+        return {"message": "All settings reset to defaults"}
+    except Exception as e:
+        logger.error(f"Failed to reset settings: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to reset settings: {str(e)}")
+
+@app.get("/api/admin/settings/export")
+async def admin_export_settings(current_user: Dict[str, Any] = Depends(verify_token)):
+    """Export current settings as JSON (admin only)"""
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    try:
+        return {
+            "config": system_config.dict(),
+            "exported_at": datetime.now().isoformat(),
+            "version": "1.0"
+        }
+    except Exception as e:
+        logger.error(f"Failed to export settings: {e}")
+        raise HTTPException(status_code=500, detail="Failed to export settings")
+
+@app.post("/api/admin/settings/import")
+async def admin_import_settings(config_data: dict, current_user: Dict[str, Any] = Depends(verify_token)):
+    """Import settings from JSON (admin only)"""
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    try:
+        global system_config
+        system_config = SystemConfig(**config_data)
+        await save_config_to_redis()
+        
+        # Log activity
+        redis_client = await get_redis_client()
+        if redis_client:
+            await redis_client.log_activity(
+                "settings_imported",
+                "Imported settings from file",
+                current_user["username"],
+                {"imported_keys": list(config_data.keys())}
+            )
+        
+        return {"message": "Settings imported successfully"}
+    except Exception as e:
+        logger.error(f"Failed to import settings: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to import settings: {str(e)}")
 
 # Global state
 agent_status = {
@@ -430,6 +1265,125 @@ agent_status = {
     "total_signals": 0,
     "uptime": "0:00:00"
 }
+
+# Global system configuration
+system_config = SystemConfig()
+
+# Configuration change callbacks
+config_change_callbacks = []
+
+# Configuration management functions
+async def load_config_from_redis():
+    """Load configuration from Redis"""
+    try:
+        redis_client = await get_redis_client()
+        if redis_client:
+            config_data = await redis_client.client.get("system:config")
+            if config_data:
+                config_dict = json.loads(config_data)
+                global system_config
+                system_config = SystemConfig(**config_dict)
+                logger.info("Configuration loaded from Redis")
+                return True
+    except Exception as e:
+        logger.error(f"Failed to load config from Redis: {e}")
+    return False
+
+async def save_config_to_redis():
+    """Save configuration to Redis"""
+    try:
+        redis_client = await get_redis_client()
+        if redis_client:
+            config_dict = system_config.dict()
+            await redis_client.client.set("system:config", json.dumps(config_dict))
+            logger.info("Configuration saved to Redis")
+            return True
+    except Exception as e:
+        logger.error(f"Failed to save config to Redis: {e}")
+    return False
+
+async def update_config(key: str, value: Any, category: str = "general"):
+    """Update a configuration value and trigger callbacks"""
+    try:
+        global system_config
+        if hasattr(system_config, key):
+            old_value = getattr(system_config, key)
+            setattr(system_config, key, value)
+            
+            # Save to Redis
+            await save_config_to_redis()
+            
+            # Trigger callbacks
+            for callback in config_change_callbacks:
+                try:
+                    await callback(key, value, old_value, category)
+                except Exception as e:
+                    logger.error(f"Config callback error: {e}")
+            
+            logger.info(f"Configuration updated: {key} = {value}")
+            return True
+        else:
+            logger.error(f"Configuration key not found: {key}")
+            return False
+    except Exception as e:
+        logger.error(f"Failed to update config: {e}")
+        return False
+
+def register_config_callback(callback):
+    """Register a callback for configuration changes"""
+    config_change_callbacks.append(callback)
+
+# User activation period management functions
+def calculate_activation_expiry(activation_days: int) -> Optional[str]:
+    """Calculate activation expiry date"""
+    if activation_days <= 0:
+        return None  # No expiry set for zero or negative days (immediate deactivation)
+    expiry_date = datetime.now() + timedelta(days=activation_days)
+    return expiry_date.isoformat()
+
+def is_user_activation_valid(activation_expires_at: Optional[str], activation_days: Optional[int] = None) -> bool:
+    """Check if user activation is still valid"""
+    # If activation_days is 0 or negative, user is immediately deactivated
+    if activation_days is not None and activation_days <= 0:
+        return False
+    
+    if not activation_expires_at:
+        return True  # No expiry set (admin users or legacy users)
+    
+    try:
+        expiry_date = datetime.fromisoformat(activation_expires_at)
+        return datetime.now() < expiry_date
+    except (ValueError, TypeError):
+        return True  # Invalid date format, assume valid
+
+def extend_user_activation(current_expiry: Optional[str], additional_days: int) -> str:
+    """Extend user activation period"""
+    if not current_expiry:
+        # No current expiry, set from now
+        return calculate_activation_expiry(additional_days)
+    
+    try:
+        current_date = datetime.fromisoformat(current_expiry)
+        # If current expiry is in the past, extend from now
+        if current_date < datetime.now():
+            return calculate_activation_expiry(additional_days)
+        else:
+            # Extend from current expiry date
+            new_expiry = current_date + timedelta(days=additional_days)
+            return new_expiry.isoformat()
+    except (ValueError, TypeError):
+        # Invalid current expiry, set from now
+        return calculate_activation_expiry(additional_days)
+
+def get_user_status_with_activation(user_data: Dict[str, Any]) -> str:
+    """Get user status considering activation period"""
+    if user_data.get("role") == "admin":
+        return user_data.get("status", "active")  # Admins are always active
+    
+    if not is_user_activation_valid(user_data.get("activation_expires_at"), user_data.get("activation_days")):
+        return "inactive"
+    
+    return user_data.get("status", "active")
 
 # Simple in-memory cache for market data (5 minute TTL)
 market_data_cache = {}
@@ -473,11 +1427,11 @@ async def get_status(request: Request) -> AgentStatus:
             if current_user:
                 # For authenticated users, show only their own signal count
                 user_signals = await redis_client.get_signals(1000, username=current_user['username'])
-                status_data["total_signals"] = len(user_signals)
+                status_data["total_trading_tips"] = len(user_signals)
                 logger.debug(f"User {current_user['username']} sees {len(user_signals)} signals")
             else:
                 # For unauthenticated requests, show global count
-                status_data["total_signals"] = await redis_client.get_signal_count()
+                status_data["total_trading_tips"] = await redis_client.get_signal_count()
                 logger.debug(f"Unauthenticated request sees {status_data['total_signals']} signals")
     except Exception as e:
         logger.warning(f"Failed to update signal count from Redis: {e}")
@@ -530,7 +1484,7 @@ async def get_signals(symbol: Optional[str] = None, limit: int = 50, current_use
                 except Exception as e:
                     logger.warning(f"Failed to convert signal dict: {e}")
                     continue
-            
+        
             return valid_signals
         else:
             logger.warning("Redis not available - returning empty signals list")
@@ -602,41 +1556,118 @@ async def get_signal_stats() -> Dict[str, Any]:
             "recent_activity": []
         }
 
+@app.get("/api/admin/signals/all")
+async def admin_get_all_signals(limit: int = 100, offset: int = 0, current_user: Dict[str, Any] = Depends(verify_token)):
+    """Get all trading signals with detailed information (admin only)"""
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    try:
+        redis_client = await get_redis_client()
+        if not redis_client:
+            raise HTTPException(status_code=500, detail="Redis not available")
+        
+        # Get all signals
+        all_signals = await redis_client.get_signals(limit + offset)
+        
+        # Apply pagination
+        paginated_signals = all_signals[offset:offset + limit]
+        
+        # Format signals with detailed information
+        formatted_signals = []
+        for signal in paginated_signals:
+            formatted_signal = {
+                "id": signal.get('timestamp', 'unknown'),
+                "market": signal.get('symbol', 'unknown'),
+                "timeframe": signal.get('timeframe', '1h'),
+                "recommendation": signal.get('signal_type', 'HOLD'),
+                "confidence": signal.get('confidence', 0.0),
+                "technical_score": signal.get('technical_score', 0.0),
+                "sentiment_score": signal.get('sentiment_score', 0.0),
+                "fused_score": signal.get('fused_score', 0.0),
+                "reasoning": signal.get('reasoning', 'No reasoning provided'),
+                "generated_at": signal.get('timestamp', ''),
+                "username": signal.get('username', 'unknown'),
+                "configuration": {
+                    "buy_threshold": signal.get('applied_buy_threshold', 0.5),
+                    "sell_threshold": signal.get('applied_sell_threshold', -0.5),
+                    "tech_weight": signal.get('applied_tech_weight', 0.6),
+                    "sentiment_weight": signal.get('applied_sentiment_weight', 0.4)
+                },
+                "risk_management": {
+                    "stop_loss": signal.get('stop_loss'),
+                    "take_profit": signal.get('take_profit')
+                }
+            }
+            formatted_signals.append(formatted_signal)
+        
+        return {
+            "signals": formatted_signals,
+            "total_count": len(all_signals),
+            "returned_count": len(formatted_signals),
+            "offset": offset,
+            "limit": limit
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to get all signals: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get signals")
+
 
 @app.post("/api/signals/generate")
 async def generate_signal(request: SignalRequest, current_user: Dict[str, Any] = Depends(verify_token)) -> TradingSignal:
     """Generate a new trading signal for a symbol"""
     try:
+        logger.info(f"Starting signal generation for {request.symbol}")
         # Fetch market data
         if "/" in request.symbol:  # Crypto
-            ohlcv = await fetch_ohlcv(request.symbol, request.timeframe)
+            logger.info(f"Fetching crypto data for {request.symbol}")
+            ohlcv = fetch_ohlcv(request.symbol, request.timeframe)
         else:  # Stock/ETF
-            ohlcv = await fetch_alpaca_ohlcv(request.symbol, request.timeframe)
+            logger.info(f"Fetching stock data for {request.symbol}")
+            ohlcv = fetch_alpaca_ohlcv(request.symbol, request.timeframe)
+        
+        logger.info(f"OHLCV type: {type(ohlcv)}, value: {ohlcv if isinstance(ohlcv, str) else 'DataFrame'}")
         
         if ohlcv is None or ohlcv.empty:
             raise HTTPException(status_code=400, detail="Could not fetch market data")
         
         # Calculate indicators
+        logger.info("Starting indicators calculation")
         close = ohlcv['close']
+        high = ohlcv['high']
+        low = ohlcv['low']
         rsi = compute_rsi(close)
         ema_12 = compute_ema(close, 12)
         ema_26 = compute_ema(close, 26)
-        macd, macd_signal, macd_hist = compute_macd(close)
-        atr = compute_atr(ohlcv)
+        macd_df = compute_macd(close)
+        macd = macd_df['macd']
+        macd_signal = macd_df['signal']
+        macd_hist = macd_df['hist']
+        atr = compute_atr(high, low, close)
+        logger.info("Indicators calculation completed")
         
         # Get sentiment from news
+        logger.info("Starting sentiment analysis")
         sentiment_score = 0.0
         if sentiment_analyzer:
             try:
-                headlines = await fetch_headlines()
+                headlines = fetch_headlines([
+                    "https://news.google.com/rss/search?q=stock+market&hl=en-US&gl=US&ceid=US:en",
+                    "https://news.google.com/rss/search?q=crypto+btc&hl=en-US&gl=US&ceid=US:en",
+                ])
                 if headlines:
                     # Analyze first few headlines
                     text_sample = " ".join(headlines[:3])
                     sentiment_score = sentiment_analyzer.score(text_sample)
             except Exception as e:
                 logger.warning(f"Could not fetch sentiment: {e}")
+        logger.info("Sentiment analysis completed")
         
         # Calculate technical score
+        logger.info(f"Close type: {type(close)}, value: {close if isinstance(close, str) else 'Series'}")
+        logger.info(f"RSI type: {type(rsi)}, empty: {rsi.empty if hasattr(rsi, 'empty') else 'no empty attr'}")
+        logger.info(f"MACD hist type: {type(macd_hist)}, empty: {macd_hist.empty if hasattr(macd_hist, 'empty') else 'no empty attr'}")
         tech_score = 0.0
         if not close.empty:
             current_close = close.iloc[-1]
@@ -656,10 +1687,14 @@ async def generate_signal(request: SignalRequest, current_user: Dict[str, Any] =
         sentiment_weight = 0.4
         fused_score = tech_weight * tech_score + sentiment_weight * sentiment_score
         
+        # Define thresholds
+        buy_threshold = 0.7
+        sell_threshold = -0.7
+        
         # Determine signal type
-        if fused_score >= 0.7:
+        if fused_score >= buy_threshold:
             signal_type = "BUY"
-        elif fused_score <= -0.7:
+        elif fused_score <= sell_threshold:
             signal_type = "SELL"
         else:
             signal_type = "HOLD"
@@ -707,6 +1742,22 @@ async def generate_signal(request: SignalRequest, current_user: Dict[str, Any] =
             if redis_client:
                 # Use the signal_dict that already has username added
                 await redis_client.store_signal(signal_dict)
+                
+                # Log activity
+                await redis_client.log_activity(
+                    "signal_generated",
+                    f"Generated {signal.signal_type} trading tip for {signal.symbol} (confidence: {(signal.confidence * 100):.1f}%)",
+                    current_user["username"],
+                    {
+                        "symbol": signal.symbol,
+                        "signal_type": signal.signal_type,
+                        "confidence": signal.confidence,
+                        "technical_score": signal.technical_score,
+                        "sentiment_score": signal.sentiment_score,
+                        "fused_score": signal.fused_score
+                    }
+                )
+                
                 logger.info(f"Signal stored in Redis for user {current_user['username']}: {signal.symbol}")
             else:
                 logger.warning("Redis not available - signal not persisted")
@@ -743,8 +1794,6 @@ async def get_config() -> Dict[str, Any]:
             "timeframe": config.universe.timeframe,
             "buy_threshold": config.thresholds.buy_threshold,
             "sell_threshold": config.thresholds.sell_threshold,
-            "tech_weight": config.thresholds.tech_weight,
-            "sentiment_weight": config.thresholds.sentiment_weight,
             "log_level": os.getenv("AGENT_LOG_LEVEL", "info"),
             "log_format": os.getenv("AGENT_LOG_FORMAT", "simple")
         }
@@ -769,9 +1818,9 @@ async def get_market_data(symbol: str, timeframe: str = "1h", limit: int = 100):
     """Get market data for a symbol"""
     try:
         if "/" in symbol:  # Crypto
-            ohlcv = await fetch_ohlcv(symbol, timeframe)
+            ohlcv = fetch_ohlcv(symbol, timeframe)
         else:  # Stock/ETF
-            ohlcv = await fetch_alpaca_ohlcv(symbol, timeframe)
+            ohlcv = fetch_alpaca_ohlcv(symbol, timeframe)
         
         if ohlcv is None or ohlcv.empty:
             raise HTTPException(status_code=400, detail="Could not fetch market data")
@@ -794,14 +1843,127 @@ async def get_market_data(symbol: str, timeframe: str = "1h", limit: int = 100):
         logger.error(f"Error fetching market data: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/api/market-data/all/overview")
+async def get_market_overview(timeframe: str = "1h"):
+    """Get market overview for all configured symbols"""
+    try:
+        # Get configured symbols
+        config = load_config_from_env()
+        symbols = config.universe.tickers
+        
+        # Fetch data for all symbols
+        symbols_data = []
+        for symbol in symbols:
+            try:
+                if "/" in symbol:  # Crypto
+                    ohlcv = fetch_ohlcv(symbol, timeframe)
+                else:  # Stock/ETF
+                    ohlcv = fetch_alpaca_ohlcv(symbol, timeframe)
+                
+                if ohlcv is not None and not ohlcv.empty:
+                    latest = ohlcv.iloc[-1]
+                    prev = ohlcv.iloc[-2] if len(ohlcv) > 1 else latest
+                    
+                    change = latest['close'] - prev['close']
+                    change_percent = (change / prev['close']) * 100 if prev['close'] != 0 else 0
+                    
+                    # Handle NaN and infinite values
+                    def safe_float(value):
+                        import math
+                        if math.isnan(value) or math.isinf(value):
+                            return 0.0
+                        return float(value)
+                    
+                    symbols_data.append({
+                            "symbol": symbol,
+                        "price": safe_float(latest['close']),
+                        "change": safe_float(change),
+                        "change_percent": safe_float(change_percent),
+                        "volume": safe_float(latest['volume']),
+                        "timestamp": latest.name.isoformat() if hasattr(latest.name, 'isoformat') else str(latest.name)
+                        })
+                else:
+                    symbols_data.append({
+                            "symbol": symbol,
+                        "error": "No data available"
+                    })
+            except Exception as e:
+                symbols_data.append({
+                    "symbol": symbol,
+                    "error": str(e)
+                })
+        
+        return {
+            "symbols": symbols_data,
+            "timeframe": timeframe,
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error fetching market overview: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/api/health")
 async def health_check():
-    """Health check endpoint"""
-    return {
-        "status": "healthy",
-        "timestamp": datetime.now().isoformat(),
-        "version": "1.0.0"
-    }
+    """Health check endpoint with system information"""
+    try:
+        # Get system information
+        import psutil
+        import platform
+        
+        # System uptime
+        boot_time = datetime.fromtimestamp(psutil.boot_time())
+        uptime = datetime.now() - boot_time
+        uptime_str = str(uptime).split('.')[0]
+        
+        # Application uptime
+        app_uptime = datetime.now() - APP_START_TIME
+        app_uptime_str = str(app_uptime).split('.')[0]
+        
+        # CPU and memory
+        cpu_percent = psutil.cpu_percent(interval=0.1)
+        memory = psutil.virtual_memory()
+        disk = psutil.disk_usage('/')
+        
+        # Redis status
+        redis_client = await get_redis_client()
+        redis_status = "Connected" if redis_client and await redis_client.is_connected() else "Disconnected"
+        
+        return {
+            "status": "healthy",
+            "timestamp": datetime.now().isoformat(),
+            "version": APP_VERSION,
+            "system_info": {
+                "system_uptime": uptime_str,
+                "app_uptime": app_uptime_str,
+                "cpu_usage": round(cpu_percent, 1),
+                "memory_usage": round(memory.percent, 1),
+                "memory_available": f"{memory.available // (1024**3)} GB",
+                "disk_usage": round(disk.percent, 1),
+                "disk_free": f"{disk.free // (1024**3)} GB",
+                "platform": platform.system(),
+                "python_version": platform.python_version(),
+                "redis_status": redis_status
+            }
+        }
+    except Exception as e:
+        logger.warning(f"Could not get system information for health check: {e}")
+        return {
+            "status": "healthy",
+            "timestamp": datetime.now().isoformat(),
+            "version": APP_VERSION,
+            "system_info": {
+                "system_uptime": "Unknown",
+                "app_uptime": "Unknown",
+                "cpu_usage": 0,
+                "memory_usage": 0,
+                "memory_available": "Unknown",
+                "disk_usage": 0,
+                "disk_free": "Unknown",
+                "platform": "Unknown",
+                "python_version": "Unknown",
+                "redis_status": "Unknown"
+            }
+        }
 
 @app.get("/api/redis/status")
 async def redis_status():
@@ -880,6 +2042,13 @@ async def startup_event():
         agent_status["active_symbols"] = config.universe.tickers
     except Exception as e:
         logger.warning(f"Could not load initial config: {e}")
+    
+    # Load system configuration from Redis
+    try:
+        await load_config_from_redis()
+        logger.info("System configuration loaded")
+    except Exception as e:
+        logger.warning(f"Could not load system configuration: {e}")
 
 @app.on_event("shutdown")
 async def shutdown_event():
@@ -898,6 +2067,6 @@ if __name__ == "__main__":
         "web.main:app",
         host="0.0.0.0",
         port=8000,
-        reload=True,
+        reload=False,
         log_level="info"
     )

@@ -22,7 +22,7 @@ def fetch_headlines(feeds: List[str], limit_per_feed: int = 5) -> List[str]:
 				logger.warning(f"No entries found in feed: {url}")
 				continue
 			
-			logger.debug(f"Found {len(feeds.entries)} entries in feed: {url}")
+			logger.debug(f"Found {len(feed.entries)} entries in feed: {url}")
 			
 			feed_texts = []
 			for j, entry in enumerate(feed.entries[:limit_per_feed]):

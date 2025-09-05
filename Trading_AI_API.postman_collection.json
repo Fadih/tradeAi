@@ -1,0 +1,535 @@
+{
+  "info": {
+    "name": "Trading AI Tips API",
+    "description": "Complete API collection for Trading AI Tips system",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "version": "1.0.0"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8000",
+      "type": "string"
+    },
+    {
+      "key": "admin_token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "user_token",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Authentication",
+      "item": [
+        {
+          "name": "Login",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"admin\",\n  \"password\": \"admin123\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/auth/login",
+              "host": ["{{base_url}}"],
+              "path": ["api", "auth", "login"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    pm.collectionVariables.set('admin_token', response.access_token);",
+                  "    console.log('Admin token saved:', response.access_token);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Dashboard",
+      "item": [
+        {
+          "name": "Get Status",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/status",
+              "host": ["{{base_url}}"],
+              "path": ["api", "status"]
+            }
+          }
+        },
+        {
+          "name": "Get Configuration",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/config",
+              "host": ["{{base_url}}"],
+              "path": ["api", "config"]
+            }
+          }
+        },
+        {
+          "name": "Generate Signal",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"symbol\": \"BTC/USD\",\n  \"timeframe\": \"1h\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/generate-signal",
+              "host": ["{{base_url}}"],
+              "path": ["api", "generate-signal"]
+            }
+          }
+        },
+        {
+          "name": "Get User Signals",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/signals?limit=10",
+              "host": ["{{base_url}}"],
+              "path": ["api", "signals"],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "10"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "User Management (Admin)",
+      "item": [
+        {
+          "name": "Get All Users",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/admin/users",
+              "host": ["{{base_url}}"],
+              "path": ["api", "admin", "users"]
+            }
+          }
+        },
+        {
+          "name": "Create User",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"testuser\",\n  \"password\": \"testpass123\",\n  \"role\": \"user\",\n  \"first_name\": \"Test\",\n  \"last_name\": \"User\",\n  \"email\": \"test@example.com\",\n  \"phone\": \"1234567890\",\n  \"activation_days\": 30\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/admin/users",
+              "host": ["{{base_url}}"],
+              "path": ["api", "admin", "users"]
+            }
+          }
+        },
+        {
+          "name": "Edit User",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"testuser\",\n  \"first_name\": \"Updated\",\n  \"last_name\": \"User\",\n  \"email\": \"updated@example.com\",\n  \"activation_days\": 15\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/admin/users/testuser",
+              "host": ["{{base_url}}"],
+              "path": ["api", "admin", "users", "testuser"]
+            }
+          }
+        },
+        {
+          "name": "Extend User Activation",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"testuser\",\n  \"additional_days\": 30,\n  \"reason\": \"Monthly extension\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/admin/users/testuser/extend-activation",
+              "host": ["{{base_url}}"],
+              "path": ["api", "admin", "users", "testuser", "extend-activation"]
+            }
+          }
+        },
+        {
+          "name": "Deactivate User",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"testuser\",\n  \"additional_days\": 0,\n  \"reason\": \"Account suspension\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/admin/users/testuser/extend-activation",
+              "host": ["{{base_url}}"],
+              "path": ["api", "admin", "users", "testuser", "extend-activation"]
+            }
+          }
+        },
+        {
+          "name": "Delete User",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/admin/users/testuser?delete_signals=true",
+              "host": ["{{base_url}}"],
+              "path": ["api", "admin", "users", "testuser"],
+              "query": [
+                {
+                  "key": "delete_signals",
+                  "value": "true"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Clear User Signals",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/admin/users/testuser/signals",
+              "host": ["{{base_url}}"],
+              "path": ["api", "admin", "users", "testuser", "signals"]
+            }
+          }
+        },
+        {
+          "name": "Get Admin Dashboard",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/admin/dashboard",
+              "host": ["{{base_url}}"],
+              "path": ["api", "admin", "dashboard"]
+            }
+          }
+        },
+        {
+          "name": "Get All Signals (Admin)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/admin/signals?limit=25&page=1",
+              "host": ["{{base_url}}"],
+              "path": ["api", "admin", "signals"],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "25"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Settings (Admin)",
+      "item": [
+        {
+          "name": "Get System Settings",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/admin/settings",
+              "host": ["{{base_url}}"],
+              "path": ["api", "admin", "settings"]
+            }
+          }
+        },
+        {
+          "name": "Update Single Setting",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"key\": \"active_markets\",\n  \"value\": [\"BTC/USD\", \"ETH/USD\", \"AAPL\", \"GOOGL\"],\n  \"category\": \"trading\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/admin/settings/active_markets",
+              "host": ["{{base_url}}"],
+              "path": ["api", "admin", "settings", "active_markets"]
+            }
+          }
+        },
+        {
+          "name": "Bulk Update Settings",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "[\n  {\n    \"key\": \"active_markets\",\n    \"value\": [\"BTC/USD\", \"ETH/USD\", \"AAPL\"],\n    \"category\": \"trading\"\n  },\n  {\n    \"key\": \"buy_threshold\",\n    \"value\": 0.8,\n    \"category\": \"technical\"\n  },\n  {\n    \"key\": \"sell_threshold\",\n    \"value\": -0.8,\n    \"category\": \"technical\"\n  }\n]"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/admin/settings/bulk",
+              "host": ["{{base_url}}"],
+              "path": ["api", "admin", "settings", "bulk"]
+            }
+          }
+        },
+        {
+          "name": "Reset Settings",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/admin/settings/reset",
+              "host": ["{{base_url}}"],
+              "path": ["api", "admin", "settings", "reset"]
+            }
+          }
+        },
+        {
+          "name": "Export Settings",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/admin/settings/export",
+              "host": ["{{base_url}}"],
+              "path": ["api", "admin", "settings", "export"]
+            }
+          }
+        },
+        {
+          "name": "Import Settings",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"active_markets\": [\"BTC/USD\", \"ETH/USD\", \"AAPL\"],\n  \"signal_generation_enabled\": true,\n  \"buy_threshold\": 0.7,\n  \"sell_threshold\": -0.7,\n  \"technical_weight\": 0.6,\n  \"sentiment_weight\": 0.4,\n  \"session_timeout_hours\": 24,\n  \"auto_refresh_enabled\": true,\n  \"refresh_interval_seconds\": 30\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/admin/settings/import",
+              "host": ["{{base_url}}"],
+              "path": ["api", "admin", "settings", "import"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Pages",
+      "item": [
+        {
+          "name": "Login Page",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/login",
+              "host": ["{{base_url}}"],
+              "path": ["login"]
+            }
+          }
+        },
+        {
+          "name": "Dashboard Page",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/dashboard",
+              "host": ["{{base_url}}"],
+              "path": ["dashboard"]
+            }
+          }
+        },
+        {
+          "name": "Admin Page",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/admin",
+              "host": ["{{base_url}}"],
+              "path": ["admin"]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
