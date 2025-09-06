@@ -9,9 +9,12 @@ slack-sdk>=3.27.1
 rich>=13.7.1
 feedparser>=6.0.11
 
-# Optional ML deps (install later when enabling models)
-# transformers>=4.42.0
-# torch>=2.2.0
+# ML dependencies for local sentiment analysis
+transformers>=4.42.0
+torch>=2.2.0
+
+# Timezone support
+pytz>=2023.3
 # tensorflow
 # vectorbt or vectorbtpro
 

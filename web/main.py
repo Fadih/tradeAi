@@ -17,12 +17,20 @@ import json
 import os
 import math
 from datetime import datetime, timedelta
+import pytz
 
 # Application version
 APP_VERSION = "1.0.0"
 
 # Application startup time
 APP_START_TIME = datetime.now()
+
+# Israel timezone
+ISRAEL_TZ = pytz.timezone('Asia/Jerusalem')
+
+def get_israel_time():
+    """Get current time in Israel timezone"""
+    return datetime.now(ISRAEL_TZ)
 import logging
 import hashlib
 import secrets
@@ -38,7 +46,11 @@ from agent.indicators import compute_rsi, compute_ema, compute_macd, compute_atr
 from agent.engine import make_fused_tip
 from agent.models.sentiment import SentimentAnalyzer
 from agent.news.rss import fetch_headlines
+from agent.news.reddit import fetch_crypto_reddit_posts, fetch_stock_reddit_posts
 from agent.cache.redis_client import get_redis_client, close_redis_client
+from agent.monitor import SignalMonitor
+from agent.positions import PositionTracker
+from agent.scheduler import start_scheduler
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -67,6 +79,9 @@ app.mount("/static", StaticFiles(directory="web/static"), name="static")
 async def startup_event():
     """Initialize system on startup"""
     await initialize_default_admin()
+    
+    # Start the signal monitoring scheduler
+    await start_signal_monitoring()
 
 # Security
 security = HTTPBearer()
@@ -189,6 +204,10 @@ class UserActivationExtension(BaseModel):
 class SignalRequest(BaseModel):
     symbol: str
     timeframe: str = "1h"
+    buy_threshold: Optional[float] = None
+    sell_threshold: Optional[float] = None
+    technical_weight: Optional[float] = None
+    sentiment_weight: Optional[float] = None
 
 class ConfigUpdate(BaseModel):
     key: str
@@ -196,6 +215,7 @@ class ConfigUpdate(BaseModel):
 
 class TradingSignal(BaseModel):
     symbol: str
+    timeframe: str = "1h"  # Add timeframe field
     timestamp: str
     signal_type: str  # "BUY", "SELL", "HOLD"
     confidence: float
@@ -253,6 +273,72 @@ async def initialize_default_admin():
             )
     except Exception as e:
         logger.error(f"Failed to initialize default admin user: {e}")
+
+async def start_signal_monitoring():
+    """Start the signal monitoring scheduler"""
+    try:
+        logger.info("Starting signal monitoring scheduler...")
+        
+        # Create monitoring job function (synchronous wrapper for async function)
+        def monitoring_job():
+            try:
+                import asyncio
+                import concurrent.futures
+                
+                # Create a new event loop in a separate thread
+                def run_async():
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    try:
+                        return loop.run_until_complete(run_monitoring_cycle())
+                    finally:
+                        loop.close()
+                
+                # Run in a thread pool to avoid blocking
+                with concurrent.futures.ThreadPoolExecutor() as executor:
+                    future = executor.submit(run_async)
+                    future.result(timeout=60)  # 60 second timeout
+                    
+            except Exception as e:
+                logger.error(f"Error starting monitoring job: {e}")
+        
+        # Start scheduler to run every 2 minutes
+        scheduler = start_scheduler(monitoring_job, cron="*/2 * * * *")
+        logger.info("Signal monitoring scheduler started - running every 2 minutes")
+        
+    except Exception as e:
+        logger.error(f"Failed to start signal monitoring: {e}")
+
+async def run_monitoring_cycle():
+    """Run a single monitoring cycle"""
+    try:
+        redis_client = await get_redis_client()
+        if not redis_client:
+            logger.warning("Redis not available for monitoring")
+            return
+        
+        logger.info(f"Redis client connected: {await redis_client.is_connected()}")
+        
+        # Test signal retrieval directly
+        test_signals = await redis_client.get_signals(limit=10)
+        logger.info(f"Direct signal retrieval test: {len(test_signals) if test_signals else 0} signals")
+        
+        # Initialize sentiment analyzer
+        sentiment_analyzer = None
+        try:
+            config = load_config_from_env()
+            sentiment_analyzer = SentimentAnalyzer(config.models.sentiment_model)
+        except Exception as e:
+            logger.warning(f"Could not initialize sentiment analyzer: {e}")
+        
+        # Create monitor and run monitoring
+        monitor = SignalMonitor(redis_client, sentiment_analyzer)
+        result = await monitor.monitor_all_signals()
+        
+        logger.info(f"Monitoring cycle completed: {result}")
+        
+    except Exception as e:
+        logger.error(f"Error in monitoring cycle: {e}")
 
 # User management functions
 async def get_user_from_redis(username: str) -> Optional[Dict[str, Any]]:
@@ -1451,6 +1537,9 @@ async def get_signals(symbol: Optional[str] = None, limit: int = 50, current_use
             valid_signals = []
             for signal_dict in signal_dicts:
                 try:
+                    # Debug logging for signal data from Redis
+                    logger.info(f"Signal from Redis: {signal_dict.get('symbol', 'unknown')} - applied_buy_threshold: {signal_dict.get('applied_buy_threshold', 'NOT_FOUND')}")
+                    
                     # Handle both old and new signal formats
                     if 'applied_buy_threshold' not in signal_dict:
                         signal_dict['applied_buy_threshold'] = None
@@ -1493,6 +1582,42 @@ async def get_signals(symbol: Optional[str] = None, limit: int = 50, current_use
     except Exception as e:
         logger.error(f"Error getting signals: {e}")
         raise HTTPException(status_code=500, detail=f"Error retrieving signals: {str(e)}")
+
+@app.delete("/api/signals/{timestamp}")
+async def delete_signal(timestamp: str, current_user: Dict[str, Any] = Depends(verify_token)):
+    """Delete a specific signal by timestamp (user-specific)"""
+    try:
+        redis_client = await get_redis_client()
+        if not redis_client:
+            raise HTTPException(status_code=500, detail="Redis not available")
+        
+        # Get all signals for the user
+        user_signals = await redis_client.get_signals(1000, None, current_user['username'])
+        
+        # Find the signal with matching timestamp
+        signal_to_delete = None
+        for signal in user_signals:
+            if signal.get('timestamp') == timestamp:
+                signal_to_delete = signal
+                break
+        
+        if not signal_to_delete:
+            raise HTTPException(status_code=404, detail="Signal not found")
+        
+        # Delete the signal from Redis
+        deleted = await redis_client.delete_signal(timestamp, current_user['username'])
+        
+        if deleted:
+            logger.info(f"Signal {timestamp} deleted by user {current_user['username']}")
+            return {"message": "Signal deleted successfully"}
+        else:
+            raise HTTPException(status_code=500, detail="Failed to delete signal")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting signal: {e}")
+        raise HTTPException(status_code=500, detail=f"Error deleting signal: {str(e)}")
 
 @app.get("/api/signals/stats")
 async def get_signal_stats() -> Dict[str, Any]:
@@ -1628,6 +1753,10 @@ async def generate_signal(request: SignalRequest, current_user: Dict[str, Any] =
             ohlcv = fetch_alpaca_ohlcv(request.symbol, request.timeframe)
         
         logger.info(f"OHLCV type: {type(ohlcv)}, value: {ohlcv if isinstance(ohlcv, str) else 'DataFrame'}")
+        logger.info(f"OHLCV DataFrame shape: {ohlcv.shape}")
+        logger.info(f"OHLCV DataFrame columns: {list(ohlcv.columns)}")
+        logger.info(f"OHLCV DataFrame head (first 3 rows):\n{ohlcv.head(3).to_string()}")
+        logger.info(f"OHLCV DataFrame tail (last 3 rows):\n{ohlcv.tail(3).to_string()}")
         
         if ohlcv is None or ohlcv.empty:
             raise HTTPException(status_code=400, detail="Could not fetch market data")
@@ -1647,19 +1776,51 @@ async def generate_signal(request: SignalRequest, current_user: Dict[str, Any] =
         atr = compute_atr(high, low, close)
         logger.info("Indicators calculation completed")
         
-        # Get sentiment from news
-        logger.info("Starting sentiment analysis")
+        # Get sentiment from multiple sources (RSS + Reddit)
+        logger.info("Starting sentiment analysis from multiple sources")
         sentiment_score = 0.0
         if sentiment_analyzer:
             try:
+                all_texts = []
+                
+                # Fetch RSS headlines
+                logger.info("Fetching RSS headlines...")
                 headlines = fetch_headlines([
                     "https://news.google.com/rss/search?q=stock+market&hl=en-US&gl=US&ceid=US:en",
                     "https://news.google.com/rss/search?q=crypto+btc&hl=en-US&gl=US&ceid=US:en",
-                ])
+                ], limit_per_feed=10)  # Reduced to 10 to make room for Reddit
                 if headlines:
-                    # Analyze first few headlines
-                    text_sample = " ".join(headlines[:3])
+                    all_texts.extend(headlines)
+                    logger.info(f"RSS: Collected {len(headlines)} headlines")
+                
+                # Fetch Reddit posts based on symbol type
+                logger.info("Fetching Reddit posts...")
+                if "BTC" in request.symbol or "ETH" in request.symbol or "crypto" in request.symbol.lower():
+                    # Crypto symbol - fetch crypto Reddit posts
+                    reddit_posts = fetch_crypto_reddit_posts(limit_per_subreddit=5)
+                    if reddit_posts:
+                        all_texts.extend(reddit_posts)
+                        logger.info(f"Reddit: Collected {len(reddit_posts)} crypto posts")
+                else:
+                    # Stock symbol - fetch stock Reddit posts
+                    reddit_posts = fetch_stock_reddit_posts(limit_per_subreddit=5)
+                    if reddit_posts:
+                        all_texts.extend(reddit_posts)
+                        logger.info(f"Reddit: Collected {len(reddit_posts)} stock posts")
+                
+                if all_texts:
+                    # Use optimal sample size with mixed sources
+                    import random
+                    sample_size = min(20, len(all_texts))  # Increased to 20 for mixed sources
+                    shuffled_texts = all_texts.copy()
+                    random.shuffle(shuffled_texts)
+                    text_sample = shuffled_texts[:sample_size]
+                    logger.info(f"Analyzing {len(text_sample)} texts (RSS + Reddit) for sentiment")
                     sentiment_score = sentiment_analyzer.score(text_sample)
+                    logger.info(f"Sentiment analysis result: {sentiment_score:.3f}")
+                else:
+                    logger.warning("No texts collected from any source")
+                    
             except Exception as e:
                 logger.warning(f"Could not fetch sentiment: {e}")
         logger.info("Sentiment analysis completed")
@@ -1682,14 +1843,25 @@ async def generate_signal(request: SignalRequest, current_user: Dict[str, Any] =
             
             tech_score = (rsi_score + macd_score) / 2
         
-        # Fused score (weighted average)
-        tech_weight = 0.6
-        sentiment_weight = 0.4
+        # Debug logging for custom thresholds
+        logger.info(f"Custom threshold values received: buy_threshold={request.buy_threshold}, sell_threshold={request.sell_threshold}, technical_weight={request.technical_weight}, sentiment_weight={request.sentiment_weight}")
+        
+        # Use custom parameters if provided, otherwise use config defaults
+        config = load_config_from_env()
+        tech_weight = request.technical_weight if request.technical_weight is not None else config.thresholds.technical_weight
+        sentiment_weight = request.sentiment_weight if request.sentiment_weight is not None else config.thresholds.sentiment_weight
         fused_score = tech_weight * tech_score + sentiment_weight * sentiment_score
         
-        # Define thresholds
-        buy_threshold = 0.7
-        sell_threshold = -0.7
+        # Define thresholds - use config defaults if not provided
+        buy_threshold = request.buy_threshold if request.buy_threshold is not None else config.thresholds.buy_threshold
+        # If custom sell_threshold is provided, use it; otherwise use negative of buy_threshold
+        if request.sell_threshold is not None:
+            sell_threshold = request.sell_threshold
+        else:
+            sell_threshold = -buy_threshold
+        
+        # Debug logging for applied thresholds
+        logger.info(f"Applied threshold values: buy_threshold={buy_threshold}, sell_threshold={sell_threshold}, technical_weight={tech_weight}, sentiment_weight={sentiment_weight}")
         
         # Determine signal type
         if fused_score >= buy_threshold:
@@ -1717,7 +1889,8 @@ async def generate_signal(request: SignalRequest, current_user: Dict[str, Any] =
         # Create signal
         signal = TradingSignal(
             symbol=request.symbol,
-            timestamp=datetime.now().isoformat(),
+            timeframe=request.timeframe,
+            timestamp=get_israel_time().isoformat(),
             signal_type=signal_type,
             confidence=abs(fused_score),
             technical_score=tech_score,
@@ -1742,6 +1915,27 @@ async def generate_signal(request: SignalRequest, current_user: Dict[str, Any] =
             if redis_client:
                 # Use the signal_dict that already has username added
                 await redis_client.store_signal(signal_dict)
+                
+                # Add initial history event
+                await redis_client.add_signal_history_event(
+                    signal_timestamp=signal.timestamp,
+                    event_type="signal_created",
+                    description=f"Signal created: {signal.signal_type} for {signal.symbol}",
+                    metadata={
+                        "signal_type": signal.signal_type,
+                        "confidence": signal.confidence,
+                        "fused_score": signal.fused_score,
+                        "technical_score": signal.technical_score,
+                        "sentiment_score": signal.sentiment_score,
+                        "applied_thresholds": {
+                            "buy_threshold": signal.applied_buy_threshold,
+                            "sell_threshold": signal.applied_sell_threshold,
+                            "tech_weight": signal.applied_tech_weight,
+                            "sentiment_weight": signal.applied_sentiment_weight
+                        },
+                        "created_by": current_user["username"]
+                    }
+                )
                 
                 # Log activity
                 await redis_client.log_activity(
@@ -1874,14 +2068,21 @@ async def get_market_overview(timeframe: str = "1h"):
                             return 0.0
                         return float(value)
                     
+                    # Get high/low for the period
+                    high = safe_float(ohlcv['high'].max())
+                    low = safe_float(ohlcv['low'].min())
+                    
                     symbols_data.append({
-                            "symbol": symbol,
-                        "price": safe_float(latest['close']),
+                        "symbol": symbol,
+                        "current_price": safe_float(latest['close']),
+                        "price": safe_float(latest['close']),  # Keep both for compatibility
                         "change": safe_float(change),
                         "change_percent": safe_float(change_percent),
                         "volume": safe_float(latest['volume']),
+                        "high": high,
+                        "low": low,
                         "timestamp": latest.name.isoformat() if hasattr(latest.name, 'isoformat') else str(latest.name)
-                        })
+                    })
                 else:
                     symbols_data.append({
                             "symbol": symbol,
@@ -2061,6 +2262,191 @@ async def shutdown_event():
         logger.info("Redis connection closed")
     except Exception as e:
         logger.warning(f"Error closing Redis connection: {e}")
+
+# Signal Monitoring Endpoints
+@app.post("/api/signals/monitor")
+async def monitor_signals(current_user: Dict[str, Any] = Depends(verify_token)):
+    """Manually trigger signal monitoring (admin only)"""
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    try:
+        # Run monitoring cycle
+        await run_monitoring_cycle()
+        
+        return {
+            "status": "success",
+            "message": "Signal monitoring completed",
+            "timestamp": datetime.now(ISRAEL_TZ).isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to monitor signals: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to monitor signals: {str(e)}")
+
+@app.get("/api/signals/monitor/status")
+async def get_monitoring_status(current_user: Dict[str, Any] = Depends(verify_token)):
+    """Get monitoring system status (admin only)"""
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    try:
+        redis_client = await get_redis_client()
+        if not redis_client:
+            raise HTTPException(status_code=500, detail="Redis not available")
+        
+        # Get recent monitoring activities
+        activities = await redis_client.get_recent_activities(limit=10)
+        monitoring_activities = [a for a in activities if a.get('event_type') == 'signal_status_changed']
+        
+        # Get total signals count
+        all_signals = await redis_client.get_signals(limit=1000)
+        
+        return {
+            "monitoring_enabled": True,
+            "schedule": "Every 2 minutes",
+            "total_signals": len(all_signals),
+            "recent_changes": len(monitoring_activities),
+            "last_activity": monitoring_activities[0] if monitoring_activities else None,
+            "timestamp": datetime.now(ISRAEL_TZ).isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to get monitoring status: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get monitoring status: {str(e)}")
+
+@app.get("/api/signals/{timestamp}/history")
+async def get_signal_history(timestamp: str, current_user: Dict[str, Any] = Depends(verify_token)):
+    """Get history events for a specific signal (users only, not admins)"""
+    try:
+        # Only allow regular users to access history (not admins)
+        if current_user["role"] == "admin":
+            raise HTTPException(status_code=403, detail="History access restricted to users only")
+        
+        redis_client = await get_redis_client()
+        if not redis_client:
+            raise HTTPException(status_code=500, detail="Redis not available")
+        
+        # Get the signal to verify it exists and user has access
+        signal = await redis_client.get_signal_by_timestamp(timestamp)
+        if not signal:
+            raise HTTPException(status_code=404, detail="Signal not found")
+        
+        # Check if user has access to this signal (must be signal owner)
+        if signal.get("username") != current_user["username"]:
+            raise HTTPException(status_code=403, detail="Access denied")
+        
+        # Get signal history
+        history = await redis_client.get_signal_history(timestamp)
+        
+        return {
+            "signal_timestamp": timestamp,
+            "symbol": signal.get("symbol"),
+            "current_status": signal.get("signal_type"),
+            "history": history,
+            "total_events": len(history)
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get signal history: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get signal history: {str(e)}")
+
+# Position Tracking Endpoints
+class PositionRequest(BaseModel):
+    signal_timestamp: str
+    action: str  # "BUY", "SELL", "CLOSE"
+    quantity: float
+    price: float
+    notes: str = ""
+
+class PositionUpdateRequest(BaseModel):
+    current_price: float
+    action: Optional[str] = None
+    quantity: Optional[float] = None
+    notes: str = ""
+
+@app.post("/api/positions")
+async def create_position(request: PositionRequest, current_user: Dict[str, Any] = Depends(verify_token)):
+    """Create a new trading position based on a signal"""
+    try:
+        redis_client = await get_redis_client()
+        if not redis_client:
+            raise HTTPException(status_code=500, detail="Redis not available")
+        
+        position_tracker = PositionTracker(redis_client)
+        position = await position_tracker.create_position(
+            username=current_user["username"],
+            signal_timestamp=request.signal_timestamp,
+            action=request.action,
+            quantity=request.quantity,
+            price=request.price,
+            notes=request.notes
+        )
+        
+        return position
+        
+    except Exception as e:
+        logger.error(f"Failed to create position: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to create position: {str(e)}")
+
+@app.get("/api/positions")
+async def get_user_positions(status: Optional[str] = None, current_user: Dict[str, Any] = Depends(verify_token)):
+    """Get all positions for the current user"""
+    try:
+        redis_client = await get_redis_client()
+        if not redis_client:
+            raise HTTPException(status_code=500, detail="Redis not available")
+        
+        position_tracker = PositionTracker(redis_client)
+        positions = await position_tracker.get_user_positions(current_user["username"], status)
+        
+        return {"positions": positions, "count": len(positions)}
+        
+    except Exception as e:
+        logger.error(f"Failed to get positions: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get positions: {str(e)}")
+
+@app.put("/api/positions/{position_id}")
+async def update_position(position_id: str, request: PositionUpdateRequest, current_user: Dict[str, Any] = Depends(verify_token)):
+    """Update an existing position"""
+    try:
+        redis_client = await get_redis_client()
+        if not redis_client:
+            raise HTTPException(status_code=500, detail="Redis not available")
+        
+        position_tracker = PositionTracker(redis_client)
+        position = await position_tracker.update_position(
+            position_id=position_id,
+            current_price=request.current_price,
+            action=request.action,
+            quantity=request.quantity,
+            notes=request.notes
+        )
+        
+        return position
+        
+    except Exception as e:
+        logger.error(f"Failed to update position: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to update position: {str(e)}")
+
+@app.get("/api/positions/performance")
+async def get_position_performance(current_user: Dict[str, Any] = Depends(verify_token)):
+    """Get performance summary for the current user"""
+    try:
+        redis_client = await get_redis_client()
+        if not redis_client:
+            raise HTTPException(status_code=500, detail="Redis not available")
+        
+        position_tracker = PositionTracker(redis_client)
+        performance = await position_tracker.get_position_performance(current_user["username"])
+        
+        return performance
+        
+    except Exception as e:
+        logger.error(f"Failed to get position performance: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get position performance: {str(e)}")
 
 if __name__ == "__main__":
     uvicorn.run(

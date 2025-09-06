@@ -440,6 +440,193 @@ python -m agent.cli schedule --cron "*/15 * * * *"
 - Take profit: 3×ATR from entry
 - Regime filter: only long in bull markets, short in bear markets
 
+## 📊 **Signal Generation Process & Indicator Explanations**
+
+### **How Trading Signals Are Generated**
+
+The trading agent follows a sophisticated 14-step process to generate trading signals:
+
+#### **Step 1: Data Collection**
+- **OHLCV Data**: Fetches Open, High, Low, Close, Volume data
+- **Crypto**: Uses CCXT (Binance) for symbols like `BTC/USDT`, `ETH/USDT`
+- **Stocks/ETFs**: Uses Alpaca API for symbols like `SPY`, `AAPL`
+- **Timeframes**: 1m, 5m, 15m, 30m, 1h, 4h, 1d
+
+#### **Step 2: Technical Analysis**
+The system calculates multiple technical indicators from OHLCV data:
+
+##### **RSI (Relative Strength Index)**
+```python
+# Formula: RSI = 100 - (100 / (1 + RS))
+# Where RS = Average Gain / Average Loss over 14 periods
+```
+- **Range**: 0-100
+- **RSI > 70**: Overbought (price might fall) → Bearish signal
+- **RSI < 30**: Oversold (price might rise) → Bullish signal
+- **RSI = 50**: Neutral
+- **Purpose**: Identifies momentum and potential reversal points
+
+##### **MACD (Moving Average Convergence Divergence)**
+```python
+# MACD Line = EMA(12) - EMA(26)
+# Signal Line = EMA(9) of MACD Line
+# Histogram = MACD Line - Signal Line
+```
+- **MACD > Signal**: Bullish momentum
+- **MACD < Signal**: Bearish momentum
+- **Histogram**: Shows momentum strength and direction changes
+- **Purpose**: Identifies trend changes and momentum shifts
+
+##### **EMA (Exponential Moving Average)**
+```python
+# EMA = (Price × Multiplier) + (Previous EMA × (1 - Multiplier))
+# Multiplier = 2 / (Period + 1)
+```
+- **EMA(12)**: Short-term trend
+- **EMA(26)**: Long-term trend
+- **EMA(50)**: Medium-term trend
+- **EMA(200)**: Long-term trend
+- **Purpose**: Smooths price data to identify trends
+
+##### **ATR (Average True Range)**
+```python
+# True Range = max(High-Low, |High-PrevClose|, |Low-PrevClose|)
+# ATR = EMA of True Range over 14 periods
+```
+- **High ATR**: High volatility (price moves a lot)
+- **Low ATR**: Low volatility (price moves little)
+- **Purpose**: Used for setting stop-loss and take-profit levels
+
+#### **Step 3: Sentiment Analysis**
+- **News Sources**: RSS feeds from Google News (crypto + stock keywords)
+- **AI Model**: FinBERT (financial sentiment analysis)
+- **Processing**: Local inference (faster) or HF Inference API (fallback)
+- **Output**: Sentiment score from -1 (very negative) to +1 (very positive)
+
+#### **Step 4: Signal Fusion**
+```python
+# Technical Score = (RSI_Score + MACD_Score) / 2
+# Fused Score = (Technical_Weight × Technical_Score) + (Sentiment_Weight × Sentiment_Score)
+# Default weights: Technical=60%, Sentiment=40%
+```
+
+#### **Step 5: Signal Decision**
+```python
+if Fused_Score >= Buy_Threshold:     # Default: 0.7
+    Signal = "BUY"
+elif Fused_Score <= Sell_Threshold:  # Default: -0.7
+    Signal = "SELL"
+else:
+    Signal = "HOLD"
+```
+
+### **Real Example: ETH/USDT Signal Generation**
+
+From your recent logs, here's how a signal was generated:
+
+#### **OHLCV Data (Last 3 hours)**
+```
+Time: 2025-09-05 16:00:00 | Open: $4283.40 | High: $4303.75 | Low: $4274.56 | Close: $4297.81 | Volume: 17,892
+Time: 2025-09-05 17:00:00 | Open: $4297.81 | High: $4299.21 | Low: $4272.35 | Close: $4289.99 | Volume: 13,261
+Time: 2025-09-05 18:00:00 | Open: $4289.99 | High: $4301.87 | Low: $4284.38 | Close: $4294.90 | Volume: 4,435
+```
+
+#### **Technical Analysis Results**
+- **RSI**: Calculated from 200 hours of close prices
+- **MACD**: Based on EMA(12) and EMA(26) of close prices
+- **Technical Score**: -0.09 (slightly bearish)
+
+#### **Sentiment Analysis Results**
+- **News Headlines**: 10 headlines from RSS feeds
+- **AI Analysis**: FinBERT processed 3 sample headlines
+- **Sentiment Score**: -1.0 (very negative sentiment)
+
+#### **Final Signal**
+- **Fused Score**: (0.6 × -0.09) + (0.4 × -1.0) = -0.45
+- **Decision**: HOLD (below -0.7 sell threshold)
+- **Confidence**: 45.2% (absolute value of fused score)
+
+### **Indicator Interpretation Guide**
+
+#### **RSI Interpretation**
+- **0-30**: Oversold (potential buying opportunity)
+- **30-50**: Bearish momentum
+- **50-70**: Bullish momentum
+- **70-100**: Overbought (potential selling opportunity)
+
+#### **MACD Interpretation**
+- **MACD > Signal**: Bullish momentum
+- **MACD < Signal**: Bearish momentum
+- **Histogram increasing**: Momentum strengthening
+- **Histogram decreasing**: Momentum weakening
+
+#### **Volume Analysis**
+- **High Volume**: Strong conviction in price movement
+- **Low Volume**: Weak conviction, potential reversal
+- **Volume + Price**: Confirms trend strength
+
+#### **Sentiment Analysis**
+- **+1.0 to +0.5**: Very positive (bullish)
+- **+0.5 to 0**: Slightly positive (neutral-bullish)
+- **0**: Neutral
+- **0 to -0.5**: Slightly negative (neutral-bearish)
+- **-0.5 to -1.0**: Very negative (bearish)
+
+### **Signal Quality Assessment**
+
+#### **High Quality Signals**
+- **Strong Technical + Strong Sentiment**: Both indicators agree
+- **High Volume**: Confirms market conviction
+- **Clear Trend**: Price moving in signal direction
+
+#### **Medium Quality Signals**
+- **Mixed Signals**: Technical and sentiment disagree
+- **Medium Volume**: Moderate conviction
+- **Sideways Movement**: Price consolidating
+
+#### **Low Quality Signals**
+- **Conflicting Indicators**: Technical and sentiment oppose
+- **Low Volume**: Weak conviction
+- **Choppy Price Action**: Unclear direction
+
+### **Risk Management Integration**
+
+#### **Stop Loss Calculation**
+```python
+Stop_Loss = Entry_Price ± (2 × ATR)
+# For long positions: Entry - (2 × ATR)
+# For short positions: Entry + (2 × ATR)
+```
+
+#### **Take Profit Calculation**
+```python
+Take_Profit = Entry_Price ± (3 × ATR)
+# For long positions: Entry + (3 × ATR)
+# For short positions: Entry - (3 × ATR)
+```
+
+#### **Position Sizing**
+- **Risk per Trade**: 1-2% of account
+- **ATR-based Sizing**: Adjust position size based on volatility
+- **Correlation Limits**: Avoid overexposure to correlated assets
+
+### **Signal Monitoring & Validation**
+
+#### **Real-time Monitoring**
+- **Web Dashboard**: Live signal updates
+- **API Endpoints**: Programmatic access to signals
+- **Notifications**: Telegram/Slack alerts for new signals
+
+#### **Signal Validation**
+- **Backtesting**: Historical performance validation
+- **Paper Trading**: Live market testing without risk
+- **Performance Metrics**: Win rate, Sharpe ratio, max drawdown
+
+#### **Continuous Improvement**
+- **Auto-tuning**: Automatic parameter optimization
+- **Performance Tracking**: Monitor signal accuracy over time
+- **Strategy Refinement**: Adjust based on market conditions
+
 ## 5) Auto-Tuning
 
 The `tune` command automatically finds optimal parameters:

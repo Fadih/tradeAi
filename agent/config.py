@@ -16,6 +16,9 @@ class SignalThresholds:
 	# Trigger levels for fused score in [-1, 1]
 	buy_threshold: float = 0.5
 	sell_threshold: float = -0.5
+	# Weight defaults for signal fusion
+	technical_weight: float = 0.6
+	sentiment_weight: float = 0.4
 
 
 @dataclass

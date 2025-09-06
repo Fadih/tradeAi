@@ -63,44 +63,58 @@ class SentimentAnalyzer:
 		api_url = f"https://api-inference.huggingface.co/models/{self.model_name}"
 		headers = {"Authorization": f"Bearer {self.hf_token}"}
 		
-		try:
-			logger.debug(f"Making request to HF Inference API: {self.model_name}")
-			resp = requests.post(api_url, headers=headers, json={"inputs": texts}, timeout=10)
-			resp.raise_for_status()
-			
-			payload = resp.json()
-			logger.debug(f"Received response from HF API: {len(payload)} items")
-			
-			# payload can be list-of-list of dicts per input
-			label_to_score = {"positive": 1.0, "neutral": 0.0, "negative": -1.0}
-			per_input = []
-			
-			for i, item in enumerate(payload):
-				if isinstance(item, list) and item:
-					best = max(item, key=lambda x: x.get("score", 0))
-					score = label_to_score.get(best.get("label", "").lower(), 0.0)
-					per_input.append(score)
-					logger.debug(f"Text {i}: label='{best.get('label')}', score={score}")
-				else:
-					per_input.append(0.0)
-					logger.debug(f"Text {i}: no valid response")
-			
-			if per_input:
-				avg_score = float(sum(per_input) / len(per_input))
-				logger.info(f"HF Inference sentiment scores: {per_input}, average: {avg_score:.3f}")
-				return avg_score
-			else:
-				logger.warning("No valid sentiment scores from HF API")
-				return 0.0
-				
-		except requests.exceptions.Timeout:
-			logger.error("HF Inference API request timed out")
-		except requests.exceptions.RequestException as e:
-			logger.error(f"HF Inference API request failed: {e}")
-		except Exception as e:
-			logger.error(f"Unexpected error in HF Inference scoring: {e}")
+		# Batch processing to avoid API limits (max 100 texts per request)
+		batch_size = 50
+		all_scores = []
 		
-		return None
+		for i in range(0, len(texts), batch_size):
+			batch = texts[i:i + batch_size]
+			logger.debug(f"Processing batch {i//batch_size + 1}/{(len(texts) + batch_size - 1)//batch_size} with {len(batch)} texts")
+			
+			try:
+				logger.debug(f"Making request to HF Inference API: {self.model_name}")
+				resp = requests.post(api_url, headers=headers, json={"inputs": batch}, timeout=30)
+				resp.raise_for_status()
+				
+				payload = resp.json()
+				logger.debug(f"Received response from HF API: {len(payload)} items")
+				
+				# payload can be list-of-list of dicts per input
+				label_to_score = {"positive": 1.0, "neutral": 0.0, "negative": -1.0}
+				batch_scores = []
+				
+				for j, item in enumerate(payload):
+					if isinstance(item, list) and item:
+						best = max(item, key=lambda x: x.get("score", 0))
+						score = label_to_score.get(best.get("label", "").lower(), 0.0)
+						batch_scores.append(score)
+						logger.debug(f"Text {i+j}: label='{best.get('label')}', score={score}")
+					else:
+						batch_scores.append(0.0)
+						logger.debug(f"Text {i+j}: no valid response")
+				
+				all_scores.extend(batch_scores)
+				
+			except requests.exceptions.Timeout:
+				logger.error(f"HF Inference API request timed out for batch {i//batch_size + 1}")
+				# Add neutral scores for this batch
+				all_scores.extend([0.0] * len(batch))
+			except requests.exceptions.RequestException as e:
+				logger.error(f"HF Inference API request failed for batch {i//batch_size + 1}: {e}")
+				# Add neutral scores for this batch
+				all_scores.extend([0.0] * len(batch))
+			except Exception as e:
+				logger.error(f"Unexpected error in HF Inference scoring for batch {i//batch_size + 1}: {e}")
+				# Add neutral scores for this batch
+				all_scores.extend([0.0] * len(batch))
+		
+		if all_scores:
+			avg_score = float(sum(all_scores) / len(all_scores))
+			logger.info(f"HF Inference sentiment scores: {len(all_scores)} texts processed, average: {avg_score:.3f}")
+			return avg_score
+		else:
+			logger.warning("No valid sentiment scores from HF API")
+			return 0.0
 
 	def score(self, texts: List[str]) -> float:
 		if not texts:

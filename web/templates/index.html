@@ -65,16 +65,7 @@
     <div class="container-fluid mt-4">
         <!-- Status Overview -->
         <div class="row mb-4">
-            <div class="col-md-3">
-                <div class="card metric-card">
-                    <div class="card-body text-center">
-                        <h5 class="card-title text-muted">Status</h5>
-                        <h3 id="agent-status" class="text-success">Running</h3>
-                        <small class="text-muted">Agent Status</small>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-3">
+            <div class="col-md-6">
                 <div class="card metric-card">
                     <div class="card-body text-center">
                         <h5 class="card-title text-muted">Trading Tips</h5>
@@ -83,7 +74,7 @@
                     </div>
                 </div>
             </div>
-            <div class="col-md-3">
+            <div class="col-md-6">
                 <div class="card metric-card">
                     <div class="card-body text-center">
                         <h5 class="card-title text-muted">Markets</h5>
@@ -92,48 +83,210 @@
                     </div>
                 </div>
             </div>
-            <div class="col-md-3">
-                <div class="card metric-card">
-                    <div class="card-body text-center">
-                        <h5 class="card-title text-muted">Uptime</h5>
-                        <h3 id="uptime" class="text-warning">0:00:00</h3>
-                        <small class="text-muted">Agent Uptime</small>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Price Summary Cards -->
-        <div class="row mb-4">
-            <div class="col-12">
-                <div class="card">
-                    <div class="card-header d-flex justify-content-between align-items-center">
-                        <h5 class="mb-0"><i class="bi bi-graph-up"></i> Market Overview</h5>
-                        <small class="text-muted">Last updated: <span id="last-market-update">-</span></small>
-                    </div>
-                    <div class="card-body">
-                        <div class="row" id="price-summary-cards">
-                            <!-- Price cards will be populated here -->
-                        </div>
-                    </div>
-                </div>
-            </div>
         </div>
 
         <!-- Main Content -->
         <div class="row">
-            <!-- Left Column -->
-            <div class="col-lg-8">
+            <!-- Main Column -->
+            <div class="col-12">
                 <!-- Trading Tip Generation -->
                 <div class="card mb-4">
                     <div class="card-header">
                         <h5 class="mb-0"><i class="bi bi-lightning"></i> Generate Trading Tip</h5>
                     </div>
                     <div class="card-body">
+                        <!-- Custom Thresholds Section -->
+                        <div class="alert alert-info mb-3">
+                            <div class="d-flex align-items-center">
+                                <i class="bi bi-info-circle me-2"></i>
+                                <div>
+                                    <strong>Custom Thresholds:</strong> Set your own signal generation parameters or leave empty to use system defaults.
+                                    <button class="btn btn-sm btn-outline-info ms-2" type="button" data-bs-toggle="collapse" data-bs-target="#thresholds-help">
+                                        <i class="bi bi-question-circle"></i> Learn More
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="collapse mt-2" id="thresholds-help">
+                                <div class="card card-body bg-light">
+                                    <h6 class="text-primary mb-3">🎓 Trading Terms Explained</h6>
+                                    
+                                    <!-- Technical Indicators -->
+                                    <div class="mb-4">
+                                        <h6 class="text-success">📈 Technical Indicators</h6>
+                                        
+                                        <div class="mb-3">
+                                            <strong>RSI (Relative Strength Index)</strong>
+                                            <p class="mb-1"><small class="text-muted">Measures if a market is overbought or oversold</small></p>
+                                            <ul class="small mb-2">
+                                                <li><strong>Range:</strong> 0 to 100</li>
+                                                <li><strong>Overbought:</strong> RSI > 70 (market might fall)</li>
+                                                <li><strong>Oversold:</strong> RSI < 30 (market might rise)</li>
+                                                <li><strong>Our Score:</strong> (RSI - 50) ÷ 50 → Range: -1 to +1</li>
+                                            </ul>
+                                        </div>
+                                        
+                                        <div class="mb-3">
+                                            <strong>MACD (Moving Average Convergence Divergence)</strong>
+                                            <p class="mb-1"><small class="text-muted">Shows trend changes and momentum</small></p>
+                                            <ul class="small mb-2">
+                                                <li><strong>What it shows:</strong> When short-term trend crosses long-term trend</li>
+                                                <li><strong>Positive:</strong> Upward momentum (bullish)</li>
+                                                <li><strong>Negative:</strong> Downward momentum (bearish)</li>
+                                                <li><strong>Our Score:</strong> MACD Histogram ÷ 1000 → Range: -1 to +1</li>
+                                            </ul>
+                                        </div>
+                                        
+                                        <div class="mb-3">
+                                            <strong>ATR (Average True Range)</strong>
+                                            <p class="mb-1"><small class="text-muted">Measures market volatility for stop-loss and take-profit</small></p>
+                                            <ul class="small mb-2">
+                                                <li><strong>High ATR:</strong> Market is volatile (wider stops needed)</li>
+                                                <li><strong>Low ATR:</strong> Market is calm (tighter stops possible)</li>
+                                                <li><strong>Used for:</strong> Stop Loss = 2×ATR, Take Profit = 3×ATR</li>
+                                            </ul>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- Sentiment Analysis -->
+                                    <div class="mb-4">
+                                        <h6 class="text-info">📰 Sentiment Analysis</h6>
+                                        <div class="mb-3">
+                                            <strong>FinBERT Model</strong>
+                                            <p class="mb-1"><small class="text-muted">AI that reads news headlines and determines market sentiment</small></p>
+                                            <ul class="small mb-2">
+                                                <li><strong>Positive News:</strong> +1 (bullish sentiment)</li>
+                                                <li><strong>Negative News:</strong> -1 (bearish sentiment)</li>
+                                                <li><strong>Neutral News:</strong> 0 (no clear direction)</li>
+                                                <li><strong>Sources:</strong> Google News RSS feeds for stocks and crypto</li>
+                                            </ul>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- Signal Generation -->
+                                    <div class="mb-4">
+                                        <h6 class="text-warning">🎯 How Signals Are Generated</h6>
+                                        <div class="bg-white p-3 rounded border">
+                                            <strong>Step 1: Calculate Technical Score</strong><br>
+                                            <code class="small">Technical Score = (RSI Score + MACD Score) ÷ 2</code><br><br>
+                                            
+                                            <strong>Step 2: Get Sentiment Score</strong><br>
+                                            <code class="small">Sentiment Score = FinBERT analysis of news headlines</code><br><br>
+                                            
+                                            <strong>Step 3: Combine with Weights</strong><br>
+                                            <code class="small">Final Score = (Tech Weight × Technical Score) + (Sentiment Weight × Sentiment Score)</code><br><br>
+                                            
+                                            <strong>Step 4: Generate Signal</strong><br>
+                                            <ul class="small mb-0">
+                                                <li><strong>BUY:</strong> Final Score ≥ Buy Threshold (e.g., 0.5)</li>
+                                                <li><strong>SELL:</strong> Final Score ≤ Sell Threshold (e.g., -0.5)</li>
+                                                <li><strong>HOLD:</strong> Final Score between thresholds</li>
+                                            </ul>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- Example -->
+                                    <div class="mb-3">
+                                        <h6 class="text-secondary">💡 Real Example</h6>
+                                        <div class="bg-light p-3 rounded">
+                                            <strong>Market:</strong> BTC/USDT<br>
+                                            <strong>RSI:</strong> 45 → Score: (45-50)÷50 = -0.1<br>
+                                            <strong>MACD:</strong> -0.5 → Score: -0.5÷1000 = -0.0005<br>
+                                            <strong>Technical Score:</strong> (-0.1 + -0.0005) ÷ 2 = -0.05<br>
+                                            <strong>Sentiment:</strong> -0.2 (negative news)<br>
+                                            <strong>Weights:</strong> Tech 60%, Sentiment 40%<br>
+                                            <strong>Final Score:</strong> (0.6 × -0.05) + (0.4 × -0.2) = -0.11<br>
+                                            <strong>Result:</strong> HOLD (between -0.5 and +0.5)
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- Thresholds -->
+                                    <div class="mb-3">
+                                        <h6 class="text-primary">⚙️ Threshold Settings</h6>
+                                        <ul class="small mb-2">
+                                            <li><strong>Buy Threshold:</strong> How strong the signal must be to recommend buying</li>
+                                            <li><strong>Sell Threshold:</strong> How negative the signal must be to recommend selling</li>
+                                            <li><strong>Higher thresholds:</strong> Fewer but more reliable signals</li>
+                                            <li><strong>Lower thresholds:</strong> More signals but less reliable</li>
+                                        </ul>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="buy-threshold-input" class="form-label">
+                                        Buy Threshold 
+                                        <i class="bi bi-info-circle text-primary" 
+                                           data-bs-toggle="tooltip" 
+                                           data-bs-placement="top" 
+                                           title="Minimum fused score for BUY signals. Range: 0.1-1.0. Higher = more conservative. Default: 0.5"></i>
+                                    </label>
+                                    <input type="number" class="form-control" id="buy-threshold-input" 
+                                           placeholder="0.5" step="0.1" min="-1" max="1" 
+                                           title="Buy signal threshold (-1 to 1, leave empty for default)">
+                                    <small class="form-text text-muted">Leave empty to use default (0.5)</small>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="sell-threshold-input" class="form-label">
+                                        Sell Threshold 
+                                        <i class="bi bi-info-circle text-primary" 
+                                           data-bs-toggle="tooltip" 
+                                           data-bs-placement="top" 
+                                           title="Maximum fused score for SELL signals. Range: -1.0 to -0.1. More negative = more conservative. Default: -0.5"></i>
+                                    </label>
+                                    <input type="number" class="form-control" id="sell-threshold-input" 
+                                           placeholder="-0.5" step="0.1" min="-1" max="1" 
+                                           title="Sell signal threshold (-1 to 1, leave empty for default)">
+                                    <small class="form-text text-muted">Leave empty to use default (-0.5)</small>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="tech-weight-input" class="form-label">
+                                        Technical Weight 
+                                        <i class="bi bi-info-circle text-primary" 
+                                           data-bs-toggle="tooltip" 
+                                           data-bs-placement="top" 
+                                           title="How much technical indicators (RSI, MACD) influence the signal. Range: 0.0-1.0. Must add up to 1.0 with sentiment weight. Default: 0.6"></i>
+                                    </label>
+                                    <input type="number" class="form-control" id="tech-weight-input" 
+                                           placeholder="0.6" step="0.1" min="0" max="1" 
+                                           title="Weight for technical analysis (0 to 1, leave empty for default)">
+                                    <small class="form-text text-muted">Leave empty to use default (0.6)</small>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="sentiment-weight-input" class="form-label">
+                                        Sentiment Weight 
+                                        <i class="bi bi-info-circle text-primary" 
+                                           data-bs-toggle="tooltip" 
+                                           data-bs-placement="top" 
+                                           title="How much news sentiment analysis influences the signal. Range: 0.0-1.0. Must add up to 1.0 with technical weight. Default: 0.4"></i>
+                                    </label>
+                                    <input type="number" class="form-control" id="sentiment-weight-input" 
+                                           placeholder="0.4" step="0.1" min="0" max="1" 
+                                           title="Weight for sentiment analysis (0 to 1, leave empty for default)">
+                                    <small class="form-text text-muted">Leave empty to use default (0.4)</small>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="alert alert-info">
+                            <i class="bi bi-info-circle"></i>
+                            <strong>Note:</strong> Technical Weight + Sentiment Weight must equal 1.0
+                        </div>
+                        
                         <div class="row">
                             <div class="col-md-6">
                                 <div class="mb-3">
-
                                     <label for="symbol-input" class="form-label">Market</label>
                                     <select class="form-select" id="symbol-input">
                                         <option value="">Loading markets...</option>
@@ -149,103 +302,6 @@
                                         <option value="4h">4 hours</option>
                                         <option value="1d">1 day</option>
                                     </select>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <!-- Custom Thresholds Section -->
-                        <div class="alert alert-info mb-3">
-                            <div class="d-flex align-items-center">
-                                <i class="bi bi-info-circle me-2"></i>
-                                <div>
-                                    <strong>Custom Thresholds:</strong> Set your own signal generation parameters or leave empty to use system defaults.
-                                    <button class="btn btn-sm btn-outline-info ms-2" type="button" data-bs-toggle="collapse" data-bs-target="#thresholds-help">
-                                        <i class="bi bi-question-circle"></i> Learn More
-                                    </button>
-                                </div>
-                            </div>
-                            <div class="collapse mt-2" id="thresholds-help">
-                                <div class="card card-body bg-light">
-                                    <small>
-                                        <strong>Buy/Sell Thresholds:</strong> Range -1 to +1. Higher buy threshold = more selective buy signals. Lower sell threshold = more selective sell signals.<br>
-                                        <strong>Weights:</strong> Range 0 to 1. Tech weight + sentiment weight should equal 1.0 for best results.<br>
-                                        <strong>Defaults:</strong> Buy: 0.5, Sell: -0.5, Tech: 0.6, Sentiment: 0.4
-                                    </small>
-                                    
-                                    <hr class="my-2">
-                                    
-                                    <div class="mt-2">
-                                        <strong>📊 How Technical Weight & Sentiment Weight Work:</strong>
-                                        <div class="mt-2">
-                                            <strong>Technical Analysis (60% default):</strong>
-                                            <ul class="mb-2">
-                                                <li><strong>RSI Score:</strong> (RSI - 50) / 50 → Range: -1 to +1</li>
-                                                <li><strong>MACD Score:</strong> MACD Histogram / 1000 → Range: -1 to +1</li>
-                                                <li><strong>Combined:</strong> (RSI Score + MACD Score) / 2</li>
-                                            </ul>
-                                            
-                                            <strong>Sentiment Analysis (40% default):</strong>
-                                            <ul class="mb-2">
-                                                <li><strong>News Headlines:</strong> Analyzed using FinBERT model</li>
-                                                <li><strong>Sentiment Score:</strong> -1 (negative) to +1 (positive)</li>
-                                                <li><strong>Source:</strong> Google News RSS feeds (stock market + crypto)</li>
-                                            </ul>
-                                            
-                                            <strong>🎯 Final Signal Calculation:</strong>
-                                            <div class="bg-white p-2 rounded border">
-                                                <code>Fused Score = (Tech Weight × Technical Score) + (Sentiment Weight × Sentiment Score)</code>
-                                            </div>
-                                            
-                                            <div class="mt-2">
-                                                <strong>Example:</strong><br>
-                                                Tech Score: -0.19, Sentiment Score: 0.00<br>
-                                                Tech Weight: 0.6, Sentiment Weight: 0.4<br>
-                                                <code>Fused = (0.6 × -0.19) + (0.4 × 0.00) = -0.114 + 0.000 = -0.114</code>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <div class="row mb-3">
-                            <div class="col-md-6">
-                                <div class="mb-3">
-                                    <label for="buy-threshold-input" class="form-label">Buy Threshold</label>
-                                    <input type="number" class="form-control" id="buy-threshold-input" 
-                                           placeholder="0.5" step="0.1" min="-1" max="1" 
-                                           title="Buy signal threshold (-1 to 1, leave empty for default)">
-                                    <small class="form-text text-muted">Leave empty to use default (0.5)</small>
-                                </div>
-                            </div>
-                            <div class="col-md-6">
-                                <div class="mb-3">
-                                    <label for="sell-threshold-input" class="form-label">Sell Threshold</label>
-                                    <input type="number" class="form-control" id="sell-threshold-input" 
-                                           placeholder="-0.5" step="0.1" min="-1" max="1" 
-                                           title="Sell signal threshold (-1 to 1, leave empty for default)">
-                                    <small class="form-text text-muted">Leave empty to use default (-0.5)</small>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <div class="row mb-3">
-                            <div class="col-md-6">
-                                <div class="mb-3">
-                                    <label for="tech-weight-input" class="form-label">Technical Weight</label>
-                                    <input type="number" class="form-control" id="tech-weight-input" 
-                                           placeholder="0.6" step="0.1" min="0" max="1" 
-                                           title="Weight for technical analysis (0 to 1, leave empty for default)">
-                                    <small class="form-text text-muted">Leave empty to use default (0.6)</small>
-                                </div>
-                            </div>
-                            <div class="col-md-6">
-                                <div class="mb-3">
-                                    <label for="sentiment-weight-input" class="form-label">Sentiment Weight</label>
-                                    <input type="number" class="form-control" id="sentiment-weight-input" 
-                                           placeholder="0.4" step="0.1" min="0" max="1" 
-                                           title="Weight for sentiment analysis (0 to 1, leave empty for default)">
-                                    <small class="form-text text-muted">Leave empty to use default (0.4)</small>
                                 </div>
                             </div>
                         </div>
@@ -274,64 +330,50 @@
                     </div>
                 </div>
 
-                <!-- Market Data Chart -->
+                <!-- Market Overview -->
                 <div class="card mb-4">
-                    <div class="card-header">
-                        <h5 class="mb-0"><i class="bi bi-graph-up"></i> Market Data</h5>
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0"><i class="bi bi-graph-up"></i> Market Overview</h5>
+                        <small class="text-muted">Last updated: <span id="last-market-update">-</span></small>
                     </div>
                     <div class="card-body">
-                        <div class="chart-container">
-                            <canvas id="marketChart"></canvas>
-                            </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Right Column -->
-            <div class="col-lg-4">
-                <!-- Quick Actions -->
-                <div class="card mb-4">
-                    <div class="card-header">
-                        <h5 class="mb-0"><i class="bi bi-lightning-charge"></i> Quick Actions</h5>
-                    </div>
-                    <div class="card-body">
-                        <div class="d-grid gap-2">
-                            <button class="btn btn-outline-success" onclick="runBacktest()">
-                                <i class="bi bi-graph-up-arrow"></i> Run Backtest
-                            </button>
-                            <button class="btn btn-outline-info" onclick="runTune()">
-                                <i class="bi bi-tools"></i> Auto-Tune
-                            </button>
-                            <button class="btn btn-outline-warning" onclick="runSchedule()">
-                                <i class="bi bi-clock"></i> Start Scheduler
-                            </button>
+                        <div class="row" id="price-summary-cards">
+                            <!-- Price cards will be populated here -->
                         </div>
                     </div>
                 </div>
 
-                <!-- System Info -->
-                <div class="card">
-                    <div class="card-header">
-                        <h5 class="mb-0"><i class="bi bi-info-circle"></i> System Info</h5>
-                    </div>
-                    <div class="card-body">
-                        <small class="text-muted">
-                            <div>Version: 1.0.0</div>
-                            <div>Last Update: <span id="last-update">-</span></div>
-                            <div>API Status: <span id="api-status" class="text-success">Healthy</span></div>
-                            <div class="mt-2 pt-2 border-top">
-                                <div class="d-flex justify-content-between align-items-center">
-                                    <div class="text-info">
-                                        <i class="bi bi-arrow-clockwise"></i> Auto-refresh: <span id="refresh-countdown">50s</span>
-                                    </div>
-                                    <button class="btn btn-sm btn-outline-secondary" id="toggle-refresh-btn" onclick="toggleAutoRefresh()" title="Toggle auto-refresh">
-                                        <i class="bi bi-pause-circle" id="refresh-icon"></i>
-                                    </button>
+                <!-- Performance Ranking and Market Statistics -->
+                <div class="row mb-4">
+                    <!-- Performance Ranking -->
+                    <div class="col-md-6">
+                        <div class="card">
+                            <div class="card-header">
+                                <h5 class="mb-0"><i class="bi bi-trophy"></i> Performance Ranking</h5>
+                            </div>
+                            <div class="card-body">
+                                <div id="performance-ranking">
+                                    <!-- Performance ranking will be populated here -->
                                 </div>
                             </div>
-                        </small>
+                        </div>
+                    </div>
+                    
+                    <!-- Market Statistics -->
+                    <div class="col-md-6">
+                        <div class="card">
+                            <div class="card-header">
+                                <h5 class="mb-0"><i class="bi bi-bar-chart"></i> Market Statistics</h5>
+                            </div>
+                            <div class="card-body">
+                                <div id="market-statistics">
+                                    <!-- Market statistics will be populated here -->
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
+
             </div>
         </div>
     </div>
@@ -361,10 +403,7 @@
     
     <script>
         // Global variables
-        let marketChart = null;
         let statusUpdateInterval = null;
-        let pageRefreshInterval = null;
-        let autoRefreshEnabled = true;
 
         // Notification System
         function showNotification(message, type = 'info', duration = 5000) {
@@ -402,19 +441,18 @@
             checkAuth();
             initializeDashboard();
             startStatusUpdates();
-            startPageRefresh();
+            
+            // Initialize tooltips for form elements
+            const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+            tooltipTriggerList.map(function (tooltipTriggerEl) {
+                return new bootstrap.Tooltip(tooltipTriggerEl);
+            });
         });
 
         // Cleanup intervals when page is unloaded
         window.addEventListener('beforeunload', function() {
             if (statusUpdateInterval) {
                 clearInterval(statusUpdateInterval);
-            }
-            if (pageRefreshInterval) {
-                clearInterval(pageRefreshInterval);
-            }
-            if (window.countdownInterval) {
-                clearInterval(window.countdownInterval);
             }
         });
 
@@ -599,53 +637,6 @@
             }, 2000); // Start market data after 2 seconds
         }
 
-        function startPageRefresh() {
-            // Refresh the entire page every 50 seconds (only if auto-refresh is enabled)
-            pageRefreshInterval = setInterval(() => {
-                if (autoRefreshEnabled) {
-                    showNotification('Refreshing page in 5 seconds...', 'info', 3000);
-                    
-                    setTimeout(() => {
-                        if (autoRefreshEnabled) { // Double-check before refreshing
-                            window.location.reload();
-                        }
-                    }, 5000);
-                }
-            }, 50000); // 50 seconds
-            
-            // Start countdown timer
-            startRefreshCountdown();
-            
-            // Show initial notification
-            showNotification('Page will auto-refresh every 50 seconds', 'info', 5000);
-        }
-
-        function startRefreshCountdown() {
-            let countdown = 50;
-            const countdownElement = document.getElementById('refresh-countdown');
-            
-            const countdownInterval = setInterval(() => {
-                if (autoRefreshEnabled) {
-                    countdown--;
-                    if (countdownElement) {
-                        countdownElement.textContent = `${countdown}s`;
-                    }
-                    
-                    if (countdown <= 0) {
-                        countdown = 50; // Reset to 50 seconds
-                    }
-                } else {
-                    // When disabled, show "Paused"
-                    if (countdownElement) {
-                        countdownElement.textContent = 'Paused';
-                    }
-                }
-            }, 1000); // Update every second
-            
-            // Store the countdown interval for cleanup
-            window.countdownInterval = countdownInterval;
-
-        }
 
         async function updateStatus() {
             try {
@@ -660,23 +651,11 @@
                 const status = await response.json();
                 
                 // Update status indicators
-                document.getElementById('agent-status').textContent = status.status;
                 document.getElementById('total-signals').textContent = status.total_trading_tips;
                 document.getElementById('active-symbols').textContent = status.active_symbols.length;
-                document.getElementById('uptime').textContent = status.uptime;
-                document.getElementById('last-update').textContent = new Date(status.last_update).toLocaleString();
-                
-                // Update status indicator
-                const indicator = document.getElementById('status-indicator');
-                const statusText = document.getElementById('status-text');
-                
-                indicator.className = `status-indicator status-${status.status}`;
-                statusText.textContent = status.status.charAt(0).toUpperCase() + status.status.slice(1);
                 
             } catch (error) {
                 console.error('Error updating status:', error);
-                document.getElementById('api-status').textContent = 'Error';
-                document.getElementById('api-status').className = 'text-danger';
             }
         }
 
@@ -741,7 +720,7 @@
                             <div class="col-1">
                                 <strong class="small text-white">#</strong>
                             </div>
-                            <div class="col-2">
+                            <div class="col-1">
                                 <strong class="small text-white">Type</strong>
                             </div>
                             <div class="col-2">
@@ -751,6 +730,9 @@
                                 <strong class="small text-white">TF</strong>
                             </div>
                             <div class="col-2">
+                                <strong class="small text-white">Time Created</strong>
+                            </div>
+                            <div class="col-1">
                                 <strong class="small text-white">Confidence</strong>
                             </div>
                             <div class="col-2">
@@ -768,29 +750,36 @@
                 <div class="card signal-card ${signal.signal_type.toLowerCase()} mb-2 border-${getSignalColor(signal.signal_type)} border-1 shadow-sm">
 
                     <div class="card-body py-2">
-                        <div class="row align-items-center">
-                            <div class="col-md-2">
+                        <div class="row align-items-center text-center">
+                            <div class="col-1">
+                                <span class="badge bg-secondary">${index + 1}</span>
+                            </div>
+                            <div class="col-1">
                                 <span class="badge bg-${getSignalColor(signal.signal_type)}">${signal.signal_type}</span>
                             </div>
-                            <div class="col-md-3">
+                            <div class="col-2">
                                 <strong>${signal.symbol}</strong>
                             </div>
-                            <div class="col-md-2">
-                                <small class="text-muted">Confidence</small><br>
+                            <div class="col-1">
+                                <span class="badge bg-info">${signal.timeframe || '1h'}</span>
+                            </div>
+                            <div class="col-2">
+                                <small class="text-muted">${formatTimestamp(signal.timestamp)}</small>
+                            </div>
+                            <div class="col-1">
                                 <strong>${(signal.confidence * 100).toFixed(1)}%</strong>
                             </div>
-                            <div class="col-md-3">
-                                <small class="text-muted">Score</small><br>
-                                <strong>${signal.fused_score.toFixed(2)}</strong>
-                            </div>
-                            <div class="col-2 text-center">
+                            <div class="col-2">
                                 <span class="badge bg-${getScoreBadgeColor(signal.fused_score)} text-white small px-2 py-1">
                                     ${signal.fused_score.toFixed(2)}
                                 </span>
                             </div>
                             <div class="col-2 text-center">
-                                <button class="btn btn-sm btn-outline-${getSignalColor(signal.signal_type)} small" onclick="toggleSignalDetails('${signal.timestamp}')">
+                                <button class="btn btn-sm btn-outline-${getSignalColor(signal.signal_type)} small me-1" onclick="toggleSignalDetails('${signal.timestamp}')">
                                     <i class="bi bi-chevron-down" id="icon-${signal.timestamp}"></i>
+                                </button>
+                                <button class="btn btn-sm btn-outline-danger small" onclick="deleteSignal('${signal.timestamp}', '${signal.symbol}')" title="Delete Signal">
+                                    <i class="bi bi-trash"></i>
                                 </button>
                             </div>
                         </div>
@@ -801,21 +790,45 @@
                                 <h6 class="text-primary mb-2 border-bottom pb-1 small">📊 Signal Configuration</h6>
                                 <div class="row">
                                     <div class="col-6">
-                                        <small class="text-muted">Technical Score</small><br>
+                                        <small class="text-muted">
+                                            Technical Score 
+                                            <i class="bi bi-info-circle text-primary" 
+                                               data-bs-toggle="tooltip" 
+                                               data-bs-placement="top" 
+                                               title="Combines RSI and MACD indicators. Range: -1 to +1. Positive = bullish momentum, Negative = bearish momentum. Calculated as: (RSI_score + MACD_score) / 2"></i>
+                                        </small><br>
                                         <strong>${signal.technical_score.toFixed(4)}</strong>
                                     </div>
                                     <div class="col-6">
-                                        <small class="text-muted">Sentiment Score</small><br>
+                                        <small class="text-muted">
+                                            Sentiment Score 
+                                            <i class="bi bi-info-circle text-primary" 
+                                               data-bs-toggle="tooltip" 
+                                               data-bs-placement="top" 
+                                               title="News sentiment analysis using FinBERT model. Range: -1 to +1. Positive = bullish news, Negative = bearish news. Based on recent market headlines from Google News RSS feeds."></i>
+                                        </small><br>
                                         <strong>${signal.sentiment_score.toFixed(4)}</strong>
                                     </div>
                                 </div>
                                 <div class="row mt-2">
                                     <div class="col-4">
-                                        <small class="text-muted">Fused Score</small><br>
+                                        <small class="text-muted">
+                                            Fused Score 
+                                            <i class="bi bi-info-circle text-primary" 
+                                               data-bs-toggle="tooltip" 
+                                               data-bs-placement="top" 
+                                               title="Final signal score combining technical and sentiment analysis. Formula: (Tech Weight × Technical Score) + (Sentiment Weight × Sentiment Score). Range: -1 to +1. Used to determine BUY/SELL/HOLD signals."></i>
+                                        </small><br>
                                         <strong>${signal.fused_score.toFixed(4)}</strong>
                                     </div>
                                     <div class="col-4">
-                                        <small class="text-muted">Confidence</small><br>
+                                        <small class="text-muted">
+                                            Confidence 
+                                            <i class="bi bi-info-circle text-primary" 
+                                               data-bs-toggle="tooltip" 
+                                               data-bs-placement="top" 
+                                               title="Signal strength indicator. Calculated as absolute value of fused score. Range: 0% to 100%. Higher values indicate stronger conviction in the signal direction."></i>
+                                        </small><br>
                                         <strong>${(signal.confidence * 100).toFixed(2)}%</strong>
                                     </div>
                                     <div class="col-4">
@@ -828,11 +841,23 @@
                                 <h6 class="text-success mb-2 border-bottom pb-1 small">🛡️ Risk Management</h6>
                                 <div class="row">
                                     <div class="col-6">
-                                        <small class="text-muted">Stop Loss</small><br>
+                                        <small class="text-muted">
+                                            Stop Loss 
+                                            <i class="bi bi-info-circle text-primary" 
+                                               data-bs-toggle="tooltip" 
+                                               data-bs-placement="top" 
+                                               title="Automatic exit price to limit losses. Calculated as: Current Price ± (2 × ATR). For BUY signals: Current Price - (2 × ATR). For SELL signals: Current Price + (2 × ATR). ATR = Average True Range (volatility measure)."></i>
+                                        </small><br>
                                         <strong>${signal.stop_loss ? signal.stop_loss.toFixed(2) : 'N/A'}</strong>
                                     </div>
                                     <div class="col-6">
-                                        <small class="text-muted">Take Profit</small><br>
+                                        <small class="text-muted">
+                                            Take Profit 
+                                            <i class="bi bi-info-circle text-primary" 
+                                               data-bs-toggle="tooltip" 
+                                               data-bs-placement="top" 
+                                               title="Target profit exit price. Calculated as: Current Price ± (3 × ATR). For BUY signals: Current Price + (3 × ATR). For SELL signals: Current Price - (3 × ATR). Risk-reward ratio is 1:1.5 (2 ATR risk vs 3 ATR reward)."></i>
+                                        </small><br>
                                         <strong>${signal.take_profit ? signal.take_profit.toFixed(2) : 'N/A'}</strong>
                                     </div>
                                 </div>
@@ -885,20 +910,37 @@
                                         <small class="text-muted">Signal Logic</small><br>
                                         <strong class="text-secondary">
                                             ${signal.signal_type === 'BUY' ? 
-                                                `Fused Score (${signal.fused_score.toFixed(4)}) ≥ Buy Threshold (0.5)` :
+                                                `Fused Score (${signal.fused_score.toFixed(4)}) ≥ Buy Threshold (${signal.applied_buy_threshold !== null ? signal.applied_buy_threshold.toFixed(2) : '0.5'})` :
                                                 signal.signal_type === 'SELL' ? 
-                                                `Fused Score (${signal.fused_score.toFixed(4)}) ≤ Sell Threshold (-0.5)` :
-                                                `Fused Score (${signal.fused_score.toFixed(4)}) between thresholds (-0.5 to 0.5)`
+                                                `Fused Score (${signal.fused_score.toFixed(4)}) ≤ Sell Threshold (${signal.applied_sell_threshold !== null ? signal.applied_sell_threshold.toFixed(2) : '-0.5'})` :
+                                                `Fused Score (${signal.fused_score.toFixed(4)}) between thresholds (${signal.applied_sell_threshold !== null ? signal.applied_sell_threshold.toFixed(2) : '-0.5'} to ${signal.applied_buy_threshold !== null ? signal.applied_buy_threshold.toFixed(2) : '0.5'})`
                                             }
+                                            <br><small class="text-muted">Debug: buy=${signal.applied_buy_threshold}, sell=${signal.applied_sell_threshold}</small>
                                         </strong>
                                     </div>
                                 </div>
 
                             </div>
                         </div>
+                        <div class="row mt-3">
+                            <div class="col-12">
+                                <h6 class="text-info mb-2 border-bottom pb-1 small">📈 Signal History <small class="text-muted">(refreshes on expand)</small></h6>
+                                <div id="history-${signal.timestamp}" class="signal-history">
+                                    <div class="text-center py-2">
+                                        <small class="text-muted">Click to expand and view history</small>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             `).join('');
+            
+            // Initialize tooltips for all info icons
+            const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+            tooltipTriggerList.map(function (tooltipTriggerEl) {
+                return new bootstrap.Tooltip(tooltipTriggerEl);
+            });
         }
 
         function getSignalColor(signalType) {
@@ -915,6 +957,45 @@
             if (score <= -0.5) return 'danger';
             return 'secondary';
         }
+
+        function formatTimestamp(timestamp) {
+            try {
+                // Parse timestamp (should be in Israel timezone format)
+                const date = new Date(timestamp);
+                
+                // Get current time in Israel timezone
+                const now = new Date();
+                const israelNow = new Date(now.toLocaleString("en-US", {timeZone: "Asia/Jerusalem"}));
+                const israelDate = new Date(date.toLocaleString("en-US", {timeZone: "Asia/Jerusalem"}));
+                
+                const diffMs = israelNow - israelDate;
+                const diffMins = Math.floor(diffMs / 60000);
+                const diffHours = Math.floor(diffMs / 3600000);
+                const diffDays = Math.floor(diffMs / 86400000);
+                
+                if (diffMins < 1) {
+                    return 'Just now';
+                } else if (diffMins < 60) {
+                    return `${diffMins}m ago`;
+                } else if (diffHours < 24) {
+                    return `${diffHours}h ago`;
+                } else if (diffDays < 7) {
+                    return `${diffDays}d ago`;
+                } else {
+                    // For older dates, show formatted date in Israel timezone
+                    return date.toLocaleDateString('en-US', { 
+                        month: 'short', 
+                        day: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        timeZone: 'Asia/Jerusalem'
+                    });
+                }
+            } catch (error) {
+                console.error('Error formatting timestamp:', error);
+                return 'Unknown';
+            }
+        }
         
         function toggleSignalDetails(timestamp) {
             const detailsElement = document.getElementById(`details-${timestamp}`);
@@ -924,11 +1005,177 @@
                 if (detailsElement.style.display === 'none') {
                     detailsElement.style.display = 'block';
                     iconElement.className = 'bi bi-chevron-up';
+                    // Always refresh signal history when expanding
+                    refreshSignalHistory(timestamp);
                 } else {
                     detailsElement.style.display = 'none';
                     iconElement.className = 'bi bi-chevron-down';
                 }
             }
+        }
+
+        async function deleteSignal(timestamp, symbol) {
+            if (!confirm(`Are you sure you want to delete the signal for ${symbol}?`)) {
+                return;
+            }
+            
+            try {
+                const token = localStorage.getItem('auth_token');
+                if (!token) {
+                    showNotification('Authentication required. Please login again.', 'error');
+                    window.location.href = '/login';
+                    return;
+                }
+                
+                const response = await fetch(`/api/signals/${timestamp}`, {
+                    method: 'DELETE',
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                
+                if (response.ok) {
+                    showNotification('Signal deleted successfully!', 'success');
+                    await loadSignals(); // Refresh the signals list
+                } else {
+                    const error = await response.json();
+                    showNotification(`Failed to delete signal: ${error.detail || 'Unknown error'}`, 'error');
+                }
+            } catch (error) {
+                console.error('Error deleting signal:', error);
+                showNotification('Failed to delete signal. Please try again.', 'error');
+            }
+        }
+
+        function resetThresholds() {
+            // Reset all threshold input fields to empty
+            document.getElementById('buy-threshold-input').value = '';
+            document.getElementById('sell-threshold-input').value = '';
+            document.getElementById('tech-weight-input').value = '';
+            document.getElementById('sentiment-weight-input').value = '';
+            
+            showNotification('Thresholds reset to defaults', 'info');
+        }
+
+        async function refreshSignalHistory(timestamp) {
+            const historyElement = document.getElementById(`history-${timestamp}`);
+            if (!historyElement) return;
+            
+            // Show loading indicator
+            historyElement.innerHTML = `
+                <div class="text-center py-2">
+                    <div class="spinner-border spinner-border-sm text-primary me-2" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <small class="text-muted">Refreshing history...</small>
+                </div>
+            `;
+            
+            try {
+                const token = localStorage.getItem('auth_token');
+                if (!token) {
+                    console.error('No auth token found');
+                    historyElement.innerHTML = '<div class="text-center py-2"><small class="text-danger">Authentication required</small></div>';
+                    return;
+                }
+
+                const response = await fetch(`/api/signals/${timestamp}/history`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    displaySignalHistory(timestamp, data.history);
+                } else {
+                    console.error('Failed to load signal history:', response.status);
+                    historyElement.innerHTML = 
+                        '<div class="text-center py-2"><small class="text-muted">No history available</small></div>';
+                }
+            } catch (error) {
+                console.error('Error loading signal history:', error);
+                historyElement.innerHTML = 
+                    '<div class="text-center py-2"><small class="text-danger">Error loading history</small></div>';
+            }
+        }
+
+        async function loadSignalHistory(timestamp) {
+            // This function is kept for backward compatibility
+            await refreshSignalHistory(timestamp);
+        }
+
+        function displaySignalHistory(timestamp, history) {
+            const historyElement = document.getElementById(`history-${timestamp}`);
+            
+            if (!history || history.length === 0) {
+                historyElement.innerHTML = '<div class="text-center py-2"><small class="text-muted">No history events yet</small></div>';
+                return;
+            }
+
+            const historyHTML = history.map(event => {
+                const eventTime = new Date(event.timestamp).toLocaleString('en-US', {
+                    timeZone: 'Asia/Jerusalem',
+                    year: 'numeric',
+                    month: 'short',
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit'
+                });
+
+                let eventIcon = '📝';
+                let eventColor = 'secondary';
+                
+                switch (event.event_type) {
+                    case 'signal_created':
+                        eventIcon = '🆕';
+                        eventColor = 'success';
+                        break;
+                    case 'status_changed':
+                        eventIcon = '🔄';
+                        eventColor = 'warning';
+                        break;
+                    case 'threshold_updated':
+                        eventIcon = '⚙️';
+                        eventColor = 'info';
+                        break;
+                    case 'market_data_refreshed':
+                        eventIcon = '📊';
+                        eventColor = 'primary';
+                        break;
+                }
+
+                return `
+                    <div class="d-flex align-items-start mb-2 p-2 border-start border-3 border-${eventColor} bg-light">
+                        <div class="me-2">
+                            <span class="fs-5">${eventIcon}</span>
+                        </div>
+                        <div class="flex-grow-1">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <strong class="text-${eventColor} small">${event.description}</strong>
+                                <small class="text-muted">${eventTime}</small>
+                            </div>
+                            ${event.metadata && Object.keys(event.metadata).length > 0 ? `
+                                <div class="mt-1">
+                                    ${Object.entries(event.metadata).map(([key, value]) => {
+                                        if (typeof value === 'object') return '';
+                                        return `<small class="text-muted me-2"><strong>${key}:</strong> ${value}</small>`;
+                                    }).join('')}
+                                </div>
+                            ` : ''}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            historyElement.innerHTML = historyHTML;
+            
+            // Initialize tooltips for any info icons in the history
+            const tooltipTriggerList = [].slice.call(historyElement.querySelectorAll('[data-bs-toggle="tooltip"]'));
+            tooltipTriggerList.map(function (tooltipTriggerEl) {
+                return new bootstrap.Tooltip(tooltipTriggerEl);
+            });
         }
         
 
@@ -947,21 +1194,63 @@
             generateBtn.innerHTML = '<i class="bi bi-hourglass-split"></i> Generating...';
             generateBtn.disabled = true;
             
+            // Debug: Check form values immediately
+            console.log('Form values at start of generateSignal:', {
+                buyThreshold: document.getElementById('buy-threshold-input').value,
+                sellThreshold: document.getElementById('sell-threshold-input').value,
+                techWeight: document.getElementById('tech-weight-input').value,
+                sentimentWeight: document.getElementById('sentiment-weight-input').value
+            });
+            
             // Get custom threshold values (empty strings become null for backend)
-            const buyThreshold = document.getElementById('buy-threshold-input').value;
-            const sellThreshold = document.getElementById('sell-threshold-input').value;
-            const techWeight = document.getElementById('tech-weight-input').value;
-            const sentimentWeight = document.getElementById('sentiment-weight-input').value;
+            const buyThresholdElement = document.getElementById('buy-threshold-input');
+            const sellThresholdElement = document.getElementById('sell-threshold-input');
+            const techWeightElement = document.getElementById('tech-weight-input');
+            const sentimentWeightElement = document.getElementById('sentiment-weight-input');
+            
+            // Debug logging - check if elements exist
+            console.log('Form elements found:', {
+                buyThresholdElement: buyThresholdElement ? 'Found' : 'NOT FOUND',
+                sellThresholdElement: sellThresholdElement ? 'Found' : 'NOT FOUND',
+                techWeightElement: techWeightElement ? 'Found' : 'NOT FOUND',
+                sentimentWeightElement: sentimentWeightElement ? 'Found' : 'NOT FOUND'
+            });
+            
+            // Debug logging - check element details
+            if (buyThresholdElement) {
+                console.log('Buy threshold element details:', {
+                    id: buyThresholdElement.id,
+                    value: buyThresholdElement.value,
+                    placeholder: buyThresholdElement.placeholder,
+                    type: buyThresholdElement.type
+                });
+            }
+            
+            const buyThreshold = buyThresholdElement ? buyThresholdElement.value : '';
+            const sellThreshold = sellThresholdElement ? sellThresholdElement.value : '';
+            const techWeight = techWeightElement ? techWeightElement.value : '';
+            const sentimentWeight = sentimentWeightElement ? sentimentWeightElement.value : '';
+            
+            // Debug logging
+            console.log('Form values:', {
+                buyThreshold,
+                sellThreshold,
+                techWeight,
+                sentimentWeight
+            });
             
             // Prepare request payload
             const payload = {
                 symbol,
                 timeframe,
-                custom_buy_threshold: buyThreshold === '' ? null : parseFloat(buyThreshold),
-                custom_sell_threshold: sellThreshold === '' ? null : parseFloat(sellThreshold),
-                custom_tech_weight: techWeight === '' ? null : parseFloat(techWeight),
-                custom_sentiment_weight: sentimentWeight === '' ? null : parseFloat(sentimentWeight)
+                buy_threshold: buyThreshold === '' ? null : parseFloat(buyThreshold),
+                sell_threshold: sellThreshold === '' ? null : parseFloat(sellThreshold),
+                technical_weight: techWeight === '' ? null : parseFloat(techWeight),
+                sentiment_weight: sentimentWeight === '' ? null : parseFloat(sentimentWeight)
             };
+            
+            // Debug logging
+            console.log('Payload being sent:', payload);
             
 
             try {
@@ -979,7 +1268,7 @@
                         'Content-Type': 'application/json',
                         'Authorization': `Bearer ${token}`
                     },
-                    body: JSON.stringify({ symbol, timeframe })
+                    body: JSON.stringify(payload)
                 });
                 
                 if (response.ok) {
@@ -1026,16 +1315,41 @@
                     </div>
                     <div class="col-md-6">
                         <h6>Scores</h6>
-                        <p><strong>Technical:</strong> ${signal.technical_score.toFixed(2)}</p>
-                        <p><strong>Sentiment:</strong> ${signal.sentiment_score.toFixed(2)}</p>
-                        <p><strong>Fused:</strong> ${signal.fused_score.toFixed(2)}</p>
+                        <p><strong>Technical:</strong> ${signal.technical_score.toFixed(2)} 
+                            <i class="bi bi-info-circle text-primary" 
+                               data-bs-toggle="tooltip" 
+                               data-bs-placement="top" 
+                               title="Combines RSI and MACD indicators. Range: -1 to +1. Positive = bullish momentum, Negative = bearish momentum. Calculated as: (RSI_score + MACD_score) / 2"></i>
+                        </p>
+                        <p><strong>Sentiment:</strong> ${signal.sentiment_score.toFixed(2)} 
+                            <i class="bi bi-info-circle text-primary" 
+                               data-bs-toggle="tooltip" 
+                               data-bs-placement="top" 
+                               title="News sentiment analysis using FinBERT model. Range: -1 to +1. Positive = bullish news, Negative = bearish news. Based on recent market headlines from Google News RSS feeds."></i>
+                        </p>
+                        <p><strong>Fused:</strong> ${signal.fused_score.toFixed(2)} 
+                            <i class="bi bi-info-circle text-primary" 
+                               data-bs-toggle="tooltip" 
+                               data-bs-placement="top" 
+                               title="Final signal score combining technical and sentiment analysis. Formula: (Tech Weight × Technical Score) + (Sentiment Weight × Sentiment Score). Range: -1 to +1. Used to determine BUY/SELL/HOLD signals."></i>
+                        </p>
                     </div>
                 </div>
                 <div class="row mt-3">
                     <div class="col-12">
                         <h6>Risk Management</h6>
-                        ${signal.stop_loss ? `<p><strong>Stop Loss:</strong> ${signal.stop_loss.toFixed(2)}</p>` : ''}
-                        ${signal.take_profit ? `<p><strong>Take Profit:</strong> ${signal.take_profit.toFixed(2)}</p>` : ''}
+                        ${signal.stop_loss ? `<p><strong>Stop Loss:</strong> ${signal.stop_loss.toFixed(2)} 
+                            <i class="bi bi-info-circle text-primary" 
+                               data-bs-toggle="tooltip" 
+                               data-bs-placement="top" 
+                               title="Automatic exit price to limit losses. Calculated as: Current Price ± (2 × ATR). For BUY signals: Current Price - (2 × ATR). For SELL signals: Current Price + (2 × ATR). ATR = Average True Range (volatility measure)."></i>
+                        </p>` : ''}
+                        ${signal.take_profit ? `<p><strong>Take Profit:</strong> ${signal.take_profit.toFixed(2)} 
+                            <i class="bi bi-info-circle text-primary" 
+                               data-bs-toggle="tooltip" 
+                               data-bs-placement="top" 
+                               title="Target profit exit price. Calculated as: Current Price ± (3 × ATR). For BUY signals: Current Price + (3 × ATR). For SELL signals: Current Price - (3 × ATR). Risk-reward ratio is 1:1.5 (2 ATR risk vs 3 ATR reward)."></i>
+                        </p>` : ''}
                     </div>
                 </div>
                 <div class="row mt-3">
@@ -1079,37 +1393,6 @@
             alert('Scheduler functionality will be implemented in the CLI integration');
         }
 
-        // Auto-refresh toggle function
-        function toggleAutoRefresh() {
-            autoRefreshEnabled = !autoRefreshEnabled;
-            const toggleBtn = document.getElementById('toggle-refresh-btn');
-            const refreshIcon = document.getElementById('refresh-icon');
-            const countdownElement = document.getElementById('refresh-countdown');
-            
-            if (autoRefreshEnabled) {
-                // Enable auto-refresh
-                refreshIcon.className = 'bi bi-pause-circle';
-                toggleBtn.title = 'Pause auto-refresh';
-                toggleBtn.classList.remove('btn-outline-danger');
-                toggleBtn.classList.add('btn-outline-secondary');
-                
-                // Reset countdown
-                countdownElement.textContent = '50s';
-                
-                showNotification('Auto-refresh enabled', 'success', 3000);
-            } else {
-                // Disable auto-refresh
-                refreshIcon.className = 'bi bi-play-circle';
-                toggleBtn.title = 'Resume auto-refresh';
-                toggleBtn.classList.remove('btn-outline-secondary');
-                toggleBtn.classList.add('btn-outline-danger');
-                
-                // Show paused state
-                countdownElement.textContent = 'Paused';
-                
-                showNotification('Auto-refresh disabled', 'warning', 3000);
-            }
-        }
 
         // Loading state management
         function showLoadingStates() {

@@ -41,7 +41,6 @@ services:
     volumes:
       - ./config:/app/config:ro
       - ./logs:/app/logs
-      - ./.env:/app/.env:ro
     ports:
       - "8000:8000"  # Web interface
     networks:
