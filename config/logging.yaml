@@ -1,0 +1,62 @@
+# Trading AI Tips - Logging Configuration
+# This file contains logging-specific settings and parameters
+
+# =============================================================================
+# LOGGING CONFIGURATION
+# =============================================================================
+logging:
+  # Log level for the application (controls verbosity)
+  # Options: DEBUG, INFO, WARNING, ERROR, CRITICAL
+  # DEBUG: Most verbose, shows all messages
+  # INFO: General information messages (recommended for production)
+  # WARNING: Warning messages and above
+  # ERROR: Error messages and above
+  # CRITICAL: Only critical error messages
+  level: "INFO"
+  
+  # Log format style for output messages
+  # Options: simple, detailed, json
+  # simple: Basic format with timestamp and message
+  # detailed: Includes module, function, and line number
+  # json: Structured JSON format for log aggregation systems
+  format: "simple"
+  
+  # Log destinations (where logs are written)
+  destinations:
+    # Enable/disable console output (stdout/stderr)
+    console: true
+    
+    # Enable/disable file output
+    file: true
+    
+  # File logging configuration
+  file:
+    # Path to the log file (absolute or relative)
+    # In Docker: /app/logs/ (mounted volume)
+    # Local: ./logs/ (relative to application root)
+    path: "/app/logs/trading_agent.log"
+    
+    # Maximum size of each log file before rotation (bytes)
+    # 10485760 = 10MB (recommended for production)
+    max_bytes: 10485760
+    
+    # Number of backup files to keep during rotation
+    # When max_bytes is reached, creates .1, .2, .3, etc.
+    # 5 backups = keeps 6 files total (current + 5 backups)
+    backup_count: 5
+    
+    # Text encoding for log files
+    # utf-8: Supports international characters
+    encoding: "utf-8"
+    
+  # Console logging configuration
+  console:
+    # Enable colored output for different log levels
+    # true: Colors for better readability (DEBUG=blue, INFO=green, WARNING=yellow, ERROR=red)
+    # false: Plain text output
+    colored: true
+    
+    # Include timestamp in console output
+    # true: Shows timestamp with each log message
+    # false: No timestamp (cleaner output)
+    timestamp: true

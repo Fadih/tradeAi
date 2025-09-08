@@ -19,25 +19,39 @@ class Tip:
 	meta: Optional[Dict] = None
 
 
-def make_rsi_tip(symbol: str, timeframe: str, ohlcv: pd.DataFrame) -> Tip:
-	rsi = compute_rsi(ohlcv["close"], period=14).iloc[-1]
-	if rsi <= 30:
+def make_rsi_tip(symbol: str, timeframe: str, ohlcv: pd.DataFrame, config=None) -> Tip:
+	# Use configuration values if available, otherwise use defaults
+	if config is None:
+		from .config import get_config
+		config = get_config()
+	
+	rsi_period = config.technical_analysis.rsi_period
+	rsi_oversold = config.technical_analysis.rsi_oversold
+	rsi_overbought = config.technical_analysis.rsi_overbought
+	
+	rsi = compute_rsi(ohlcv["close"], period=rsi_period).iloc[-1]
+	if rsi <= rsi_oversold:
 		suggestion = "BUY"
-	elif rsi >= 70:
+	elif rsi >= rsi_overbought:
 		suggestion = "SELL"
 	else:
 		suggestion = "NEUTRAL"
-	atr = float(compute_atr(ohlcv["high"], ohlcv["low"], ohlcv["close"]).iloc[-1])
+	
+	atr_period = config.technical_analysis.atr_period
+	atr_stop_multiplier = config.risk_management.atr_stop_multiplier
+	atr_tp_multiplier = config.risk_management.atr_take_profit_multiplier
+	
+	atr = float(compute_atr(ohlcv["high"], ohlcv["low"], ohlcv["close"], period=atr_period).iloc[-1])
 	close_val = ohlcv["close"].ffill().iloc[-1]
 	close = float(close_val) if math.isfinite(float(close_val)) else 1.0
 	if not math.isfinite(atr) or atr <= 0:
 		atr = max(1e-6, 0.01 * close)
-	stop = close - 2 * atr if suggestion == "BUY" else close + 2 * atr
-	tp = close + 3 * atr if suggestion == "BUY" else close - 3 * atr
+	stop = close - atr_stop_multiplier * atr if suggestion == "BUY" else close + atr_stop_multiplier * atr
+	tp = close + atr_tp_multiplier * atr if suggestion == "BUY" else close - atr_tp_multiplier * atr
 	return Tip(
 		symbol=symbol,
 		timeframe=timeframe,
-		indicator="RSI(14)",
+		indicator=f"RSI({rsi_period})",
 		value=float(rsi),
 		suggestion=suggestion,
 		meta={"atr": float(atr), "close": close, "stop": stop, "tp": tp},

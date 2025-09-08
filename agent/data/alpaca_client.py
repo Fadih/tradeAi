@@ -13,11 +13,20 @@ except Exception:
 
 logger = get_logger(__name__)
 
-def fetch_ohlcv_stub(symbol: str, timeframe: str, limit: int = 200) -> pd.DataFrame:
+def fetch_ohlcv_stub(symbol: str, timeframe: str, limit: int = None) -> pd.DataFrame:
 	"""Stub for Alpaca OHLCV. Replace with Alpaca SDK calls later.
 
 	Returns minimal DataFrame with columns: time, open, high, low, close, volume.
 	"""
+	# Get default limit from configuration if not provided
+	if limit is None:
+		try:
+			from ..config import get_config
+			config = get_config()
+			limit = config.technical_analysis.data_fetching_default_limit
+		except:
+			limit = 200  # Fallback to hardcoded default
+	
 	logger.debug(f"Using stub OHLCV for {symbol} @ {timeframe}, limit={limit}")
 	index = pd.date_range(end=pd.Timestamp.utcnow(), periods=limit, freq="h")
 	base = pd.Series(range(limit), dtype="float64")
@@ -34,12 +43,21 @@ def fetch_ohlcv_stub(symbol: str, timeframe: str, limit: int = 200) -> pd.DataFr
 	return data
 
 
-def fetch_ohlcv(symbol: str, timeframe: str, limit: int = 200) -> pd.DataFrame:
+def fetch_ohlcv(symbol: str, timeframe: str, limit: int = None) -> pd.DataFrame:
 	"""Fetch OHLCV via Alpaca if available else fallback to stub.
 
 	Env: ALPACA_KEY_ID, ALPACA_SECRET_KEY, ALPACA_BASE_URL
 	Timeframe: map '1h' to '1Hour', '15m' to '15Min', etc.
 	"""
+	# Get default limit from configuration if not provided
+	if limit is None:
+		try:
+			from ..config import get_config
+			config = get_config()
+			limit = config.technical_analysis.data_fetching_default_limit
+		except:
+			limit = 200  # Fallback to hardcoded default
+	
 	logger.info(f"Fetching OHLCV: {symbol} @ {timeframe}, limit={limit}")
 	
 	if not _alpaca_ok:
@@ -48,7 +66,13 @@ def fetch_ohlcv(symbol: str, timeframe: str, limit: int = 200) -> pd.DataFrame:
 
 	key = os.getenv("ALPACA_KEY_ID")
 	secret = os.getenv("ALPACA_SECRET_KEY")
-	base_url = os.getenv("ALPACA_BASE_URL", "https://paper-api.alpaca.markets")
+	# Try to get base URL from config first, then environment variable
+	try:
+		from ..config import get_config
+		config = get_config()
+		base_url = config.exchanges.alpaca_base_url
+	except:
+		base_url = os.getenv("ALPACA_BASE_URL", "https://paper-api.alpaca.markets")
 	
 	if not key or not secret:
 		logger.warning("Alpaca API keys not configured, using stub data")

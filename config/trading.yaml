@@ -1,0 +1,282 @@
+# Trading AI Tips - Trading Configuration
+# This file contains trading-specific settings and parameters
+
+# =============================================================================
+# TRADING UNIVERSE CONFIGURATION
+# =============================================================================
+universe:
+  # Supported trading symbols organized by asset class
+  symbols:
+    crypto:
+      # Cryptocurrency trading pairs (CCXT format)
+      - "BTC/USDT"    # Bitcoin vs USDT
+      - "ETH/USDT"    # Ethereum vs USDT
+      - "BNB/USDT"    # Binance Coin vs USDT
+      - "ADA/USDT"    # Cardano vs USDT
+      - "SOL/USDT"    # Solana vs USDT
+    stocks:
+      # Stock symbols (Alpaca format)
+      - "AAPL"        # Apple Inc.
+      - "GOOGL"       # Alphabet Inc. (Google)
+      - "MSFT"        # Microsoft Corporation
+      - "TSLA"        # Tesla Inc.
+      - "AMZN"        # Amazon.com Inc.
+      - "NVDA"        # NVIDIA Corporation
+  
+  # Default timeframe for technical analysis and signal generation
+  default_timeframe: "1h"
+  
+  # Available timeframes for analysis (in order of preference)
+  timeframes:
+    - "15m"    # 15-minute candles (short-term)
+    - "1h"     # 1-hour candles (default)
+    - "4h"     # 4-hour candles (medium-term)
+    - "1d"     # Daily candles (long-term)
+    
+# =============================================================================
+# SIGNAL GENERATION CONFIGURATION
+# =============================================================================
+signals:
+  # Default thresholds for signal generation (fused score ranges)
+  thresholds:
+    # Minimum fused score to generate BUY signal (0.0 to 1.0)
+    buy_threshold: 0.5
+    
+    # Maximum fused score to generate SELL signal (-1.0 to 0.0)
+    sell_threshold: -0.5
+    
+  # Weight configuration for signal fusion (must sum to 1.0)
+  weights:
+    # Weight of technical analysis in final signal (0.0 to 1.0)
+    technical_weight: 0.6
+    
+    # Weight of sentiment analysis in final signal (0.0 to 1.0)
+    sentiment_weight: 0.4
+    
+  # Technical indicator parameters
+  parameters:
+    # RSI (Relative Strength Index) period for calculation
+    rsi_period: 14
+    
+    # RSI overbought threshold (above this = overbought)
+    rsi_overbought: 70
+    
+    # RSI oversold threshold (below this = oversold)
+    rsi_oversold: 30
+    
+    # MACD fast EMA period
+    macd_fast: 12
+    
+    # MACD slow EMA period
+    macd_slow: 26
+    
+    # MACD signal line EMA period
+    macd_signal: 9
+    
+    # ATR (Average True Range) period for volatility calculation
+    atr_period: 14
+    
+  # Risk management parameters
+  risk_management:
+    # Stop loss as percentage of entry price (0.02 = 2%)
+    stop_loss_percentage: 0.02
+    
+    # Take profit as percentage of entry price (0.04 = 4%)
+    take_profit_percentage: 0.04
+    
+    # Maximum position size as percentage of portfolio (0.1 = 10%)
+    max_position_size: 0.1
+    
+    # Maximum number of signals per day per user
+    max_daily_signals: 10
+    
+# =============================================================================
+# TECHNICAL ANALYSIS CONFIGURATION
+# =============================================================================
+technical_analysis:
+  # Data fetching configuration for OHLCV data
+  data_fetching:
+    # Default number of historical data points to fetch
+    default_limit: 200
+    
+    # Maximum number of data points allowed
+    max_limit: 1000
+    
+    # Minimum number of data points required
+    min_limit: 50
+    
+  # RSI (Relative Strength Index) Configuration
+  rsi:
+    # Period for RSI calculation (typically 14)
+    period: 14
+    
+    # Overbought threshold (above this level = bearish signal)
+    overbought_threshold: 70
+    
+    # Oversold threshold (below this level = bullish signal)
+    oversold_threshold: 30
+    
+  # MACD (Moving Average Convergence Divergence) Configuration
+  macd:
+    # Fast EMA period (typically 12)
+    fast_period: 12
+    
+    # Slow EMA period (typically 26)
+    slow_period: 26
+    
+    # Signal line EMA period (typically 9)
+    signal_period: 9
+    
+  # ATR (Average True Range) Configuration
+  atr:
+    # Period for ATR calculation (typically 14)
+    period: 14
+    
+    # Multiplier for stop loss/take profit calculations
+    multiplier: 2.0
+    
+  # Moving Averages Configuration
+  moving_averages:
+    # Simple Moving Average periods to calculate
+    sma_periods: [20, 50, 200]
+    
+    # Exponential Moving Average periods to calculate
+    ema_periods: [12, 26, 50]
+    
+# =============================================================================
+# SENTIMENT ANALYSIS CONFIGURATION
+# =============================================================================
+sentiment_analysis:
+  # AI Model configuration for sentiment analysis
+  model:
+    # Hugging Face model name for financial sentiment analysis
+    name: "ProsusAI/finbert"
+    
+    # Maximum text length for model input (tokens)
+    max_length: 512
+    
+    # Batch size for model processing
+    batch_size: 32
+    
+  # RSS feeds configuration
+  rss_enabled: true
+  
+  # RSS feed URLs for news headlines
+  rss_feeds:
+    - "https://news.google.com/rss/search?q=stock+market&hl=en-US&gl=US&ceid=US:en"
+    - "https://news.google.com/rss/search?q=crypto+btc&hl=en-US&gl=US&ceid=US:en"
+  
+  # Maximum headlines to fetch per RSS feed
+  rss_max_headlines_per_feed: 15
+  
+  # Reddit integration configuration
+  reddit_enabled: true
+  
+  # Subreddits to monitor for sentiment
+  reddit_subreddits:
+    - "CryptoCurrency"    # General cryptocurrency discussion
+    - "Bitcoin"           # Bitcoin-specific discussion
+    - "ethereum"          # Ethereum-specific discussion
+    - "investing"         # General investing discussion
+    - "stocks"            # Stock market discussion
+  
+  # Maximum posts to fetch per subreddit
+  reddit_max_posts_per_subreddit: 10
+  
+  # Sample size for sentiment analysis (random selection from all collected texts)
+  reddit_sample_size: 20
+      
+  # Sentiment scoring thresholds
+  scoring:
+    # Minimum score to classify as positive sentiment
+    positive_threshold: 0.1
+    
+    # Maximum score to classify as negative sentiment
+    negative_threshold: -0.1
+    
+    # Range for neutral sentiment classification
+    neutral_range: [-0.1, 0.1]
+    
+# =============================================================================
+# EXCHANGE CONFIGURATION
+# =============================================================================
+exchanges:
+  # CCXT Configuration (for cryptocurrency data)
+  ccxt:
+    # Default exchange for crypto data (binance, coinbase, etc.)
+    default_exchange: "binance"
+    
+    # Enable rate limiting to avoid API limits
+    rate_limit: true
+    
+    # Request timeout in milliseconds
+    timeout: 30000
+    
+    # Number of retry attempts for failed requests
+    retries: 3
+    
+  # Alpaca Configuration (for stock/ETF data)
+  alpaca:
+    # Base URL for Alpaca API (paper trading)
+    base_url: "https://paper-api.alpaca.markets"
+    
+    # Data URL for market data API
+    data_url: "https://data.alpaca.markets"
+    
+    # Request timeout in seconds
+    timeout: 30
+    
+    # Number of retry attempts for failed requests
+    retries: 3
+    
+# =============================================================================
+# POSITION TRACKING CONFIGURATION
+# =============================================================================
+positions:
+  # Position tracking settings
+  tracking:
+    # Enable/disable position tracking functionality
+    enabled: true
+    
+    # Interval between position updates (minutes)
+    update_interval_minutes: 5
+    
+    # Maximum number of positions per user
+    max_positions_per_user: 50
+    
+  # Position lifecycle management
+  lifecycle:
+    # Automatically close positions when opposite signal is generated
+    auto_close_on_signal: false
+    
+    # Maximum number of days to hold a position
+    max_holding_days: 30
+    
+    # Minimum number of minutes to hold a position (prevents rapid trading)
+    min_holding_minutes: 15
+    
+# =============================================================================
+# BACKTESTING CONFIGURATION
+# =============================================================================
+backtesting:
+  # Default backtest parameters
+  default:
+    # Start date for backtesting (YYYY-MM-DD format)
+    start_date: "2024-01-01"
+    
+    # End date for backtesting (YYYY-MM-DD format)
+    end_date: "2024-12-31"
+    
+    # Initial capital for backtesting (USD)
+    initial_capital: 10000
+    
+    # Commission rate per trade (0.001 = 0.1%)
+    commission: 0.001
+    
+  # Performance metrics to calculate during backtesting
+  metrics:
+    - "sharpe_ratio"      # Risk-adjusted return metric
+    - "max_drawdown"      # Maximum peak-to-trough decline
+    - "win_rate"          # Percentage of profitable trades
+    - "total_return"      # Total return over backtest period
+    - "volatility"        # Standard deviation of returns

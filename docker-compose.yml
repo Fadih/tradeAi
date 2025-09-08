@@ -14,28 +14,35 @@ services:
       - trading-network
 
   trading-agent:
-    build: .
+    build: 
+      context: .
+      target: production  # Use production stage by default
     container_name: trading-agent
     restart: unless-stopped
     environment:
-      - AGENT_LOG_LEVEL=${AGENT_LOG_LEVEL:-info}
-      - AGENT_LOG_FORMAT=${AGENT_LOG_FORMAT:-simple}
-      - AGENT_LOG_FILE=${AGENT_LOG_FILE:-/app/logs/trading_agent.log}
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - REDIS_DB=0
+      # Redis connection (sensitive)
       - REDIS_PASSWORD=${REDIS_PASSWORD:-}
-      # Add your API keys here or use .env file
-      - CCXT_EXCHANGE=${CCXT_EXCHANGE:-binance}
+      
+      # Security (sensitive)
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-}
+      - DEFAULT_ADMIN_PASSWORD=${DEFAULT_ADMIN_PASSWORD:-}
+      
+      # API Keys (sensitive)
       - CCXT_API_KEY=${CCXT_API_KEY:-}
       - CCXT_API_SECRET=${CCXT_API_SECRET:-}
       - ALPACA_KEY_ID=${ALPACA_KEY_ID:-}
       - ALPACA_SECRET_KEY=${ALPACA_SECRET_KEY:-}
-      - ALPACA_BASE_URL=${ALPACA_BASE_URL:-https://paper-api.alpaca.markets}
       - HF_TOKEN=${HF_TOKEN:-}
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
       - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-}
       - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL:-}
+      
+      # Logging (can be overridden for debugging)
+      - AGENT_LOG_LEVEL=${AGENT_LOG_LEVEL:-}
+      - AGENT_LOG_FORMAT=${AGENT_LOG_FORMAT:-}
+      - AGENT_LOG_FILE=${AGENT_LOG_FILE:-}
+      - AGENT_LOG_MAX_BYTES=${AGENT_LOG_MAX_BYTES:-}
+      - AGENT_LOG_BACKUP_COUNT=${AGENT_LOG_BACKUP_COUNT:-}
     depends_on:
       - redis
     volumes:

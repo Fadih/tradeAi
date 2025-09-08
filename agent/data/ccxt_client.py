@@ -15,11 +15,20 @@ except Exception:
 
 logger = get_logger(__name__)
 
-def fetch_ohlcv_stub(symbol: str, timeframe: str, limit: int = 200) -> pd.DataFrame:
+def fetch_ohlcv_stub(symbol: str, timeframe: str, limit: int = None) -> pd.DataFrame:
 	"""Stub for CCXT OHLCV. Replace with live CCXT calls later.
 
 	Returns minimal DataFrame with columns: time, open, high, low, close, volume.
 	"""
+	# Get default limit from configuration if not provided
+	if limit is None:
+		try:
+			from ..config import get_config
+			config = get_config()
+			limit = config.technical_analysis.data_fetching_default_limit
+		except:
+			limit = 200  # Fallback to hardcoded default
+	
 	logger.debug(f"Using stub OHLCV for {symbol} @ {timeframe}, limit={limit}")
 	index = pd.date_range(end=pd.Timestamp.utcnow(), periods=limit, freq="h")
 	base = pd.Series(range(limit), dtype="float64")
@@ -36,20 +45,35 @@ def fetch_ohlcv_stub(symbol: str, timeframe: str, limit: int = 200) -> pd.DataFr
 	return data
 
 
-def fetch_ohlcv(symbol: str, timeframe: str, limit: int = 200) -> pd.DataFrame:
+def fetch_ohlcv(symbol: str, timeframe: str, limit: int = None) -> pd.DataFrame:
 	"""Fetch OHLCV via CCXT if available else fallback to stub.
 
 	Env overrides:
 	- CCXT_EXCHANGE (default: binance)
 	- CCXT_API_KEY, CCXT_API_SECRET (optional)
 	"""
+	# Get default limit from configuration if not provided
+	if limit is None:
+		try:
+			from ..config import get_config
+			config = get_config()
+			limit = config.technical_analysis.data_fetching_default_limit
+		except:
+			limit = 200  # Fallback to hardcoded default
+	
 	logger.info(f"Fetching OHLCV: {symbol} @ {timeframe}, limit={limit}")
 	
 	if not _ccxt_ok:
 		logger.warning("CCXT not available, using stub data")
 		return fetch_ohlcv_stub(symbol, timeframe, limit)
 
-	exchange_name = os.getenv("CCXT_EXCHANGE", "binance").lower()
+	# Try to get exchange from config first, then environment variable
+	try:
+		from ..config import get_config
+		config = get_config()
+		exchange_name = config.exchanges.ccxt_default_exchange.lower()
+	except:
+		exchange_name = os.getenv("CCXT_EXCHANGE", "binance").lower()
 	logger.debug(f"Using CCXT exchange: {exchange_name}")
 	
 	exchange_class = getattr(ccxt, exchange_name, None)

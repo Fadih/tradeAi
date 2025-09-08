@@ -83,10 +83,9 @@ def cmd_run_once() -> None:
 	sent = SentimentAnalyzer(config.models.sentiment_model)
 	
 	logger.info("Fetching news headlines for sentiment analysis")
-	news_texts = fetch_headlines([
-		"https://news.google.com/rss/search?q=stock+market&hl=en-US&gl=US&ceid=US:en",
-		"https://news.google.com/rss/search?q=crypto+btc&hl=en-US&gl=US&ceid=US:en",
-	])
+	# Use RSS feeds from configuration
+	rss_feeds = config.sentiment_analysis.rss_feeds if config.sentiment_analysis.rss_enabled else []
+	news_texts = fetch_headlines(rss_feeds, limit_per_feed=config.sentiment_analysis.rss_max_headlines_per_feed)
 	
 	logger.info(f"Scoring sentiment for {len(news_texts)} news items")
 	sent_score = sent.score(news_texts)
@@ -122,10 +121,9 @@ def cmd_backtest() -> None:
 	sent = SentimentAnalyzer(config.models.sentiment_model)
 	
 	logger.info("Fetching news headlines for sentiment analysis")
-	texts = fetch_headlines([
-		"https://news.google.com/rss/search?q=stock+market&hl=en-US&gl=US&ceid=US:en",
-		"https://news.google.com/rss/search?q=crypto+btc&hl=en-US&gl=US&ceid=US:en",
-	])
+	# Use RSS feeds from configuration
+	rss_feeds = config.sentiment_analysis.rss_feeds if config.sentiment_analysis.rss_enabled else []
+	texts = fetch_headlines(rss_feeds, limit_per_feed=config.sentiment_analysis.rss_max_headlines_per_feed)
 	
 	logger.info(f"Scoring sentiment for {len(texts)} news items")
 	sent_score = sent.score(texts)
@@ -169,10 +167,9 @@ def cmd_tune() -> None:
 	sent = SentimentAnalyzer(config.models.sentiment_model)
 	
 	logger.info("Fetching news headlines for sentiment analysis")
-	texts = fetch_headlines([
-		"https://news.google.com/rss/search?q=stock+market&hl=en-US&gl=US&ceid=US:en",
-		"https://news.google.com/rss/search?q=crypto+btc&hl=en-US&gl=US&ceid=US:en",
-	])
+	# Use RSS feeds from configuration
+	rss_feeds = config.sentiment_analysis.rss_feeds if config.sentiment_analysis.rss_enabled else []
+	texts = fetch_headlines(rss_feeds, limit_per_feed=config.sentiment_analysis.rss_max_headlines_per_feed)
 	
 	logger.info(f"Scoring sentiment for {len(texts)} news items")
 	sent_score = sent.score(texts)

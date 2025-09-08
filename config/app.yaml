@@ -1,0 +1,269 @@
+# Trading AI Tips - Application Configuration
+# This file contains general application settings and version information
+
+# =============================================================================
+# APPLICATION INFORMATION
+# =============================================================================
+app:
+  # Application name displayed in UI and API responses
+  name: "Trading AI Tips"
+  
+  # Application version for API versioning and display
+  version: "2.0.0"
+  
+  # Description shown in API documentation and about pages
+  description: "AI-Powered Trading Signals & Analysis Platform"
+  
+  # Author information for credits and documentation
+  author: "Fadi Hussein"
+  
+  # License type for legal compliance
+  license: "MIT"
+  
+  # Website URL for documentation and support links
+  website: "https://github.com/fadi-hussein/tradeAi"
+  
+  # Maintenance notification message (empty = no notification)
+  # When not empty, displays a maintenance notification at the top of the dashboard
+  maintenance_message: "Scheduled maintenance window: Sunday, January 15th, 2024 from 2:00 AM to 4:00 AM EST. The system will be temporarily unavailable during this time."
+  #maintenance_message: ""
+
+# =============================================================================
+# TELEGRAM NOTIFICATIONS CONFIGURATION
+# =============================================================================
+telegram:
+  # Telegram Bot Token (get from @BotFather)
+  # Store securely in environment variable TELEGRAM_BOT_TOKEN
+  bot_token: "7584767041:AAFz4DQ0fuSl2zPXuNMA3hKXBeyi3SyvLtA"
+  
+  # Enable/disable Telegram notifications globally
+  enabled: true
+  
+  # Telegram Bot API settings
+  api_url: "https://api.telegram.org/bot"
+  timeout: 10  # Request timeout in seconds
+  max_retries: 3  # Retry failed notifications
+  
+  # Notification settings
+  notifications:
+    # Send notifications for these events
+    signal_created: true
+    signal_changed: true
+    signal_deleted: true
+    maintenance: true
+    system_errors: false  # Set to true for admin notifications
+    
+    # Rate limiting (prevent spam)
+    max_notifications_per_minute: 10
+    cooldown_seconds: 5  # Minimum time between notifications for same user
+
+# =============================================================================
+# SERVER CONFIGURATION
+# =============================================================================
+server:
+  # Host address to bind the server (0.0.0.0 = all interfaces)
+  host: "0.0.0.0"
+  
+  # Port number for the web server
+  port: 8000
+  
+  # Enable debug mode for development (shows detailed error messages)
+  debug: false
+  
+  # Enable auto-reload on code changes (development only)
+  reload: false
+  
+  # Number of worker processes for production (1 for development)
+  workers: 1
+  
+# =============================================================================
+# DATABASE CONFIGURATION
+# =============================================================================
+database:
+  redis:
+    # Redis server hostname or IP address
+    host: "redis"
+    
+    # Redis server port number
+    port: 6379
+    
+    # Redis database number (0-15)
+    db: 0
+    
+    # Redis password (empty for no authentication)
+    password: ""
+    
+    # Maximum number of concurrent connections to Redis
+    max_connections: 10
+    
+    # Socket timeout for Redis operations (seconds)
+    socket_timeout: 5
+    
+    # Connection timeout when connecting to Redis (seconds)
+    socket_connect_timeout: 5
+    
+    # Retry failed operations due to timeout
+    retry_on_timeout: true
+    
+# =============================================================================
+# SECURITY CONFIGURATION
+# =============================================================================
+security:
+  jwt:
+    # Secret key for JWT token signing (CHANGE IN PRODUCTION!)
+    secret_key: "your-secret-key-change-in-production"
+    
+    # JWT signing algorithm
+    algorithm: "HS256"
+    
+    # Token expiration time in minutes (1440 = 24 hours)
+    access_token_expire_minutes: 1440
+    
+  password:
+    # Minimum password length requirement
+    min_length: 8
+    
+    # Require special characters in passwords
+    require_special_chars: true
+    
+    # Require numbers in passwords
+    require_numbers: true
+    
+    # Require uppercase letters in passwords
+    require_uppercase: true
+    
+  session:
+    # Session timeout in hours
+    timeout_hours: 24
+    
+    # Maximum failed login attempts before lockout
+    max_login_attempts: 5
+    
+    # Lockout duration in minutes after max attempts
+    lockout_duration_minutes: 30
+    
+  # Default admin user configuration (CHANGE IN PRODUCTION!)
+  default_admin:
+    # Default admin username
+    username: "admin"
+    
+    # Default admin password (CHANGE THIS!)
+    password: "admin123"
+    
+# =============================================================================
+# API CONFIGURATION
+# =============================================================================
+api:
+  rate_limit:
+    # Maximum requests per minute per IP
+    requests_per_minute: 100
+    
+    # Burst limit for short-term spikes
+    burst_limit: 200
+    
+  cors:
+    # Allowed origins for CORS (* = all origins)
+    allowed_origins: ["*"]
+    
+    # Allowed HTTP methods
+    allowed_methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+    
+    # Allowed headers in requests
+    allowed_headers: ["*"]
+    
+    # Allow credentials in CORS requests
+    allow_credentials: true
+    
+# =============================================================================
+# MONITORING CONFIGURATION
+# =============================================================================
+monitoring:
+  # Interval between signal monitoring checks (minutes)
+  signal_check_interval_minutes: 2
+  
+  # Interval between health checks (seconds)
+  health_check_interval_seconds: 30
+  
+  # Maximum number of concurrent signal monitors
+  max_concurrent_monitors: 10
+  
+  # Number of days to retain monitoring history
+  history_retention_days: 30
+  
+# =============================================================================
+# NOTIFICATION CONFIGURATION
+# =============================================================================
+notifications:
+  # Enable/disable notification system
+  enabled: true
+  
+  # Notification channels to use
+  channels:
+    - "console"    # Print to console/logs
+    - "webhook"    # Send HTTP webhooks
+    
+  webhook:
+    # Timeout for webhook requests (seconds)
+    timeout_seconds: 10
+    
+    # Number of retry attempts for failed webhooks
+    retry_attempts: 3
+    
+    # Delay between retry attempts (seconds)
+    retry_delay_seconds: 5
+    
+# =============================================================================
+# FEATURE FLAGS
+# =============================================================================
+features:
+  # Enable/disable signal generation functionality
+  signal_generation: true
+  
+  # Enable/disable signal monitoring functionality
+  signal_monitoring: true
+  
+  # Enable/disable position tracking functionality
+  position_tracking: true
+  
+  # Enable/disable user management functionality
+  user_management: true
+  
+  # Enable/disable admin dashboard functionality
+  admin_dashboard: true
+  
+  # Enable/disable API documentation endpoints
+  api_documentation: true
+  
+  # Enable/disable real-time updates via WebSocket
+  real_time_updates: true
+  
+  # Enable/disable sentiment analysis functionality
+  sentiment_analysis: true
+  
+  # Enable/disable technical analysis functionality
+  technical_analysis: true
+  
+  # Enable/disable Reddit integration for sentiment
+  reddit_integration: true
+  
+  # Enable/disable news integration for sentiment
+  news_integration: true
+  
+# =============================================================================
+# DEVELOPMENT CONFIGURATION
+# =============================================================================
+development:
+  # Enable debug mode (shows detailed errors and stack traces)
+  debug_mode: false
+  
+  # Enable verbose logging (more detailed log messages)
+  verbose_logging: false
+  
+  # Use mock data instead of real API calls (for testing)
+  mock_data: false
+  
+  # Enable hot reload for development (auto-restart on changes)
+  hot_reload: false
+  
+  # Enable performance profiling (tracks execution times)
+  profiling: false

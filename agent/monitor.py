@@ -15,6 +15,7 @@ from .data.alpaca_client import fetch_ohlcv as fetch_alpaca_ohlcv
 from .models.sentiment import SentimentAnalyzer
 from .news.rss import fetch_headlines
 from .news.reddit import fetch_crypto_reddit_posts, fetch_stock_reddit_posts
+from .config import get_config
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +26,24 @@ class SignalMonitor:
         self.redis_client = redis_client
         self.sentiment_analyzer = sentiment_analyzer
         self.israel_tz = pytz.timezone('Asia/Jerusalem')
+        
+        # Load monitoring configuration
+        try:
+            config = get_config()
+            self.signal_check_interval_minutes = config.monitoring.signal_check_interval_minutes
+            self.health_check_interval_seconds = config.monitoring.health_check_interval_seconds
+            self.max_concurrent_monitors = config.monitoring.max_concurrent_monitors
+            self.history_retention_days = config.monitoring.history_retention_days
+            logger.info(f"Loaded monitoring config: check_interval={self.signal_check_interval_minutes}min, "
+                       f"health_interval={self.health_check_interval_seconds}s, "
+                       f"max_concurrent={self.max_concurrent_monitors}, "
+                       f"retention={self.history_retention_days}days")
+        except Exception as e:
+            logger.warning(f"Failed to load monitoring config, using defaults: {e}")
+            self.signal_check_interval_minutes = 2
+            self.health_check_interval_seconds = 30
+            self.max_concurrent_monitors = 10
+            self.history_retention_days = 30
         
     async def monitor_all_signals(self) -> Dict[str, Any]:
         """Monitor all active signals and update their status"""
@@ -52,6 +71,10 @@ class SignalMonitor:
                         signals_by_symbol[symbol] = []
                     signals_by_symbol[symbol].append(signal)
             
+            # Limit concurrent processing based on configuration
+            max_concurrent = min(self.max_concurrent_monitors, len(signals_by_symbol))
+            logger.info(f"Processing {len(signals_by_symbol)} symbols with max {max_concurrent} concurrent monitors")
+            
             # Process each symbol
             for symbol, signals in signals_by_symbol.items():
                 try:
@@ -74,6 +97,40 @@ class SignalMonitor:
         except Exception as e:
             logger.error(f"Error in monitor_all_signals: {e}")
             return {"monitored": 0, "updated": 0, "errors": 1, "error": str(e)}
+    
+    async def cleanup_old_history(self) -> Dict[str, Any]:
+        """Clean up old signal history based on retention configuration"""
+        try:
+            cutoff_date = datetime.now(self.israel_tz) - timedelta(days=self.history_retention_days)
+            cutoff_timestamp = cutoff_date.isoformat()
+            
+            logger.info(f"Cleaning up signal history older than {cutoff_timestamp} (retention: {self.history_retention_days} days)")
+            
+            # Get all signals
+            all_signals = await self.redis_client.get_signals(limit=10000)
+            if not all_signals:
+                return {"cleaned": 0, "errors": 0}
+            
+            cleaned_count = 0
+            error_count = 0
+            
+            for signal in all_signals:
+                try:
+                    signal_timestamp = signal.get('timestamp')
+                    if signal_timestamp and signal_timestamp < cutoff_timestamp:
+                        # Clean up old history for this signal
+                        await self.redis_client.cleanup_signal_history(signal_timestamp)
+                        cleaned_count += 1
+                except Exception as e:
+                    logger.error(f"Error cleaning history for signal {signal.get('timestamp', 'unknown')}: {e}")
+                    error_count += 1
+            
+            logger.info(f"History cleanup completed: {cleaned_count} signals cleaned, {error_count} errors")
+            return {"cleaned": cleaned_count, "errors": error_count}
+            
+        except Exception as e:
+            logger.error(f"Error during history cleanup: {e}")
+            return {"cleaned": 0, "errors": 1}
     
     async def _monitor_symbol_signals(self, symbol: str, signals: List[Dict]) -> int:
         """Monitor signals for a specific symbol"""
@@ -125,34 +182,36 @@ class SignalMonitor:
             
             # Fetch RSS headlines
             logger.info("Monitoring: Fetching RSS headlines...")
-            headlines = fetch_headlines([
-                "https://news.google.com/rss/search?q=stock+market&hl=en-US&gl=US&ceid=US:en",
-                "https://news.google.com/rss/search?q=crypto+btc&hl=en-US&gl=US&ceid=US:en",
-            ], limit_per_feed=10)  # Reduced to make room for Reddit
+            # Use RSS feeds from configuration
+            rss_feeds = config.sentiment_analysis.rss_feeds if config.sentiment_analysis.rss_enabled else []
+            headlines = fetch_headlines(rss_feeds, limit_per_feed=config.sentiment_analysis.rss_max_headlines_per_feed)
             if headlines:
                 all_texts.extend(headlines)
                 logger.info(f"Monitoring: RSS collected {len(headlines)} headlines")
             
-            # Fetch Reddit posts (mix of crypto and stock for monitoring)
-            logger.info("Monitoring: Fetching Reddit posts...")
-            try:
-                crypto_posts = fetch_crypto_reddit_posts(limit_per_subreddit=3)
-                stock_posts = fetch_stock_reddit_posts(limit_per_subreddit=3)
-                
-                if crypto_posts:
-                    all_texts.extend(crypto_posts)
-                    logger.info(f"Monitoring: Reddit collected {len(crypto_posts)} crypto posts")
-                if stock_posts:
-                    all_texts.extend(stock_posts)
-                    logger.info(f"Monitoring: Reddit collected {len(stock_posts)} stock posts")
+            # Fetch Reddit posts using configuration
+            if config.sentiment_analysis.reddit_enabled:
+                logger.info("Monitoring: Fetching Reddit posts...")
+                try:
+                    from .news.reddit import fetch_reddit_posts
+                    reddit_posts = fetch_reddit_posts(
+                        subreddits=config.sentiment_analysis.reddit_subreddits,
+                        limit_per_subreddit=config.sentiment_analysis.reddit_max_posts_per_subreddit
+                    )
                     
-            except Exception as e:
-                logger.warning(f"Monitoring: Could not fetch Reddit posts: {e}")
+                    if reddit_posts:
+                        all_texts.extend(reddit_posts)
+                        logger.info(f"Monitoring: Reddit collected {len(reddit_posts)} posts from {len(config.sentiment_analysis.reddit_subreddits)} subreddits")
+                        
+                except Exception as e:
+                    logger.warning(f"Monitoring: Could not fetch Reddit posts: {e}")
+            else:
+                logger.info("Monitoring: Reddit integration disabled in configuration")
             
             if all_texts:
-                # Use optimal sample size with mixed sources
+                # Use sample size from configuration
                 import random
-                sample_size = min(20, len(all_texts))  # Increased to 20 for mixed sources
+                sample_size = min(config.sentiment_analysis.reddit_sample_size, len(all_texts))
                 shuffled_texts = all_texts.copy()
                 random.shuffle(shuffled_texts)
                 text_sample = shuffled_texts[:sample_size]
