@@ -350,7 +350,7 @@ class SignalMonitor:
             await self.redis_client.add_signal_history_event(
                 signal_timestamp=signal.get('timestamp'),
                 event_type="monitoring_cycle",
-                description=f"Monitoring cycle completed - Status remains {original_signal_type}",
+                description=f"Status remains {original_signal_type}",
                 metadata={
                     "current_status": original_signal_type,
                     "fused_score": fresh_fused_score,

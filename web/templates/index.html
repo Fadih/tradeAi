@@ -456,6 +456,7 @@
         // Global variables
         let statusUpdateInterval = null;
         let messageRefreshInterval = null;
+        let signalRefreshInterval = null;
         let isLoggingOut = false;
         let isLoadingMessages = false;
 
@@ -514,6 +515,7 @@
             initializeDashboard();
             startStatusUpdates();
             startMessageRefresh();
+            startSignalRefresh();
             
             // Load user messages for notification dropdown
             loadUserMessages();
@@ -532,6 +534,9 @@
             }
             if (messageRefreshInterval) {
                 clearInterval(messageRefreshInterval);
+            }
+            if (signalRefreshInterval) {
+                clearInterval(signalRefreshInterval);
             }
             if (aiAnalysisInterval) {
                 clearInterval(aiAnalysisInterval);
@@ -1421,14 +1426,20 @@
                 clearInterval(messageRefreshInterval);
                 messageRefreshInterval = null;
             }
+            if (signalRefreshInterval) {
+                clearInterval(signalRefreshInterval);
+                signalRefreshInterval = null;
+            }
             
             // Restart intervals with new configuration
             if (appConfig.auto_refresh_enabled) {
                 startMarketDataUpdates();
                 startMessageRefresh();
+                startSignalRefresh();
                 console.log('🔄 Refresh intervals restarted with new configuration');
                 console.log('🔄 Market data interval:', appConfig.refresh_interval_seconds, 'seconds');
                 console.log('🔄 Message refresh interval:', appConfig.refresh_interval_seconds, 'seconds');
+                console.log('🔄 Signal refresh interval: 30 seconds');
             } else {
                 console.log('⚠️ Auto refresh is disabled in configuration');
             }
@@ -1660,6 +1671,15 @@
             console.log(`Message refresh interval set to ${appConfig.refresh_interval_seconds} seconds`);
         }
 
+        function startSignalRefresh() {
+            // Refresh signals every 30 seconds to pick up monitoring status changes
+            // This is more frequent than other refreshes since signal status changes are critical
+            signalRefreshInterval = setInterval(() => {
+                loadSignals(true); // Refresh signals to show monitoring updates (auto-refresh)
+            }, 30000); // 30 seconds
+            console.log('Signal refresh interval set to 30 seconds');
+        }
+
 
         async function updateStatus() {
             // Skip if logging out
@@ -1706,7 +1726,7 @@
 
         let isLoadingSignals = false; // Prevent concurrent requests
 
-        async function loadSignals() {
+        async function loadSignals(isAutoRefresh = false) {
             // Skip if logging out
             if (isLoggingOut) return;
             if (isLoadingSignals) {
@@ -1719,36 +1739,43 @@
             try {
                 console.log('Starting loadSignals function');
                 
-                // Show loading state with progress bar
-                const container = document.getElementById('signals-container');
-                if (container) {
-                    container.innerHTML = `
-                        <div class="text-center py-4">
-                            <div class="mb-3">
-                                <div class="spinner-border text-primary me-2" role="status">
-                                    <span class="visually-hidden">Loading...</span>
+                // Show loading state with progress bar (only for user-initiated refreshes)
+                if (!isAutoRefresh) {
+                    const container = document.getElementById('signals-container');
+                    if (container) {
+                        container.innerHTML = `
+                            <div class="text-center py-4">
+                                <div class="mb-3">
+                                    <div class="spinner-border text-primary me-2" role="status">
+                                        <span class="visually-hidden">Loading...</span>
+                                    </div>
+                                    <span class="text-muted">Loading recent tips...</span>
                                 </div>
-                                <span class="text-muted">Loading recent tips...</span>
+                                <div class="progress" style="height: 6px;">
+                                    <div class="progress-bar progress-bar-striped progress-bar-animated bg-primary" 
+                                         role="progressbar" style="width: 100%"></div>
+                                </div>
                             </div>
-                            <div class="progress" style="height: 6px;">
-                                <div class="progress-bar progress-bar-striped progress-bar-animated bg-primary" 
-                                     role="progressbar" style="width: 100%"></div>
-                            </div>
-                        </div>
-                    `;
+                        `;
+                    }
+                } else {
+                    // For auto-refresh, just log it
+                    console.log('Auto-refreshing signals to check for monitoring updates...');
                 }
                 
-                // Also update the header to show loading state
-                const header = document.querySelector('.card-header h5');
-                if (header) {
-                    header.innerHTML = '<i class="bi bi-list-ul"></i> Recent Trading Tips <small class="text-muted">(Loading...)</small>';
+                // Also update the header to show loading state (only for user-initiated refreshes)
+                if (!isAutoRefresh) {
+                    const header = document.querySelector('.card-header h5');
+                    if (header) {
+                        header.innerHTML = '<i class="bi bi-list-ul"></i> Recent Trading Tips <small class="text-muted">(Loading...)</small>';
+                    }
                 }
                 
                 // Get authentication token
                 const token = localStorage.getItem('auth_token');
                 if (!token) {
                     console.error('No authentication token found');
-                    displaySignals([]); // Show empty state
+                    displaySignals([], isAutoRefresh); // Show empty state
                     return;
                 }
                 console.log('Authentication token found, making API call');
@@ -1765,7 +1792,7 @@
                     const signals = await response.json();
                     console.log('Signals received:', signals.length, 'signals');
                     console.log('Signals data:', signals);
-                    displaySignals(signals);
+                    displaySignals(signals, isAutoRefresh);
                 } else if (response.status === 401) {
                     console.error('Authentication failed, redirecting to login');
                     window.location.href = '/login';
@@ -1773,25 +1800,27 @@
                     console.error('Error loading signals:', response.status);
                     const errorText = await response.text();
                     console.error('Error response:', errorText);
-                    displaySignals([]); // Show empty state on error
+                    displaySignals([], isAutoRefresh); // Show empty state on error
                 }
             } catch (error) {
                 console.error('Error loading signals:', error);
-                displaySignals([]); // Show empty state on any error
+                displaySignals([], isAutoRefresh); // Show empty state on any error
             } finally {
                 isLoadingSignals = false; // Reset loading flag
             }
         }
 
-        function displaySignals(signals) {
+        function displaySignals(signals, isAutoRefresh = false) {
             console.log('displaySignals called with:', signals.length, 'signals');
             const container = document.getElementById('signals-container');
             console.log('Signals container found:', container);
             
-            // Reset header to normal state
-            const header = document.querySelector('.card-header h5');
-            if (header) {
-                header.innerHTML = '<i class="bi bi-list-ul"></i> Recent Trading Tips';
+            // Reset header (only for user-initiated refreshes)
+            if (!isAutoRefresh) {
+                const header = document.querySelector('.card-header h5');
+                if (header) {
+                    header.innerHTML = '<i class="bi bi-list-ul"></i> Recent Trading Tips';
+                }
             }
             
             if (signals.length === 0) {

@@ -56,6 +56,9 @@ from agent.monitor import SignalMonitor
 from agent.positions import PositionTracker
 from agent.scheduler import start_scheduler
 
+# Import signal generation module
+from .signal_generator import SignalRequest, TradingSignal, generate_trading_signal
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -255,35 +258,9 @@ class UserActivationExtension(BaseModel):
     additional_days: int
     reason: Optional[str] = None
 
-class SignalRequest(BaseModel):
-    symbol: str
-    timeframe: str = "1h"
-    buy_threshold: Optional[float] = None
-    sell_threshold: Optional[float] = None
-    technical_weight: Optional[float] = None
-    sentiment_weight: Optional[float] = None
-
 class ConfigUpdate(BaseModel):
     key: str
     value: str
-
-class TradingSignal(BaseModel):
-    symbol: str
-    timeframe: str = "1h"  # Add timeframe field
-    timestamp: str
-    signal_type: str  # "BUY", "SELL", "HOLD"
-    confidence: float
-    technical_score: float
-    sentiment_score: float
-    fused_score: float
-    stop_loss: Optional[float]
-    take_profit: Optional[float]
-    reasoning: str
-    # Store the thresholds that were actually used for this signal
-    applied_buy_threshold: Optional[float] = None
-    applied_sell_threshold: Optional[float] = None
-    applied_tech_weight: Optional[float] = None
-    applied_sentiment_weight: Optional[float] = None
 
 class AgentStatus(BaseModel):
     status: str
@@ -1803,221 +1780,8 @@ async def admin_get_all_signals(limit: int = 100, offset: int = 0, current_user:
 async def generate_signal(request: SignalRequest, current_user: Dict[str, Any] = Depends(verify_token)) -> TradingSignal:
     """Generate a new trading signal for a symbol"""
     try:
-        logger.info(f"Starting signal generation for {request.symbol}")
-        # Fetch market data
-        if "/" in request.symbol:  # Crypto
-            logger.info(f"Fetching crypto data for {request.symbol}")
-            ohlcv = fetch_ohlcv(request.symbol, request.timeframe)
-        else:  # Stock/ETF
-            logger.info(f"Fetching stock data for {request.symbol}")
-            ohlcv = fetch_alpaca_ohlcv(request.symbol, request.timeframe)
-        
-        logger.info(f"OHLCV type: {type(ohlcv)}, value: {ohlcv if isinstance(ohlcv, str) else 'DataFrame'}")
-        logger.info(f"OHLCV DataFrame shape: {ohlcv.shape}")
-        logger.info(f"OHLCV DataFrame columns: {list(ohlcv.columns)}")
-        logger.info(f"OHLCV DataFrame head (first 3 rows):\n{ohlcv.head(3).to_string()}")
-        logger.info(f"OHLCV DataFrame tail (last 3 rows):\n{ohlcv.tail(3).to_string()}")
-        
-        if ohlcv is None or ohlcv.empty:
-            raise HTTPException(status_code=400, detail="Could not fetch market data")
-        
-        # Calculate indicators
-        logger.info("Starting indicators calculation")
-        close = ohlcv['close']
-        high = ohlcv['high']
-        low = ohlcv['low']
-        rsi = compute_rsi(close)
-        ema_12 = compute_ema(close, 12)
-        ema_26 = compute_ema(close, 26)
-        macd_df = compute_macd(close)
-        macd = macd_df['macd']
-        macd_signal = macd_df['signal']
-        macd_hist = macd_df['hist']
-        atr = compute_atr(high, low, close)
-        logger.info("Indicators calculation completed")
-        
-        # Get sentiment from multiple sources (RSS + Reddit)
-        logger.info("Starting sentiment analysis from multiple sources")
-        sentiment_score = 0.0
-        analyzer = get_sentiment_analyzer()
-        if analyzer:
-            try:
-                all_texts = []
-                
-                # Fetch RSS headlines
-                logger.info("Fetching RSS headlines...")
-                headlines = fetch_headlines([
-                    "https://news.google.com/rss/search?q=stock+market&hl=en-US&gl=US&ceid=US:en",
-                    "https://news.google.com/rss/search?q=crypto+btc&hl=en-US&gl=US&ceid=US:en",
-                ], limit_per_feed=10)  # Reduced to 10 to make room for Reddit
-                if headlines:
-                    all_texts.extend(headlines)
-                    logger.info(f"RSS: Collected {len(headlines)} headlines")
-                
-                # Fetch Reddit posts based on symbol type
-                logger.info("Fetching Reddit posts...")
-                if "BTC" in request.symbol or "ETH" in request.symbol or "crypto" in request.symbol.lower():
-                    # Crypto symbol - fetch crypto Reddit posts
-                    reddit_posts = fetch_crypto_reddit_posts(limit_per_subreddit=5)
-                    if reddit_posts:
-                        all_texts.extend(reddit_posts)
-                    logger.info(f"Reddit: Collected {len(reddit_posts)} crypto posts")
-                else:
-                    # Stock symbol - fetch stock Reddit posts
-                    reddit_posts = fetch_stock_reddit_posts(limit_per_subreddit=5)
-                    if reddit_posts:
-                        all_texts.extend(reddit_posts)
-                        logger.info(f"Reddit: Collected {len(reddit_posts)} stock posts")
-                
-                if all_texts:
-                    # Use optimal sample size with mixed sources
-                    import random
-                    sample_size = min(20, len(all_texts))  # Increased to 20 for mixed sources
-                    shuffled_texts = all_texts.copy()
-                    random.shuffle(shuffled_texts)
-                    text_sample = shuffled_texts[:sample_size]
-                    logger.info(f"Analyzing {len(text_sample)} texts (RSS + Reddit) for sentiment")
-                    sentiment_score = analyzer.score(text_sample)
-                    logger.info(f"Sentiment analysis result: {sentiment_score:.3f}")
-                else:
-                    logger.warning("No texts collected from any source")
-                    
-            except Exception as e:
-                logger.warning(f"Could not fetch sentiment: {e}")
-        logger.info("Sentiment analysis completed")
-        
-        # Calculate technical score
-        logger.info(f"Close type: {type(close)}, value: {close if isinstance(close, str) else 'Series'}")
-        logger.info(f"RSI type: {type(rsi)}, empty: {rsi.empty if hasattr(rsi, 'empty') else 'no empty attr'}")
-        logger.info(f"MACD hist type: {type(macd_hist)}, empty: {macd_hist.empty if hasattr(macd_hist, 'empty') else 'no empty attr'}")
-        tech_score = 0.0
-        if not close.empty:
-            current_close = close.iloc[-1]
-            current_rsi = rsi.iloc[-1] if not rsi.empty else 50
-            current_macd_hist = macd_hist.iloc[-1] if not macd_hist.empty else 0
-            
-            # Normalize RSI to [-1, 1]
-            rsi_score = (current_rsi - 50) / 50
-            
-            # Normalize MACD histogram
-            macd_score = max(min(current_macd_hist / 1000, 1), -1)
-            
-            tech_score = (rsi_score + macd_score) / 2
-        
-        # Debug logging for custom thresholds
-        logger.info(f"Custom threshold values received: buy_threshold={request.buy_threshold}, sell_threshold={request.sell_threshold}, technical_weight={request.technical_weight}, sentiment_weight={request.sentiment_weight}")
-        
-        # Use custom parameters if provided, otherwise use config defaults
-        config = load_config_from_env()
-        tech_weight = request.technical_weight if request.technical_weight is not None else config.thresholds.technical_weight
-        sentiment_weight = request.sentiment_weight if request.sentiment_weight is not None else config.thresholds.sentiment_weight
-        fused_score = tech_weight * tech_score + sentiment_weight * sentiment_score
-        
-        # Define thresholds - use config defaults if not provided
-        buy_threshold = request.buy_threshold if request.buy_threshold is not None else config.thresholds.buy_threshold
-        # If custom sell_threshold is provided, use it; otherwise use negative of buy_threshold
-        if request.sell_threshold is not None:
-            sell_threshold = request.sell_threshold
-        else:
-            sell_threshold = -buy_threshold
-        
-        # Debug logging for applied thresholds
-        logger.info(f"Applied threshold values: buy_threshold={buy_threshold}, sell_threshold={sell_threshold}, technical_weight={tech_weight}, sentiment_weight={sentiment_weight}")
-        
-        # Determine signal type
-        if fused_score >= buy_threshold:
-            signal_type = "BUY"
-        elif fused_score <= sell_threshold:
-            signal_type = "SELL"
-        else:
-            signal_type = "HOLD"
-        
-        # Calculate stop loss and take profit
-        current_close = close.iloc[-1] if not close.empty else 0
-        current_atr = atr.iloc[-1] if not atr.empty else 0
-        
-        stop_loss = None
-        take_profit = None
-        
-        if current_atr > 0:
-            if signal_type == "BUY":
-                stop_loss = current_close - (2 * current_atr)
-                take_profit = current_close + (3 * current_atr)
-            elif signal_type == "SELL":
-                stop_loss = current_close + (2 * current_atr)
-                take_profit = current_close - (3 * current_atr)
-        
-        # Create signal
-        signal = TradingSignal(
-            symbol=request.symbol,
-            timeframe=request.timeframe,
-            timestamp=get_israel_time().isoformat(),
-            signal_type=signal_type,
-            confidence=abs(fused_score),
-            technical_score=tech_score,
-            sentiment_score=sentiment_score,
-            fused_score=fused_score,
-            stop_loss=stop_loss,
-            take_profit=take_profit,
-            reasoning=f"Technical: {tech_score:.2f}, Sentiment: {sentiment_score:.2f}, Fused: {fused_score:.2f}",
-            applied_buy_threshold=buy_threshold,
-            applied_sell_threshold=sell_threshold,
-            applied_tech_weight=tech_weight,
-            applied_sentiment_weight=sentiment_weight
-        )
-        
-        # Add user information to signal
-        signal_dict = signal.dict()
-        signal_dict['username'] = current_user['username']
-        
-        # Store the generated signal in Redis
-        try:
-            redis_client = await get_redis_client()
-            if redis_client:
-                # Use the signal_dict that already has username added
-                await redis_client.store_signal(signal_dict)
-                
-                # Add initial history event
-                await redis_client.add_signal_history_event(
-                    signal_timestamp=signal.timestamp,
-                    event_type="signal_created",
-                    description=f"Signal created: {signal.signal_type} for {signal.symbol}",
-                    metadata={
-                        "signal_type": signal.signal_type,
-                        "confidence": signal.confidence,
-                        "fused_score": signal.fused_score,
-                        "technical_score": signal.technical_score,
-                        "sentiment_score": signal.sentiment_score,
-                        "applied_thresholds": {
-                            "buy_threshold": signal.applied_buy_threshold,
-                            "sell_threshold": signal.applied_sell_threshold,
-                            "tech_weight": signal.applied_tech_weight,
-                            "sentiment_weight": signal.applied_sentiment_weight
-                        },
-                        "created_by": current_user["username"]
-                    }
-                )
-                
-                # Log activity
-                await redis_client.log_activity(
-                    "signal_generated",
-                    f"Generated {signal.signal_type} trading tip for {signal.symbol} (confidence: {(signal.confidence * 100):.1f}%)",
-                    current_user["username"],
-                    {
-                        "symbol": signal.symbol,
-                        "signal_type": signal.signal_type,
-                        "confidence": signal.confidence,
-                        "technical_score": signal.technical_score,
-                        "sentiment_score": signal.sentiment_score,
-                        "fused_score": signal.fused_score
-                    }
-                )
-                
-                logger.info(f"Signal stored in Redis for user {current_user['username']}: {signal.symbol}")
-            else:
-                logger.warning("Redis not available - signal not persisted")
-        except Exception as e:
-            logger.error(f"Failed to store signal in Redis: {e}")
+        # Use the new signal generator module
+        signal = await generate_trading_signal(request, current_user['username'])
         
         # Update global state
         try:
@@ -2030,7 +1794,6 @@ async def generate_signal(request: SignalRequest, current_user: Dict[str, Any] =
             logger.error(f"Failed to update signal count: {e}")
             agent_status["total_signals"] += 1
         
-
         agent_status["last_update"] = datetime.now().isoformat()
         
         return signal
@@ -2994,14 +2757,14 @@ async def startup_event():
         agent_status["active_symbols"] = config.universe.tickers
     except Exception as e:
         logger.warning(f"Could not load initial config: {e}")
-            
+    
     # Load system configuration from Redis
     try:
         await load_config_from_redis()
         logger.info("System configuration loaded")
     except Exception as e:
         logger.warning(f"Could not load system configuration: {e}")
-            
+    
     # Initialize default admin
     try:
         await initialize_default_admin()
