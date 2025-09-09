@@ -128,6 +128,10 @@
                             <i class="bi bi-graph-up me-2"></i>
                             All Trading Tips
                         </a>
+                        <a class="nav-link" href="#" onclick="showSection('messages')">
+                            <i class="bi bi-chat-dots me-2"></i>
+                            Messages
+                        </a>
                         <a class="nav-link" href="#" onclick="showSection('settings')">
                             <i class="bi bi-gear me-2"></i>
                             Settings
@@ -509,6 +513,76 @@
                                     </div>
                                     <div class="text-muted small" id="pagination-info">
                                         Showing 0 of 0 trading tips
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Messages Section -->
+                    <div id="messages-section" style="display: none;">
+                        <div class="d-flex justify-content-between align-items-center mb-4">
+                            <h2>Message Management</h2>
+                            <div class="d-flex gap-2">
+                                <button class="btn btn-outline-primary btn-sm" onclick="refreshMessages()">
+                                    <i class="bi bi-arrow-clockwise me-1"></i>Refresh
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Message Statistics Cards -->
+                        <div class="row mb-4">
+                            <div class="col-md-4">
+                                <div class="card bg-warning text-white">
+                                    <div class="card-body text-center">
+                                        <h4 id="received-messages-count">0</h4>
+                                        <p class="mb-0">Messages from Users</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="card bg-info text-white">
+                                    <div class="card-body text-center">
+                                        <h4 id="sent-messages-count">0</h4>
+                                        <p class="mb-0">Messages Sent</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="card bg-danger text-white">
+                                    <div class="card-body text-center">
+                                        <h4 id="unread-messages-count">0</h4>
+                                        <p class="mb-0">Unread Messages</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Message Management Buttons -->
+                        <div class="row mb-4">
+                            <div class="col-md-6">
+                                <div class="card">
+                                    <div class="card-header">
+                                        <h5 class="mb-0"><i class="bi bi-inbox me-2"></i>Received Messages</h5>
+                                    </div>
+                                    <div class="card-body">
+                                        <p class="text-muted">View messages sent to you by users</p>
+                                        <button class="btn btn-warning" onclick="showReceivedMessagesModal()">
+                                            <i class="bi bi-inbox me-1"></i>View Received Messages
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="card">
+                                    <div class="card-header">
+                                        <h5 class="mb-0"><i class="bi bi-send me-2"></i>Sent Messages</h5>
+                                    </div>
+                                    <div class="card-body">
+                                        <p class="text-muted">View messages you have sent to users</p>
+                                        <button class="btn btn-info" onclick="showSentMessagesModal()">
+                                            <i class="bi bi-send me-1"></i>View Sent Messages
+                                        </button>
                                     </div>
                                 </div>
                             </div>
@@ -1141,10 +1215,15 @@
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
+        // Global variables for interval management
+        let messageRefreshInterval = null;
+        let isLoggingOut = false;
+        
         // Check authentication on page load
         document.addEventListener('DOMContentLoaded', function() {
             checkAuth();
             loadDashboard();
+            startMessageRefresh();
         });
 
         function checkAuth() {
@@ -1190,12 +1269,270 @@
                 case 'signals':
                     loadAllSignals();
                     break;
+                case 'messages':
+                    loadMessages();
+                    break;
                 case 'settings':
                     loadSettings();
                     break;
             }
         }
-
+        
+        async function loadMessages() {
+            try {
+                // Load message statistics
+                await loadMessageStatistics();
+            } catch (error) {
+                console.error('Error loading messages:', error);
+            }
+        }
+        
+        async function loadMessageStatistics() {
+            try {
+                const token = localStorage.getItem('auth_token');
+                if (!token) {
+                    console.error('No auth token found');
+                    return;
+                }
+                
+                // Load received messages count
+                const receivedResponse = await fetch('/api/admin/messages', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                
+                if (receivedResponse.ok) {
+                    const receivedData = await receivedResponse.json();
+                    document.getElementById('received-messages-count').textContent = receivedData.total_count || 0;
+                }
+                
+                // Load sent messages count
+                const sentResponse = await fetch('/api/admin/messages/sent', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                
+                if (sentResponse.ok) {
+                    const sentData = await sentResponse.json();
+                    document.getElementById('sent-messages-count').textContent = sentData.total_sent || 0;
+                }
+                
+                // Load unread messages count
+                const unreadResponse = await fetch('/api/admin/users/unread-messages', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                
+                if (unreadResponse.ok) {
+                    const unreadData = await unreadResponse.json();
+                    const totalUnread = Object.values(unreadData || {}).reduce((sum, count) => sum + count, 0);
+                    document.getElementById('unread-messages-count').textContent = totalUnread;
+                }
+                
+            } catch (error) {
+                console.error('Error loading message statistics:', error);
+            }
+        }
+        
+        function showReceivedMessagesModal() {
+            const modal = new bootstrap.Modal(document.getElementById('adminReceivedMessagesModal'));
+            modal.show();
+            loadAllAdminMessages();
+        }
+        
+        function showSentMessagesModal() {
+            const modal = new bootstrap.Modal(document.getElementById('adminSentMessagesModal'));
+            modal.show();
+            loadAdminSentMessages();
+        }
+        
+        function refreshMessages() {
+            // Refresh message statistics
+            loadMessageStatistics();
+            
+            // Refresh received messages if modal is open
+            const receivedModal = document.getElementById('adminReceivedMessagesModal');
+            if (receivedModal && receivedModal.classList.contains('show')) {
+                loadAllAdminMessages();
+            }
+            
+            // Refresh sent messages if modal is open
+            const sentModal = document.getElementById('adminSentMessagesModal');
+            if (sentModal && sentModal.classList.contains('show')) {
+                loadAdminSentMessages();
+            }
+            
+            // Show success message
+            showNotification('Messages refreshed successfully', 'success');
+        }
+        
+        async function loadAllAdminMessages() {
+            try {
+                const token = localStorage.getItem('auth_token');
+                if (!token) {
+                    console.error('No auth token found');
+                    return;
+                }
+                
+                const response = await fetch('/api/admin/messages', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    displayAllAdminMessages(data.received_messages);
+                } else {
+                    console.error('Failed to load admin messages');
+                }
+                
+            } catch (error) {
+                console.error('Error loading admin messages:', error);
+            }
+        }
+        
+        function displayAllAdminMessages(messages) {
+            const container = document.getElementById('admin-received-messages-container');
+            
+            if (messages && messages.length > 0) {
+                // Add bulk action buttons
+                const bulkActions = `
+                    <div class="d-flex justify-content-between align-items-center mb-3 p-3 bg-light rounded">
+                        <div class="d-flex align-items-center">
+                            <div class="form-check me-3">
+                                <input class="form-check-input" type="checkbox" id="checkAllReceived" onchange="toggleAllReceivedMessages()">
+                                <label class="form-check-label" for="checkAllReceived">
+                                    <strong>Check All</strong>
+                                </label>
+                            </div>
+                            <span class="text-muted" id="receivedSelectionCount">0 selected</span>
+                        </div>
+                        <div>
+                            <button class="btn btn-sm btn-outline-danger" onclick="deleteSelectedReceivedMessages()" id="deleteSelectedReceivedBtn" disabled>
+                                <i class="bi bi-trash me-1"></i>Delete Selected
+                            </button>
+                        </div>
+                    </div>
+                `;
+                
+                const messagesHtml = messages.map(msg => `
+                    <div class="card mb-3 ${msg.status === 'unread' ? 'border-warning' : ''}" data-message-id="${msg.id}">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <div class="d-flex align-items-center">
+                                <div class="form-check me-3">
+                                    <input class="form-check-input received-message-checkbox" type="checkbox" value="${msg.id}" onchange="updateReceivedMessageSelection()">
+                                </div>
+                                <div>
+                                    <strong>${msg.subject}</strong>
+                                    <span class="badge ${msg.status === 'unread' ? 'bg-warning' : 'bg-secondary'} ms-2">${msg.status}</span>
+                                    <span class="badge bg-info ms-2">From: ${msg.from_username}</span>
+                                </div>
+                            </div>
+                            <small class="text-muted">${new Date(msg.timestamp).toLocaleString()}</small>
+                        </div>
+                        <div class="card-body">
+                            <p class="card-text">${msg.message}</p>
+                        </div>
+                        <div class="card-footer">
+                            <button class="btn btn-sm btn-outline-primary me-2" onclick="replyToUserFromAdmin('${msg.from_username}', 'Re: ${msg.subject}')">
+                                <i class="bi bi-reply me-1"></i>Reply
+                            </button>
+                            ${msg.status === 'unread' ? `
+                            <button class="btn btn-sm btn-outline-success" onclick="markAdminMessageAsRead('${msg.id}')">
+                                <i class="bi bi-check-lg me-1"></i>Mark as Read
+                            </button>
+                            ` : ''}
+                        </div>
+                    </div>
+                `).join('');
+                
+                container.innerHTML = bulkActions + messagesHtml;
+            } else {
+                container.innerHTML = '<div class="text-center py-4"><p class="text-muted">No messages from users</p></div>';
+            }
+        }
+        
+        async function loadAdminSentMessages() {
+            try {
+                const token = localStorage.getItem('auth_token');
+                if (!token) {
+                    console.error('No auth token found');
+                    return;
+                }
+                
+                const response = await fetch('/api/admin/messages/sent', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    displayAdminSentMessages(data.sent_messages);
+                } else {
+                    console.error('Failed to load admin sent messages');
+                }
+                
+            } catch (error) {
+                console.error('Error loading admin sent messages:', error);
+            }
+        }
+        
+        function displayAdminSentMessages(messages) {
+            const container = document.getElementById('admin-sent-messages-container');
+            
+            if (messages && messages.length > 0) {
+                // Add bulk action buttons
+                const bulkActions = `
+                    <div class="d-flex justify-content-between align-items-center mb-3 p-3 bg-light rounded">
+                        <div class="d-flex align-items-center">
+                            <div class="form-check me-3">
+                                <input class="form-check-input" type="checkbox" id="checkAllSent" onchange="toggleAllSentMessages()">
+                                <label class="form-check-label" for="checkAllSent">
+                                    <strong>Check All</strong>
+                                </label>
+                            </div>
+                            <span class="text-muted" id="sentSelectionCount">0 selected</span>
+                        </div>
+                        <div>
+                            <button class="btn btn-sm btn-outline-danger" onclick="deleteSelectedSentMessages()" id="deleteSelectedSentBtn" disabled>
+                                <i class="bi bi-trash me-1"></i>Delete Selected
+                            </button>
+                        </div>
+                    </div>
+                `;
+                
+                const messagesHtml = messages.map(msg => `
+                    <div class="card mb-3" data-message-id="${msg.id}">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <div class="d-flex align-items-center">
+                                <div class="form-check me-3">
+                                    <input class="form-check-input sent-message-checkbox" type="checkbox" value="${msg.id}" onchange="updateSentMessageSelection()">
+                                </div>
+                                <div>
+                                    <strong>${msg.subject}</strong>
+                                    <span class="badge bg-success ms-2">Sent</span>
+                                    <span class="badge bg-info ms-2">To: ${msg.to_username}</span>
+                                </div>
+                            </div>
+                            <small class="text-muted">${new Date(msg.timestamp).toLocaleString()}</small>
+                        </div>
+                        <div class="card-body">
+                            <p class="card-text">${msg.message}</p>
+                        </div>
+                    </div>
+                `).join('');
+                
+                container.innerHTML = bulkActions + messagesHtml;
+            } else {
+                container.innerHTML = '<div class="text-center py-4"><p class="text-muted">No sent messages</p></div>';
+            }
+        }
+        
         async function loadDashboard() {
             try {
                 const response = await fetch('/api/admin/dashboard', {
@@ -1226,6 +1563,9 @@
                         document.getElementById('server-time').textContent = data.system_info.server_time || '-';
                     }
                     
+                    // Load message statistics
+                    await loadMessageStatistics();
+                    
                     // Update Redis status
                     if (data.redis_status) {
                         const redisStatusElement = document.getElementById('redis-status');
@@ -1238,6 +1578,60 @@
                 }
             } catch (error) {
                 console.error('Error loading dashboard:', error);
+            }
+        }
+        
+        function startMessageRefresh() {
+            // Refresh admin messages and user unread counts every 30 seconds
+            messageRefreshInterval = setInterval(() => {
+                refreshAdminMessages();
+            }, 30000);
+        }
+        
+        async function refreshAdminMessages() {
+            try {
+                // Skip if logging out
+                if (isLoggingOut) return;
+                
+                // Only refresh if we're on the users tab, messages tab, or if there are open message modals
+                const activeTab = document.querySelector('.nav-link.active');
+                const isUsersTabActive = activeTab && activeTab.getAttribute('href') === '#users';
+                const isMessagesTabActive = activeTab && activeTab.getAttribute('href') === '#messages';
+                const hasOpenMessageModal = document.querySelector('.modal.show');
+                
+                if (isUsersTabActive || isMessagesTabActive || hasOpenMessageModal) {
+                    console.log('Refreshing admin messages...');
+                    
+                    // Refresh users list with unread counts
+                    await loadUsers();
+                    
+                    // Always refresh message statistics to update unread counts on dashboard
+                    await loadMessageStatistics();
+                    
+                    // If there's an open user messages modal, refresh it
+                    const userMessagesModal = document.getElementById('userMessagesModal');
+                    if (userMessagesModal && userMessagesModal.classList.contains('show')) {
+                        const modalTitle = document.querySelector('#userMessagesModal .modal-title');
+                        if (modalTitle) {
+                            const username = modalTitle.textContent.replace('Messages from ', '').trim();
+                            loadUserMessagesForAdmin(username);
+                        }
+                    }
+                    
+                    // If there's an open admin received messages modal, refresh it
+                    const adminReceivedModal = document.getElementById('adminReceivedMessagesModal');
+                    if (adminReceivedModal && adminReceivedModal.classList.contains('show')) {
+                        loadAllAdminMessages();
+                    }
+                    
+                    // If there's an open admin sent messages modal, refresh it
+                    const adminSentModal = document.getElementById('adminSentMessagesModal');
+                    if (adminSentModal && adminSentModal.classList.contains('show')) {
+                        loadAdminSentMessages();
+                    }
+                }
+            } catch (error) {
+                console.error('Error refreshing admin messages:', error);
             }
         }
 
@@ -1339,12 +1733,641 @@
                 if (response.ok) {
                     const users = await response.json();
                     console.log('Users loaded:', users);
-                    displayUsers(users);
+                    
+                    // Load unread message counts
+                    const unreadCounts = await loadUnreadMessageCounts();
+                    
+                    displayUsers(users, unreadCounts);
                 } else {
                     console.error('Failed to load users:', response.status, response.statusText);
                 }
             } catch (error) {
                 console.error('Error loading users:', error);
+            }
+        }
+        
+        async function loadUnreadMessageCounts() {
+            try {
+                const response = await fetch('/api/admin/users/unread-messages', {
+                    headers: {
+                        'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
+                    }
+                });
+                
+                if (response.ok) {
+                    const unreadCounts = await response.json();
+                    console.log('Unread message counts loaded:', unreadCounts);
+                    return unreadCounts;
+                } else {
+                    console.error('Failed to load unread message counts:', response.status, response.statusText);
+                    return {};
+                }
+            } catch (error) {
+                console.error('Error loading unread message counts:', error);
+                return {};
+            }
+        }
+        
+        function sendMessageToUser(username) {
+            // Create a simple modal to send message to user
+            const modalContent = `
+                <div class="modal fade" id="sendMessageModal" tabindex="-1" aria-labelledby="sendMessageModalLabel" aria-hidden="true">
+                    <div class="modal-dialog">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h5 class="modal-title" id="sendMessageModalLabel">
+                                    <i class="bi bi-envelope me-2"></i>Send Message to ${username}
+                                </h5>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                            </div>
+                            <div class="modal-body">
+                                <form id="sendMessageForm">
+                                    <div class="mb-3">
+                                        <label for="messageSubject" class="form-label">Subject</label>
+                                        <input type="text" class="form-control" id="messageSubject" placeholder="Enter message subject" required>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label for="messageContent" class="form-label">Message</label>
+                                        <textarea class="form-control" id="messageContent" rows="4" placeholder="Enter your message" required></textarea>
+                                    </div>
+                                </form>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                <button type="button" class="btn btn-primary" onclick="submitMessageToUser('${username}')">
+                                    <i class="bi bi-send me-1"></i>Send Message
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            // Remove existing modal if any
+            const existingModal = document.getElementById('sendMessageModal');
+            if (existingModal) {
+                existingModal.remove();
+            }
+            
+            // Add modal to body
+            document.body.insertAdjacentHTML('beforeend', modalContent);
+            
+            // Show modal
+            const modal = new bootstrap.Modal(document.getElementById('sendMessageModal'));
+            modal.show();
+        }
+        
+        async function submitMessageToUser(username) {
+            const subject = document.getElementById('messageSubject').value.trim();
+            const message = document.getElementById('messageContent').value.trim();
+            
+            if (!subject || !message) {
+                alert('Please fill in both subject and message');
+                return;
+            }
+            
+            try {
+                const token = localStorage.getItem('auth_token');
+                const response = await fetch('/api/admin/messages/send', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        to_username: username,
+                        subject: subject,
+                        message: message
+                    })
+                });
+                
+                if (response.ok) {
+                    alert('Message sent successfully!');
+                    // Close modal
+                    const modal = bootstrap.Modal.getInstance(document.getElementById('sendMessageModal'));
+                    modal.hide();
+                    // Clear form
+                    document.getElementById('messageSubject').value = '';
+                    document.getElementById('messageContent').value = '';
+                } else {
+                    const error = await response.json();
+                    alert(`Failed to send message: ${error.detail}`);
+                }
+            } catch (error) {
+                console.error('Error sending message:', error);
+                alert('Failed to send message. Please try again.');
+            }
+        }
+        
+        async function loadUserMessagesForAdmin(username) {
+            try {
+                const response = await fetch('/api/admin/messages', {
+                    headers: {
+                        'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
+                    }
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    // Filter messages from this specific user
+                    const userMessages = data.received_messages.filter(msg => msg.from_username === username);
+                    displayUserMessagesForAdmin(userMessages, username);
+                } else {
+                    document.getElementById('user-messages-container').innerHTML = `
+                        <div class="alert alert-danger">
+                            Failed to load messages: ${response.status}
+                        </div>
+                    `;
+                }
+                
+            } catch (error) {
+                console.error('Error loading user messages:', error);
+                document.getElementById('user-messages-container').innerHTML = `
+                    <div class="alert alert-danger">
+                        Error loading messages: ${error.message}
+                    </div>
+                `;
+            }
+        }
+        
+        function displayUserMessagesForAdmin(messages, username) {
+            const container = document.getElementById('user-messages-container');
+            const actionsBar = document.getElementById('admin-message-actions-bar');
+            
+            // Show/hide actions bar based on whether there are messages
+            if (messages && messages.length > 0) {
+                actionsBar.style.display = 'flex';
+            } else {
+                actionsBar.style.display = 'none';
+            }
+            
+            // Reset selection state
+            resetAdminMessageSelection();
+            
+            if (messages && messages.length > 0) {
+                container.innerHTML = messages.map(msg => `
+                    <div class="card mb-3 ${msg.status === 'unread' ? 'border-warning' : ''}" data-message-id="${msg.id}">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <div class="d-flex align-items-center">
+                                <div class="form-check me-3">
+                                    <input class="form-check-input admin-message-checkbox" type="checkbox" value="${msg.id}" onchange="updateAdminMessageSelection()">
+                                </div>
+                                <div>
+                                    <strong>${msg.subject}</strong>
+                                    <span class="badge ${msg.status === 'unread' ? 'bg-warning' : 'bg-secondary'} ms-2">${msg.status}</span>
+                                </div>
+                            </div>
+                            <small class="text-muted">${new Date(msg.timestamp).toLocaleString()}</small>
+                        </div>
+                        <div class="card-body">
+                            <p class="card-text">${msg.message}</p>
+                        </div>
+                        <div class="card-footer">
+                            <button class="btn btn-sm btn-outline-primary me-2" onclick="replyToUserFromAdmin('${msg.from_username}', 'Re: ${msg.subject}')">
+                                <i class="bi bi-reply me-1"></i>Reply
+                            </button>
+                            ${msg.status === 'unread' ? `
+                            <button class="btn btn-sm btn-outline-success" onclick="markAdminMessageAsRead('${msg.id}')">
+                                <i class="bi bi-check-lg me-1"></i>Mark as Read
+                            </button>
+                            ` : ''}
+                        </div>
+                    </div>
+                `).join('');
+            } else {
+                container.innerHTML = '<div class="text-center py-4"><p class="text-muted">No messages from this user</p></div>';
+            }
+        }
+        
+        function replyToUserFromAdmin(username, subject) {
+            // Create a simple modal to send reply to user
+            const modalContent = `
+                <div class="modal fade" id="replyMessageModal" tabindex="-1" aria-labelledby="replyMessageModalLabel" aria-hidden="true">
+                    <div class="modal-dialog">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h5 class="modal-title" id="replyMessageModalLabel">
+                                    <i class="bi bi-reply me-2"></i>Reply to ${username}
+                                </h5>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                            </div>
+                            <div class="modal-body">
+                                <form id="replyMessageForm">
+                                    <div class="mb-3">
+                                        <label for="replySubject" class="form-label">Subject</label>
+                                        <input type="text" class="form-control" id="replySubject" value="${subject}" required>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label for="replyContent" class="form-label">Message</label>
+                                        <textarea class="form-control" id="replyContent" rows="4" placeholder="Enter your reply" required></textarea>
+                                    </div>
+                                </form>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                <button type="button" class="btn btn-primary" onclick="submitReplyToUser('${username}')">
+                                    <i class="bi bi-send me-1"></i>Send Reply
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            // Remove existing modal if any
+            const existingModal = document.getElementById('replyMessageModal');
+            if (existingModal) {
+                existingModal.remove();
+            }
+            
+            // Add modal to body
+            document.body.insertAdjacentHTML('beforeend', modalContent);
+            
+            // Show modal
+            const modal = new bootstrap.Modal(document.getElementById('replyMessageModal'));
+            modal.show();
+        }
+        
+        async function submitReplyToUser(username) {
+            const subject = document.getElementById('replySubject').value.trim();
+            const message = document.getElementById('replyContent').value.trim();
+            
+            if (!subject || !message) {
+                alert('Please fill in both subject and message');
+                return;
+            }
+            
+            try {
+                const token = localStorage.getItem('auth_token');
+                const response = await fetch('/api/admin/messages/send', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        to_username: username,
+                        subject: subject,
+                        message: message
+                    })
+                });
+                
+                if (response.ok) {
+                    alert('Reply sent successfully!');
+                    // Close modal
+                    const modal = bootstrap.Modal.getInstance(document.getElementById('replyMessageModal'));
+                    modal.hide();
+                    // Clear form
+                    document.getElementById('replyContent').value = '';
+                } else {
+                    const error = await response.json();
+                    alert(`Failed to send reply: ${error.detail}`);
+                }
+            } catch (error) {
+                console.error('Error sending reply:', error);
+                alert('Failed to send reply. Please try again.');
+            }
+        }
+        
+        function sendMessageToUser(username, subject = '') {
+            // Create send message modal
+            const modalContent = `
+                <div class="modal fade" id="sendMessageToUserModal" tabindex="-1" aria-labelledby="sendMessageToUserModalLabel" aria-hidden="true">
+                    <div class="modal-dialog modal-lg">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h5 class="modal-title" id="sendMessageToUserModalLabel">
+                                    <i class="bi bi-send me-2"></i>Send Message to ${username}
+                                </h5>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                            </div>
+                            <div class="modal-body">
+                                <form id="sendMessageToUserForm">
+                                    <div class="mb-3">
+                                        <label for="send-to-user-subject" class="form-label">Subject</label>
+                                        <input type="text" class="form-control" id="send-to-user-subject" required maxlength="100" value="${subject}" placeholder="Enter message subject">
+                                    </div>
+                                    <div class="mb-3">
+                                        <label for="send-to-user-message" class="form-label">Message</label>
+                                        <textarea class="form-control" id="send-to-user-message" rows="6" required maxlength="1000" placeholder="Enter your message..."></textarea>
+                                        <div class="form-text">Maximum 1000 characters. <span id="send-to-user-char-count">0</span>/1000</div>
+                                    </div>
+                                </form>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                <button type="button" class="btn btn-primary" onclick="submitMessageToUser('${username}')">
+                                    <i class="bi bi-send me-1"></i>Send Message
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            // Remove existing modal if any
+            const existingModal = document.getElementById('sendMessageToUserModal');
+            if (existingModal) {
+                existingModal.remove();
+            }
+            
+            // Add new modal
+            document.body.insertAdjacentHTML('beforeend', modalContent);
+            
+            // Show modal
+            const modal = new bootstrap.Modal(document.getElementById('sendMessageToUserModal'));
+            modal.show();
+            
+            // Add character count functionality
+            document.getElementById('send-to-user-message').addEventListener('input', function() {
+                const count = this.value.length;
+                document.getElementById('send-to-user-char-count').textContent = count;
+                
+                if (count > 1000) {
+                    this.value = this.value.substring(0, 1000);
+                    document.getElementById('send-to-user-char-count').textContent = '1000';
+                }
+            });
+        }
+        
+        async function submitMessageToUser(username) {
+            try {
+                const subject = document.getElementById('send-to-user-subject').value.trim();
+                const message = document.getElementById('send-to-user-message').value.trim();
+                
+                if (!subject || !message) {
+                    alert('Please fill in both subject and message fields.');
+                    return;
+                }
+                
+                if (message.length > 1000) {
+                    alert('Message is too long. Maximum 1000 characters allowed.');
+                    return;
+                }
+                
+                const response = await fetch('/api/admin/messages/send', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
+                    },
+                    body: JSON.stringify({
+                        to_username: username,
+                        subject: subject,
+                        message: message
+                    })
+                });
+                
+                if (response.ok) {
+                    alert(`Message sent to ${username} successfully!`);
+                    
+                    // Close modal
+                    const modal = bootstrap.Modal.getInstance(document.getElementById('sendMessageToUserModal'));
+                    modal.hide();
+                    
+                    // Reload users to update unread counts
+                    loadUsers();
+                } else {
+                    const error = await response.json();
+                    alert(`Failed to send message: ${error.detail}`);
+                }
+                
+            } catch (error) {
+                console.error('Error sending message to user:', error);
+                alert('Failed to send message. Please try again.');
+            }
+        }
+
+        function updateAdminMessageStatusInUI(messageId, newStatus) {
+            // Update message status in all admin message containers
+            const messageElements = document.querySelectorAll(`[data-message-id="${messageId}"]`);
+            messageElements.forEach(element => {
+                // Update status badge
+                const statusBadge = element.querySelector('.badge.bg-warning, .badge.bg-secondary');
+                if (statusBadge) {
+                    statusBadge.textContent = newStatus;
+                    statusBadge.className = `badge ${newStatus === 'unread' ? 'bg-warning' : 'bg-secondary'} ms-2`;
+                }
+                
+                // Update card border
+                const card = element.closest('.card');
+                if (card) {
+                    if (newStatus === 'unread') {
+                        card.classList.add('border-warning');
+                    } else {
+                        card.classList.remove('border-warning');
+                    }
+                }
+                
+                // Hide/show mark as read button
+                const markAsReadButton = element.querySelector('button[onclick*="markAdminMessageAsRead"]');
+                if (markAsReadButton) {
+                    if (newStatus === 'unread') {
+                        markAsReadButton.style.display = 'inline-block';
+                    } else {
+                        markAsReadButton.style.display = 'none';
+                    }
+                }
+            });
+        }
+        
+        function updateAdminUnreadCountFromUI() {
+            // Count unread messages from the current UI
+            const unreadElements = document.querySelectorAll('.badge.bg-warning');
+            const unreadCount = unreadElements.length;
+            
+            // Update unread count display
+            const unreadCountElement = document.getElementById('unread-messages-count');
+            if (unreadCountElement) {
+                unreadCountElement.textContent = unreadCount;
+            }
+        }
+
+        async function markAdminMessageAsRead(messageId) {
+            try {
+                const response = await fetch(`/api/admin/messages/${messageId}/read`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
+                    }
+                });
+                
+                if (response.ok) {
+                    // Update UI immediately without reloading all data
+                    updateAdminMessageStatusInUI(messageId, 'read');
+                    updateAdminUnreadCountFromUI();
+                    
+                    // Update user unread counts in the users table (lightweight update)
+                    updateUserUnreadCountsInTable();
+                } else {
+                    const error = await response.json();
+                    alert(`Failed to mark message as read: ${error.detail}`);
+                }
+                
+            } catch (error) {
+                console.error('Error marking message as read:', error);
+                alert('Failed to mark message as read. Please try again.');
+            }
+        }
+        
+        function updateUserUnreadCountsInTable() {
+            // Lightweight update of unread counts in users table without full reload
+            // This is a simplified version that just refreshes the message counts
+            const messageCountElements = document.querySelectorAll('[data-username] .badge.bg-primary');
+            messageCountElements.forEach(element => {
+                const username = element.closest('[data-username]').getAttribute('data-username');
+                // Update count for this specific user (simplified - could be enhanced)
+                const currentCount = parseInt(element.textContent) || 0;
+                if (currentCount > 0) {
+                    element.textContent = currentCount - 1;
+                    if (currentCount - 1 === 0) {
+                        element.style.display = 'none';
+                    }
+                }
+            });
+        }
+        
+        // Bulk actions for received messages
+        function toggleAllReceivedMessages() {
+            const checkAll = document.getElementById('checkAllReceived');
+            const checkboxes = document.querySelectorAll('.received-message-checkbox');
+            
+            checkboxes.forEach(checkbox => {
+                checkbox.checked = checkAll.checked;
+            });
+            
+            updateReceivedMessageSelection();
+        }
+        
+        function updateReceivedMessageSelection() {
+            const checkboxes = document.querySelectorAll('.received-message-checkbox');
+            const checkedBoxes = document.querySelectorAll('.received-message-checkbox:checked');
+            const checkAll = document.getElementById('checkAllReceived');
+            const deleteBtn = document.getElementById('deleteSelectedReceivedBtn');
+            const countSpan = document.getElementById('receivedSelectionCount');
+            
+            // Update check all checkbox state
+            if (checkedBoxes.length === 0) {
+                checkAll.indeterminate = false;
+                checkAll.checked = false;
+            } else if (checkedBoxes.length === checkboxes.length) {
+                checkAll.indeterminate = false;
+                checkAll.checked = true;
+            } else {
+                checkAll.indeterminate = true;
+            }
+            
+            // Update delete button and count
+            deleteBtn.disabled = checkedBoxes.length === 0;
+            countSpan.textContent = `${checkedBoxes.length} selected`;
+        }
+        
+        async function deleteSelectedReceivedMessages() {
+            const checkedBoxes = document.querySelectorAll('.received-message-checkbox:checked');
+            if (checkedBoxes.length === 0) return;
+            
+            const messageIds = Array.from(checkedBoxes).map(cb => cb.value);
+            
+            if (!confirm(`Are you sure you want to delete ${messageIds.length} selected messages? This action cannot be undone.`)) {
+                return;
+            }
+            
+            try {
+                const token = localStorage.getItem('auth_token');
+                const response = await fetch('/api/admin/messages/bulk-delete', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        message_ids: messageIds,
+                        message_type: 'received'
+                    })
+                });
+                
+                if (response.ok) {
+                    alert(`Successfully deleted ${messageIds.length} messages`);
+                    loadAllAdminMessages(); // Reload messages
+                } else {
+                    const error = await response.json();
+                    alert(`Failed to delete messages: ${error.detail}`);
+                }
+            } catch (error) {
+                console.error('Error deleting messages:', error);
+                alert('Failed to delete messages. Please try again.');
+            }
+        }
+        
+        // Bulk actions for sent messages
+        function toggleAllSentMessages() {
+            const checkAll = document.getElementById('checkAllSent');
+            const checkboxes = document.querySelectorAll('.sent-message-checkbox');
+            
+            checkboxes.forEach(checkbox => {
+                checkbox.checked = checkAll.checked;
+            });
+            
+            updateSentMessageSelection();
+        }
+        
+        function updateSentMessageSelection() {
+            const checkboxes = document.querySelectorAll('.sent-message-checkbox');
+            const checkedBoxes = document.querySelectorAll('.sent-message-checkbox:checked');
+            const checkAll = document.getElementById('checkAllSent');
+            const deleteBtn = document.getElementById('deleteSelectedSentBtn');
+            const countSpan = document.getElementById('sentSelectionCount');
+            
+            // Update check all checkbox state
+            if (checkedBoxes.length === 0) {
+                checkAll.indeterminate = false;
+                checkAll.checked = false;
+            } else if (checkedBoxes.length === checkboxes.length) {
+                checkAll.indeterminate = false;
+                checkAll.checked = true;
+            } else {
+                checkAll.indeterminate = true;
+            }
+            
+            // Update delete button and count
+            deleteBtn.disabled = checkedBoxes.length === 0;
+            countSpan.textContent = `${checkedBoxes.length} selected`;
+        }
+        
+        async function deleteSelectedSentMessages() {
+            const checkedBoxes = document.querySelectorAll('.sent-message-checkbox:checked');
+            if (checkedBoxes.length === 0) return;
+            
+            const messageIds = Array.from(checkedBoxes).map(cb => cb.value);
+            
+            if (!confirm(`Are you sure you want to delete ${messageIds.length} selected messages? This action cannot be undone.`)) {
+                return;
+            }
+            
+            try {
+                const token = localStorage.getItem('auth_token');
+                const response = await fetch('/api/admin/messages/bulk-delete', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        message_ids: messageIds,
+                        message_type: 'sent'
+                    })
+                });
+                
+                if (response.ok) {
+                    alert(`Successfully deleted ${messageIds.length} messages`);
+                    loadAdminSentMessages(); // Reload messages
+                } else {
+                    const error = await response.json();
+                    alert(`Failed to delete messages: ${error.detail}`);
+                }
+            } catch (error) {
+                console.error('Error deleting messages:', error);
+                alert('Failed to delete messages. Please try again.');
             }
         }
 
@@ -1404,33 +2427,42 @@
         }
 
         function populateFilters() {
-            // Populate user filter
-            const userFilter = document.getElementById('filter-user');
-            const users = [...new Set(allSignals.map(s => s.username))].sort();
-            userFilter.innerHTML = '<option value="">All Users</option>';
-            users.forEach(user => {
-                userFilter.innerHTML += `<option value="${user}">${user}</option>`;
-            });
+            try {
+                // Populate user filter
+                const userFilter = document.getElementById('filter-user');
+                if (userFilter) {
+                    const users = [...new Set(allSignals.map(s => s.username).filter(Boolean))].sort();
+                    userFilter.innerHTML = '<option value="">All Users</option>';
+                    users.forEach(user => {
+                        userFilter.innerHTML += `<option value="${user}">${user}</option>`;
+                    });
+                }
 
-            // Populate market filter
-            const marketFilter = document.getElementById('filter-market');
-            const markets = [...new Set(allSignals.map(s => s.market))].sort();
-            marketFilter.innerHTML = '<option value="">All Markets</option>';
-            markets.forEach(market => {
-                marketFilter.innerHTML += `<option value="${market}">${market}</option>`;
-            });
+                // Populate market filter
+                const marketFilter = document.getElementById('filter-market');
+                if (marketFilter) {
+                    const markets = [...new Set(allSignals.map(s => s.market).filter(Boolean))].sort();
+                    marketFilter.innerHTML = '<option value="">All Markets</option>';
+                    markets.forEach(market => {
+                        marketFilter.innerHTML += `<option value="${market}">${market}</option>`;
+                    });
+                }
+            } catch (error) {
+                console.error('Error populating filters:', error);
+            }
         }
 
         function applyFilters() {
-            const userFilter = document.getElementById('filter-user').value;
-            const marketFilter = document.getElementById('filter-market').value;
-            const typeFilter = document.getElementById('filter-type').value;
-            const dateFilter = document.getElementById('filter-date').value;
+            try {
+                const userFilter = document.getElementById('filter-user')?.value || '';
+                const marketFilter = document.getElementById('filter-market')?.value || '';
+                const typeFilter = document.getElementById('filter-type')?.value || '';
+                const dateFilter = document.getElementById('filter-date')?.value || '';
 
-            filteredSignals = allSignals.filter(signal => {
-                if (userFilter && signal.username !== userFilter) return false;
-                if (marketFilter && signal.market !== marketFilter) return false;
-                if (typeFilter && signal.recommendation !== typeFilter) return false;
+                filteredSignals = allSignals.filter(signal => {
+                    if (userFilter && signal.username !== userFilter) return false;
+                    if (marketFilter && signal.market !== marketFilter) return false;
+                    if (typeFilter && signal.recommendation !== typeFilter) return false;
                 
                 if (dateFilter) {
                     const signalDate = new Date(signal.generated_at);
@@ -1462,6 +2494,10 @@
             
             // Display results
             displaySignals();
+            } catch (error) {
+                console.error('Error applying filters:', error);
+                showSignalsError('Error applying filters');
+            }
         }
 
         function applySorting() {
@@ -1678,8 +2714,9 @@
             `;
         }
 
-        function displayUsers(users) {
+        function displayUsers(users, unreadCounts = {}) {
             console.log('Displaying users:', users);
+            console.log('Unread counts:', unreadCounts);
             const tbody = document.getElementById('users-table-body');
             
             if (users.length === 0) {
@@ -1744,21 +2781,30 @@
                         <td>${new Date(user.created_at).toLocaleDateString()}</td>
                         <td>${user.last_login ? new Date(user.last_login).toLocaleDateString() : 'Never'}</td>
                         <td>
-                            <button class="btn btn-sm btn-outline-info me-1" onclick="viewUserSignals('${user.username}')" title="View user trading tips" data-bs-toggle="tooltip" data-bs-placement="top">
-                                <i class="bi bi-eye"></i>
-                            </button>
-                            <button class="btn btn-sm btn-outline-primary me-1" onclick="editUser('${user.username}')" title="Edit user information" data-bs-toggle="tooltip" data-bs-placement="top">
-                                <i class="bi bi-pencil"></i>
-                            </button>
-                            ${user.role !== 'admin' ? `<button class="btn btn-sm btn-outline-success me-1" onclick="extendUserActivation('${user.username}')" title="Extend activation period" data-bs-toggle="tooltip" data-bs-placement="top">
-                                <i class="bi bi-calendar-plus"></i>
-                            </button>` : ''}
-                            <button class="btn btn-sm btn-outline-warning me-1" onclick="clearUserSignals('${user.username}')" title="Clear user trading tips" data-bs-toggle="tooltip" data-bs-placement="top">
-                                <i class="bi bi-eraser"></i>
-                            </button>
-                            <button class="btn btn-sm btn-outline-danger ${deleteButtonDisabled}" onclick="${isLastAdmin ? '' : `deleteUser('${user.username}')`}" title="${deleteButtonTitle}" data-bs-toggle="tooltip" data-bs-placement="top">
-                                <i class="bi bi-trash"></i>
-                            </button>
+                            <div class="d-flex flex-wrap gap-1">
+                                <button class="btn btn-sm btn-outline-info" onclick="viewUserSignals('${user.username}')" title="View user trading tips" data-bs-toggle="tooltip" data-bs-placement="top">
+                                    <i class="bi bi-eye"></i>
+                                </button>
+                                <button class="btn btn-sm btn-outline-primary" onclick="editUser('${user.username}')" title="Edit user information" data-bs-toggle="tooltip" data-bs-placement="top">
+                                    <i class="bi bi-pencil"></i>
+                                </button>
+                                ${user.role !== 'admin' ? `
+                                <button class="btn btn-sm btn-outline-success" onclick="extendUserActivation('${user.username}')" title="Extend activation period" data-bs-toggle="tooltip" data-bs-placement="top">
+                                    <i class="bi bi-calendar-plus"></i>
+                                </button>
+                                ` : ''}
+                                <button class="btn btn-sm btn-outline-warning" onclick="clearUserSignals('${user.username}')" title="Clear user trading tips" data-bs-toggle="tooltip" data-bs-placement="top">
+                                    <i class="bi bi-eraser"></i>
+                                </button>
+                                ${user.role !== 'admin' ? `
+                                <button class="btn btn-sm btn-outline-secondary" onclick="sendMessageToUser('${user.username}')" title="Send message to user" data-bs-toggle="tooltip" data-bs-placement="top">
+                                    <i class="bi bi-envelope"></i>
+                                </button>
+                                ` : ''}
+                                <button class="btn btn-sm btn-outline-danger ${deleteButtonDisabled}" onclick="${isLastAdmin ? '' : `deleteUser('${user.username}')`}" title="${deleteButtonTitle}" data-bs-toggle="tooltip" data-bs-placement="top">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </div>
                         </td>
                     </tr>
                 `;
@@ -1847,6 +2893,15 @@
         }
 
         function logout() {
+            // Set logout flag to prevent ongoing API calls
+            isLoggingOut = true;
+            
+            // Clear message refresh interval
+            if (messageRefreshInterval) {
+                clearInterval(messageRefreshInterval);
+                messageRefreshInterval = null;
+            }
+            
             localStorage.removeItem('auth_token');
             localStorage.removeItem('user_role');
             localStorage.removeItem('username');
@@ -2660,6 +3715,169 @@
                 showAlert('Network error. Please try again.', 'danger');
             }
         }
+        
+        // Admin message selection and deletion functions
+        function resetAdminMessageSelection() {
+            const selectAllCheckbox = document.getElementById('select-all-admin-messages');
+            const selectedCount = document.getElementById('admin-selected-count');
+            const deleteBtn = document.getElementById('delete-selected-admin-btn');
+            
+            if (selectAllCheckbox) selectAllCheckbox.checked = false;
+            if (selectedCount) selectedCount.textContent = '0 selected';
+            if (deleteBtn) deleteBtn.disabled = true;
+        }
+        
+        function updateAdminMessageSelection() {
+            const checkboxes = document.querySelectorAll('.admin-message-checkbox');
+            const checkedBoxes = document.querySelectorAll('.admin-message-checkbox:checked');
+            const selectAllCheckbox = document.getElementById('select-all-admin-messages');
+            const selectedCount = document.getElementById('admin-selected-count');
+            const deleteBtn = document.getElementById('delete-selected-admin-btn');
+            
+            if (!selectAllCheckbox || !selectedCount || !deleteBtn) return;
+            
+            // Update selected count
+            selectedCount.textContent = `${checkedBoxes.length} selected`;
+            
+            // Enable/disable delete button
+            deleteBtn.disabled = checkedBoxes.length === 0;
+            
+            // Update select all checkbox state
+            if (checkedBoxes.length === 0) {
+                selectAllCheckbox.indeterminate = false;
+                selectAllCheckbox.checked = false;
+            } else if (checkedBoxes.length === checkboxes.length) {
+                selectAllCheckbox.indeterminate = false;
+                selectAllCheckbox.checked = true;
+            } else {
+                selectAllCheckbox.indeterminate = true;
+            }
+        }
+        
+        function toggleAllAdminMessages() {
+            const selectAllCheckbox = document.getElementById('select-all-admin-messages');
+            const checkboxes = document.querySelectorAll('.admin-message-checkbox');
+            
+            if (!selectAllCheckbox) return;
+            
+            checkboxes.forEach(checkbox => {
+                checkbox.checked = selectAllCheckbox.checked;
+            });
+            
+            updateAdminMessageSelection();
+        }
+        
+        async function deleteSelectedAdminMessages() {
+            const checkedBoxes = document.querySelectorAll('.admin-message-checkbox:checked');
+            const messageIds = Array.from(checkedBoxes).map(checkbox => checkbox.value);
+            
+            if (messageIds.length === 0) {
+                alert('Please select messages to delete.');
+                return;
+            }
+            
+            // Confirm deletion
+            if (!confirm(`Are you sure you want to delete ${messageIds.length} message(s)? This action cannot be undone.`)) {
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/admin/messages/delete', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
+                    },
+                    body: JSON.stringify(messageIds)
+                });
+                
+                if (response.ok) {
+                    const result = await response.json();
+                    alert(`Successfully deleted ${result.deleted_count} message(s).`);
+                    
+                    // Reload users to update unread counts
+                    loadUsers();
+                    
+                    // Reload the current user messages if modal is open
+                    const userMessagesModal = document.getElementById('userMessagesModal');
+                    if (userMessagesModal && userMessagesModal.classList.contains('show')) {
+                        const modalTitle = document.querySelector('#userMessagesModal .modal-title');
+                        if (modalTitle) {
+                            const username = modalTitle.textContent.replace('Messages from ', '').trim();
+                            loadUserMessagesForAdmin(username);
+                        }
+                    }
+                } else {
+                    const error = await response.json();
+                    alert(`Failed to delete messages: ${error.detail}`);
+                }
+                
+            } catch (error) {
+                console.error('Error deleting admin messages:', error);
+                alert('Failed to delete messages. Please try again.');
+            }
+        }
+        
+        // Cleanup intervals when page is unloaded
+        window.addEventListener('beforeunload', function() {
+            if (messageRefreshInterval) {
+                clearInterval(messageRefreshInterval);
+            }
+        });
     </script>
+
+    <!-- Admin Received Messages Modal -->
+    <div class="modal fade" id="adminReceivedMessagesModal" tabindex="-1" aria-labelledby="adminReceivedMessagesModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-xl">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="adminReceivedMessagesModalLabel">
+                        <i class="bi bi-inbox me-2"></i>Received Messages
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="admin-received-messages-container">
+                        <div class="text-center py-4">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                            <p class="mt-2 text-muted">Loading received messages...</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Admin Sent Messages Modal -->
+    <div class="modal fade" id="adminSentMessagesModal" tabindex="-1" aria-labelledby="adminSentMessagesModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-xl">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="adminSentMessagesModalLabel">
+                        <i class="bi bi-send me-2"></i>Sent Messages
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="admin-sent-messages-container">
+                        <div class="text-center py-4">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                            <p class="mt-2 text-muted">Loading sent messages...</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
 </body>
 </html>

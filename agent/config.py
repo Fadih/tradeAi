@@ -9,8 +9,12 @@ from pathlib import Path
 
 @dataclass
 class UniverseConfig:
-	tickers: List[str] = field(default_factory=lambda: ["BTC/USDT", "ETH/USDT", "SPY"])
-	timeframe: str = "1h"  # e.g., "15m", "1h"
+	timeframe: str = "5m"  # Default timeframe optimized for short-term crypto trading
+	timeframes: List[str] = field(default_factory=lambda: ["1m", "5m", "15m", "1h"])  # Available timeframes
+	# Separate lists for asset type detection
+	crypto_symbols: List[str] =field(default_factory=list)
+	stock_symbols: List[str] = field(default_factory=list)
+
 
 
 @dataclass
@@ -35,6 +39,39 @@ class NotifierConfig:
 	webhook_timeout_seconds: int = 10
 	webhook_retry_attempts: int = 3
 	webhook_retry_delay_seconds: int = 5
+
+
+@dataclass
+class SafetyConfig:
+	# Incomplete candle handling
+	allow_incomplete_candles: bool = False
+	
+	# Data validation
+	min_data_points_for_indicators: int = 50
+	safety_margin: int = 10
+	
+	# Candle freshness validation (in minutes)
+	max_candle_staleness: Dict[str, int] = field(default_factory=lambda: {
+		"1m": 2, "5m": 8, "15m": 20, "1h": 70
+	})
+	
+	# Threshold validation
+	validate_thresholds: bool = True
+	normalize_weights: bool = True
+	
+	# Sentiment analysis
+	deterministic_sampling: bool = True
+	sentiment_timeout_seconds: int = 30
+	
+	# External data timeouts
+	market_data_timeout_seconds: int = 15
+	rss_timeout_seconds: int = 10
+	reddit_timeout_seconds: int = 15
+	
+	# Circuit breaker settings
+	circuit_breaker_enabled: bool = True
+	circuit_breaker_failure_threshold: int = 3
+	circuit_breaker_cooldown_minutes: int = 5
 
 
 @dataclass
@@ -201,6 +238,7 @@ class SentimentAnalysisConfig:
 	])
 	reddit_max_posts_per_subreddit: int = 10
 	reddit_sample_size: int = 20
+	hours_back: int = 3  # Time filtering for short-term trading sentiment
 	positive_threshold: float = 0.1
 	negative_threshold: float = -0.1
 	neutral_range: List[float] = field(default_factory=lambda: [-0.1, 0.1])
@@ -222,8 +260,8 @@ class RiskManagementConfig:
 	take_profit_percentage: float = 0.04  # 4%
 	max_position_size: float = 0.1  # 10% of portfolio
 	max_daily_signals: int = 10
-	atr_stop_multiplier: float = 2.0
-	atr_take_profit_multiplier: float = 3.0
+	atr_stop_multiplier: float = 1.5
+	atr_take_profit_multiplier: float = 2.5
 
 @dataclass
 class PositionTrackingConfig:
@@ -244,6 +282,74 @@ class BacktestingConfig:
 		"sharpe_ratio", "max_drawdown", "win_rate", "total_return", "volatility"
 	])
 
+@dataclass
+class SignalsConfig:
+	# Default thresholds for signal generation
+	thresholds: Dict[str, float] = field(default_factory=lambda: {
+		"buy_threshold": 0.2,
+		"sell_threshold": -0.2
+	})
+	
+	# Weight configuration for signal fusion
+	weights: Dict[str, float] = field(default_factory=lambda: {
+		"technical_weight": 0.5,
+		"sentiment_weight": 0.5
+	})
+	
+	
+	# Sentiment enhancement by asset type
+	sentiment_enhancement: Dict[str, float] = field(default_factory=lambda: {
+		"crypto_amplification": 1.2,
+		"stock_amplification": 1.0
+	})
+	
+	# Risk management by asset type
+	risk_management_by_asset: Dict[str, Dict[str, float]] = field(default_factory=lambda: {
+		"crypto": {
+			"base_stop_multiplier": 2.0,
+			"base_tp_multiplier": 2.5,
+			"volatility_threshold_high": 3.0,
+			"volatility_threshold_low": 1.0
+		},
+		"stock": {
+			"base_stop_multiplier": 1.5,
+			"base_tp_multiplier": 2.0,
+			"volatility_threshold_high": 2.0,
+			"volatility_threshold_low": 0.5
+		}
+	})
+	
+	# Market regime adjustments
+	regime_adjustments: Dict[str, Dict[str, float]] = field(default_factory=lambda: {
+		"bull_market": {
+			"buy_stop_adjustment": 0.8,
+			"sell_stop_adjustment": 1.3,
+			"buy_tp_adjustment": 1.2,
+			"sell_tp_adjustment": 0.8
+		},
+		"bear_market": {
+			"buy_stop_adjustment": 1.3,
+			"sell_stop_adjustment": 0.8,
+			"buy_tp_adjustment": 0.8,
+			"sell_tp_adjustment": 1.2
+		}
+	})
+	
+	# Volatility adjustments
+	volatility_adjustments: Dict[str, float] = field(default_factory=lambda: {
+		"high_volatility_multiplier": 1.5,
+		"low_volatility_multiplier": 0.8,
+		"high_volatility_tp_adjustment": 1.2
+	})
+	
+	# Multi-timeframe analysis configuration
+	multi_timeframe: Dict[str, Any] = field(default_factory=lambda: {
+		"enabled": True,
+		"timeframes": ["15m", "1h", "4h"],
+		"weights": {"15m": 0.2, "1h": 0.5, "4h": 0.3},
+		"data_points": 50
+	})
+
 
 @dataclass
 class AgentConfig:
@@ -261,10 +367,11 @@ class AgentConfig:
 	
 	# Trading configuration
 	universe: UniverseConfig = field(default_factory=UniverseConfig)
-	thresholds: SignalThresholds = field(default_factory=SignalThresholds)
+	signals: SignalsConfig = field(default_factory=SignalsConfig)
 	notifier: NotifierConfig = field(default_factory=NotifierConfig)
 	models: ModelConfig = field(default_factory=ModelConfig)
 	guardrails: Guardrails = field(default_factory=Guardrails)
+	safety: SafetyConfig = field(default_factory=SafetyConfig)
 	
 	# New comprehensive trading configuration
 	technical_analysis: TechnicalAnalysisConfig = field(default_factory=TechnicalAnalysisConfig)
@@ -419,15 +526,19 @@ def load_config_from_files() -> AgentConfig:
 			if "symbols" in universe_data:
 				# Flatten symbols from crypto and stocks
 				symbols = []
-				if "crypto" in universe_data["symbols"]:
+				if "crypto" in universe_data["symbols"] and universe_data["symbols"]["crypto"]:
+					config.universe.crypto_symbols = universe_data["symbols"]["crypto"]
 					symbols.extend(universe_data["symbols"]["crypto"])
-				if "stocks" in universe_data["symbols"]:
+				if "stocks" in universe_data["symbols"] and universe_data["symbols"]["stocks"]:
+					config.universe.stock_symbols = universe_data["symbols"]["stocks"]
 					symbols.extend(universe_data["symbols"]["stocks"])
 				config.universe.tickers = symbols
 			if "default_timeframe" in universe_data:
 				config.universe.timeframe = universe_data["default_timeframe"]
+			if "timeframes" in universe_data:
+				config.universe.timeframes = universe_data["timeframes"]
 		
-		# Update signal thresholds
+		# Update signal thresholds (legacy)
 		if "signals" in trading_config:
 			signals_data = trading_config["signals"]
 			if "thresholds" in signals_data:
@@ -437,6 +548,25 @@ def load_config_from_files() -> AgentConfig:
 				weights_data = signals_data["weights"]
 				config.thresholds.technical_weight = weights_data.get("technical_weight", 0.6)
 				config.thresholds.sentiment_weight = weights_data.get("sentiment_weight", 0.4)
+			
+			# Update new signals configuration
+			config.signals = SignalsConfig()
+			if "thresholds" in signals_data:
+				config.signals.thresholds.update(signals_data["thresholds"])
+			if "weights" in signals_data:
+				config.signals.weights.update(signals_data["weights"])
+			if "asset_types" in signals_data:
+				config.signals.asset_types.update(signals_data["asset_types"])
+			if "sentiment_enhancement" in signals_data:
+				config.signals.sentiment_enhancement.update(signals_data["sentiment_enhancement"])
+			if "risk_management_by_asset" in signals_data:
+				config.signals.risk_management_by_asset.update(signals_data["risk_management_by_asset"])
+			if "regime_adjustments" in signals_data:
+				config.signals.regime_adjustments.update(signals_data["regime_adjustments"])
+			if "volatility_adjustments" in signals_data:
+				config.signals.volatility_adjustments.update(signals_data["volatility_adjustments"])
+			if "multi_timeframe" in signals_data:
+				config.signals.multi_timeframe.update(signals_data["multi_timeframe"])
 		
 		# Update technical analysis config
 		if "technical_analysis" in trading_config:
@@ -543,6 +673,30 @@ def load_config_from_files() -> AgentConfig:
 				config.backtesting.metrics = backtest_data.get("metrics", [
 					"sharpe_ratio", "max_drawdown", "win_rate", "total_return", "volatility"
 				])
+		
+		# Update safety configuration
+		if "safety" in trading_config:
+			safety_data = trading_config["safety"]
+			config.safety.allow_incomplete_candles = safety_data.get("allow_incomplete_candles", False)
+			config.safety.min_data_points_for_indicators = safety_data.get("min_data_points_for_indicators", 50)
+			config.safety.safety_margin = safety_data.get("safety_margin", 10)
+			config.safety.max_candle_staleness = safety_data.get("max_candle_staleness", {
+				"1m": 2, "5m": 8, "15m": 20, "1h": 70
+			})
+			config.safety.validate_thresholds = safety_data.get("validate_thresholds", True)
+			config.safety.normalize_weights = safety_data.get("normalize_weights", True)
+			config.safety.deterministic_sampling = safety_data.get("deterministic_sampling", True)
+			config.safety.sentiment_timeout_seconds = safety_data.get("sentiment_timeout_seconds", 30)
+			config.safety.market_data_timeout_seconds = safety_data.get("market_data_timeout_seconds", 15)
+			config.safety.rss_timeout_seconds = safety_data.get("rss_timeout_seconds", 10)
+			config.safety.reddit_timeout_seconds = safety_data.get("reddit_timeout_seconds", 15)
+			
+			# Circuit breaker settings
+			if "circuit_breaker" in safety_data:
+				cb_data = safety_data["circuit_breaker"]
+				config.safety.circuit_breaker_enabled = cb_data.get("enabled", True)
+				config.safety.circuit_breaker_failure_threshold = cb_data.get("failure_threshold", 3)
+				config.safety.circuit_breaker_cooldown_minutes = cb_data.get("cooldown_minutes", 5)
 	
 	# Load logging configuration
 	logging_config = load_yaml_config(config_dir / "logging.yaml")

@@ -2,6 +2,43 @@
 # This file contains trading-specific settings and parameters
 
 # =============================================================================
+# SAFETY & VALIDATION CONFIGURATION
+# =============================================================================
+safety:
+  # Incomplete candle handling
+  allow_incomplete_candles: false  # Set to true to allow trading on still-forming candles
+  
+  # Data validation
+  min_data_points_for_indicators: 50  # Minimum bars needed for reliable indicators
+  safety_margin: 10  # Extra bars beyond minimum for safety
+  
+  # Candle freshness validation (in minutes)
+  max_candle_staleness:
+    "1m": 2    # 1-minute candles stale after 2 minutes
+    "5m": 8    # 5-minute candles stale after 8 minutes  
+    "15m": 20  # 15-minute candles stale after 20 minutes
+    "1h": 70   # 1-hour candles stale after 70 minutes
+  
+  # Threshold validation
+  validate_thresholds: true
+  normalize_weights: true  # Automatically normalize weights to sum to 1.0
+  
+  # Sentiment analysis
+  deterministic_sampling: true  # Use deterministic sampling for reproducible results
+  sentiment_timeout_seconds: 30  # Timeout for sentiment analysis
+  
+  # External data timeouts
+  market_data_timeout_seconds: 15
+  rss_timeout_seconds: 10
+  reddit_timeout_seconds: 15
+  
+  # Circuit breaker settings
+  circuit_breaker:
+    enabled: true
+    failure_threshold: 3  # Fail after 3 consecutive failures
+    cooldown_minutes: 5   # Cooldown period in minutes
+
+# =============================================================================
 # TRADING UNIVERSE CONFIGURATION
 # =============================================================================
 universe:
@@ -15,66 +52,138 @@ universe:
       - "ADA/USDT"    # Cardano vs USDT
       - "SOL/USDT"    # Solana vs USDT
     stocks:
-      # Stock symbols (Alpaca format)
-      - "AAPL"        # Apple Inc.
-      - "GOOGL"       # Alphabet Inc. (Google)
-      - "MSFT"        # Microsoft Corporation
-      - "TSLA"        # Tesla Inc.
-      - "AMZN"        # Amazon.com Inc.
-      - "NVDA"        # NVIDIA Corporation
+      # Stock symbols (Alpaca format) - Currently disabled
+      # Uncomment and add stock symbols when Alpaca API keys are configured
+      #- "AAPL"        # Apple Inc.
+      #- "GOOGL"       # Alphabet Inc. (Google)
+      #- "MSFT"        # Microsoft Corporation
+      #- "TSLA"        # Tesla Inc.
+      #- "AMZN"        # Amazon.com Inc.
+      #- "NVDA"        # NVIDIA Corporation
   
   # Default timeframe for technical analysis and signal generation
-  default_timeframe: "1h"
+  # Optimized for short-term crypto trading - ultra-fast for scalping
+  default_timeframe: "5m"
   
-  # Available timeframes for analysis (in order of preference)
+  # Available timeframes for analysis (optimized for short-term crypto trading)
   timeframes:
-    - "15m"    # 15-minute candles (short-term)
-    - "1h"     # 1-hour candles (default)
-    - "4h"     # 4-hour candles (medium-term)
-    - "1d"     # Daily candles (long-term)
+    - "1m"     # Ultra short-term scalping (0-5 minute trades)
+    - "5m"     # Short-term scalping (5-30 minute trades) - DEFAULT
+    - "15m"    # Quick swing trades (30 minutes - 2 hours)
+    - "1h"     # Short swing trades (2-8 hours)
     
 # =============================================================================
 # SIGNAL GENERATION CONFIGURATION
 # =============================================================================
 signals:
   # Default thresholds for signal generation (fused score ranges)
+  # Optimized for crypto markets - more sensitive to generate actionable signals
   thresholds:
     # Minimum fused score to generate BUY signal (0.0 to 1.0)
-    buy_threshold: 0.5
+    # Optimized for short-term crypto trading - more sensitive to small moves
+    buy_threshold: 0.15
     
     # Maximum fused score to generate SELL signal (-1.0 to 0.0)
-    sell_threshold: -0.5
+    # Optimized for short-term crypto trading - more sensitive to small moves
+    sell_threshold: -0.10
     
   # Weight configuration for signal fusion (must sum to 1.0)
+  # Optimized for short-term crypto trading - technical analysis is more reliable short-term
   weights:
     # Weight of technical analysis in final signal (0.0 to 1.0)
+    # Increased for short-term crypto trading - technicals are more reliable
     technical_weight: 0.6
     
     # Weight of sentiment analysis in final signal (0.0 to 1.0)
+    # Reduced for short-term trading - sentiment is more useful for longer-term
     sentiment_weight: 0.4
     
-  # Technical indicator parameters
-  parameters:
-    # RSI (Relative Strength Index) period for calculation
-    rsi_period: 14
+  
+  # Sentiment enhancement by asset type
+  sentiment_enhancement:
+    # Crypto sentiment amplification factor (1.2 = 20% amplification)
+    crypto_amplification: 1.2
     
-    # RSI overbought threshold (above this = overbought)
-    rsi_overbought: 70
+    # Stock sentiment amplification factor (1.0 = no amplification)
+    stock_amplification: 1.0
+  
+  # Risk management by asset type
+  risk_management_by_asset:
+    crypto:
+      # Base stop loss multiplier for crypto (more volatile)
+      base_stop_multiplier: 2.0
+      # Base take profit multiplier for crypto
+      base_tp_multiplier: 2.5
+      # High volatility threshold for crypto (%)
+      volatility_threshold_high: 3.0
+      # Low volatility threshold for crypto (%)
+      volatility_threshold_low: 1.0
     
-    # RSI oversold threshold (below this = oversold)
-    rsi_oversold: 30
+    stock:
+      # Base stop loss multiplier for stocks (lower volatility)
+      base_stop_multiplier: 1.5
+      # Base take profit multiplier for stocks
+      base_tp_multiplier: 2.0
+      # High volatility threshold for stocks (%)
+      volatility_threshold_high: 2.0
+      # Low volatility threshold for stocks (%)
+      volatility_threshold_low: 0.5
+  
+  # Market regime adjustments
+  regime_adjustments:
+    # Bull market adjustments
+    bull_market:
+      # Stop multiplier adjustment for BUY signals (0.8 = 20% tighter)
+      buy_stop_adjustment: 0.8
+      # Stop multiplier adjustment for SELL signals (1.3 = 30% wider)
+      sell_stop_adjustment: 1.3
+      # Take profit multiplier adjustment for BUY signals (1.2 = 20% higher)
+      buy_tp_adjustment: 1.2
+      # Take profit multiplier adjustment for SELL signals (0.8 = 20% lower)
+      sell_tp_adjustment: 0.8
     
-    # MACD fast EMA period
-    macd_fast: 12
+    # Bear market adjustments
+    bear_market:
+      # Stop multiplier adjustment for BUY signals (1.3 = 30% wider)
+      buy_stop_adjustment: 1.3
+      # Stop multiplier adjustment for SELL signals (0.8 = 20% tighter)
+      sell_stop_adjustment: 0.8
+      # Take profit multiplier adjustment for BUY signals (0.8 = 20% lower)
+      buy_tp_adjustment: 0.8
+      # Take profit multiplier adjustment for SELL signals (1.2 = 20% higher)
+      sell_tp_adjustment: 1.2
+  
+  # Volatility adjustments
+  volatility_adjustments:
+    # High volatility multiplier (1.5 = 50% increase)
+    high_volatility_multiplier: 1.5
+    # Low volatility multiplier (0.8 = 20% decrease)
+    low_volatility_multiplier: 0.8
+    # Take profit adjustment for high volatility (1.2 = 20% increase)
+    high_volatility_tp_adjustment: 1.2
+  
+  # Multi-timeframe analysis configuration
+  multi_timeframe:
+    # Enable multi-timeframe analysis by default
+    enabled: true
     
-    # MACD slow EMA period
-    macd_slow: 26
+    # Timeframes to analyze (optimized for short-term crypto trading)
+    timeframes:
+      - "5m"     # Ultra short-term (30% weight) - for precise entries
+      - "15m"    # Short-term (40% weight) - for trend confirmation
+      - "1h"     # Primary (30% weight) - for overall direction
     
-    # MACD signal line EMA period
-    macd_signal: 9
+    # Weights for each timeframe (must sum to 1.0)
+    # Optimized for short-term crypto trading - more weight on faster timeframes
+    weights:
+      "5m": 0.3    # Ultra short-term weight (increased)
+      "15m": 0.4   # Short-term weight (increased)
+      "1h": 0.3    # Primary weight (reduced)
     
-    # ATR (Average True Range) period for volatility calculation
-    atr_period: 14
+    # Number of data points to fetch for each timeframe
+    data_points: 50
+    
+  # Technical indicator parameters (moved to specific sections below)
     
   # Risk management parameters
   risk_management:
@@ -89,6 +198,13 @@ signals:
     
     # Maximum number of signals per day per user
     max_daily_signals: 10
+    
+    # ATR-based risk management multipliers - optimized for short-term crypto scalping
+    # ATR stop loss multiplier (1.2 = 1.2x ATR for ultra-tight stop loss)
+    atr_stop_multiplier: 1.2
+    
+    # ATR take profit multiplier (2.0 = 2.0x ATR for better risk/reward ratio)
+    atr_take_profit_multiplier: 2.0
     
 # =============================================================================
 # TECHNICAL ANALYSIS CONFIGURATION
@@ -106,34 +222,43 @@ technical_analysis:
     min_limit: 50
     
   # RSI (Relative Strength Index) Configuration
+  # Optimized for short-term crypto trading - ultra-sensitive for quick scalping
   rsi:
-    # Period for RSI calculation (typically 14)
-    period: 14
+    # Period for RSI calculation - ultra-fast for short-term crypto trading
+    period: 5   
     
     # Overbought threshold (above this level = bearish signal)
+    # More sensitive for short-term trading
     overbought_threshold: 70
     
     # Oversold threshold (below this level = bullish signal)
+    # More sensitive for short-term trading
     oversold_threshold: 30
     
-  # MACD (Moving Average Convergence Divergence) Configuration
+  # MACD stands for Moving Average Convergence Divergence - it's one of the most popular technical indicators in trading.
   macd:
-    # Fast EMA period (typically 12)
-    fast_period: 12
+    # Fast EMA period - ultra-fast for short-term crypto scalping
+    # Ultra-responsive to crypto volatility
+    fast_period: 4
     
-    # Slow EMA period (typically 26)
-    slow_period: 26
+    # Slow EMA period - ultra-fast for short-term crypto scalping
+    # Ultra-responsive to crypto volatility
+    slow_period: 9
     
-    # Signal line EMA period (typically 9)
-    signal_period: 9
+    # Signal line EMA period - ultra-fast for short-term crypto scalping
+    # Ultra-responsive for quick signal generation
+    signal_period: 3
     
-  # ATR (Average True Range) Configuration
+  # ATR stands for Average True Range - it's a technical indicator that measures market volatility.
+
   atr:
-    # Period for ATR calculation (typically 14)
-    period: 14
+    # Period for ATR calculation - ultra-fast for short-term crypto scalping
+    # Ultra-responsive to crypto volatility changes
+    period: 7
     
-    # Multiplier for stop loss/take profit calculations
-    multiplier: 2.0
+    # Note: ATR multipliers are configured in risk_management section
+    # - atr_stop_multiplier: 1.2 (for tighter stop loss)
+    # - atr_take_profit_multiplier: 2.0 (for better risk/reward ratio)
     
   # Moving Averages Configuration
   moving_averages:
@@ -141,7 +266,8 @@ technical_analysis:
     sma_periods: [20, 50, 200]
     
     # Exponential Moving Average periods to calculate
-    ema_periods: [12, 26, 50]
+    # Optimized for short-term crypto trading: 8 (fast), 12 (MACD), 21 (trend filter)
+    ema_periods: [8, 12, 21]
     
 # =============================================================================
 # SENTIMENT ANALYSIS CONFIGURATION
@@ -161,30 +287,75 @@ sentiment_analysis:
   # RSS feeds configuration
   rss_enabled: true
   
-  # RSS feed URLs for news headlines
+  # RSS feed URLs for comprehensive crypto and stock news
   rss_feeds:
+    # Stock market news
     - "https://news.google.com/rss/search?q=stock+market&hl=en-US&gl=US&ceid=US:en"
-    - "https://news.google.com/rss/search?q=crypto+btc&hl=en-US&gl=US&ceid=US:en"
+    
+    # Comprehensive crypto news sources
+    - "https://cointelegraph.com/rss"                    # Main crypto news
+    - "https://cointelegraph.com/rss/tag/altcoin"        # Altcoin specific news
+    - "https://cointelegraph.com/rss/tag/ethereum"       # Ethereum specific news
+    - "https://cointelegraph.com/rss/tag/defi"           # DeFi specific news
+    - "https://www.coindesk.com/arc/outboundfeeds/rss/?outputType=xml"  # CoinDesk comprehensive
+    - "https://cryptoslate.com/feed/"                    # CryptoSlate wide coverage
+    - "https://decrypt.co/feed"                          # Decrypt DeFi & crypto
+    - "https://cryptobriefing.com/feed/"                 # Crypto Briefing analysis
+    - "https://www.newsbtc.com/feed/"                    # NewsBTC technical analysis
+    - "https://www.theblock.co/rss.xml"                  # The Block institutional
   
   # Maximum headlines to fetch per RSS feed
-  rss_max_headlines_per_feed: 15
+  # Optimized for comprehensive crypto coverage (20-25 recommended)
+  # Current: 11 feeds × 20 headlines = ~220 max headlines for better sentiment analysis
+  rss_max_headlines_per_feed: 20
   
   # Reddit integration configuration
   reddit_enabled: true
   
-  # Subreddits to monitor for sentiment
+  # Subreddits to monitor for comprehensive crypto and stock sentiment
   reddit_subreddits:
-    - "CryptoCurrency"    # General cryptocurrency discussion
-    - "Bitcoin"           # Bitcoin-specific discussion
-    - "ethereum"          # Ethereum-specific discussion
-    - "investing"         # General investing discussion
-    - "stocks"            # Stock market discussion
+    # Major crypto communities (high activity, diverse opinions)
+    - "CryptoCurrency"    # General cryptocurrency discussion (6M+ members)
+    - "Bitcoin"           # Bitcoin-specific discussion (4M+ members)
+    - "ethereum"          # Ethereum-specific discussion (1M+ members)
+    - "cryptomarkets"     # Crypto market analysis and trading
+    - "cryptotrading"     # Active crypto trading community
+    - "defi"              # Decentralized finance discussions
+    - "altcoin"           # Altcoin discussions and analysis
+    - "cryptomoonshots"   # High-risk crypto investments
+    - "cryptocurrencytrading" # Crypto trading strategies
+    - "binance"           # Binance exchange discussions
+    - "coinbase"          # Coinbase exchange discussions
+    
+    # Stock market communities
+    - "investing"         # General investing discussion (2M+ members)
+    - "stocks"            # Stock market discussion (1M+ members)
+    - "SecurityAnalysis"  # Fundamental stock analysis
+    - "ValueInvesting"    # Value investing strategies
+    - "StockMarket"       # General stock market news
+    - "wallstreetbets"    # High-risk trading (very active sentiment)
+    - "dividends"         # Dividend-focused investing
+    - "options"           # Options trading discussions
+    - "pennystocks"       # Penny stock discussions
+    - "SPACs"             # SPAC investments
+    
+    # Technology and fintech
+    - "technology"        # Tech news and discussions
+    - "fintech"           # Financial technology
+    - "blockchain"        # Blockchain technology discussions
   
   # Maximum posts to fetch per subreddit
-  reddit_max_posts_per_subreddit: 10
+  # Increased for better coverage with 20 subreddits
+  reddit_max_posts_per_subreddit: 15
   
   # Sample size for sentiment analysis (random selection from all collected texts)
-  reddit_sample_size: 20
+  # Increased to handle more diverse Reddit content
+  reddit_sample_size: 50
+  
+  # Time filtering for short-term trading sentiment
+  # Only fetch content from last N hours for more relevant sentiment
+  # Options: 1 (very recent), 3 (short-term), 6 (medium-term), 12 (longer-term)
+  hours_back: 3
       
   # Sentiment scoring thresholds
   scoring:

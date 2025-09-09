@@ -19,14 +19,8 @@ import math
 from datetime import datetime, timedelta
 import pytz
 
-# Load configuration
-from agent.config import load_config_from_env
-config = load_config_from_env()
-APP_VERSION = config.app.version
-
-# Feature flags from configuration
-FEATURES = config.features
-DEVELOPMENT = config.development
+# Application version
+APP_VERSION = "1.0.0"
 
 # Application startup time
 APP_START_TIME = datetime.now()
@@ -57,7 +51,6 @@ from agent.cache.redis_client import get_redis_client, close_redis_client
 from agent.monitor import SignalMonitor
 from agent.positions import PositionTracker
 from agent.scheduler import start_scheduler
-from agent.sentiment_utils import interpret_sentiment_score, get_sentiment_badge_class, get_sentiment_icon
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -65,49 +58,24 @@ logger = logging.getLogger(__name__)
 
 # Initialize FastAPI app
 app = FastAPI(
-    title=config.app.name,
-    description=config.app.description,
-    version=config.app.version,
-    debug=DEVELOPMENT.debug_mode
+    title="Trading Agent Web Interface",
+    description="Real-time monitoring and control for the AI-powered trading agent",
+    version="1.0.0"
 )
 
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=config.api.cors_allowed_origins,
-    allow_credentials=config.api.cors_allow_credentials,
-    allow_methods=config.api.cors_allowed_methods,
-    allow_headers=config.api.cors_allowed_headers,
+    allow_origins=["*"],  # Configure appropriately for production
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # Mount static files
 app.mount("/static", StaticFiles(directory="web/static"), name="static")
 
-@app.on_event("startup")
-async def startup_event():
-    """Initialize system on startup"""
-    logger.info("Starting Trading Agent Web Interface")
-    
-    # Initialize Redis connection
-    try:
-        redis_client = await get_redis_client()
-        if redis_client and await redis_client.is_connected():
-            logger.info("Redis connection established")
-        else:
-            logger.warning("Redis not available - caching disabled")
-    except Exception as e:
-        logger.warning(f"Could not initialize Redis: {e}")
-    
-    # Initialize default admin user
-    await initialize_default_admin()
-    
-    # Start the signal monitoring scheduler (non-blocking)
-    import asyncio
-    asyncio.create_task(start_signal_monitoring())
-    
-    # Start background tasks (non-blocking)
-    logger.info("Starting background status update task")
-    asyncio.create_task(update_status())
+# Startup event moved to end of file to avoid conflicts
 
 # Security
 security = HTTPBearer()
@@ -188,7 +156,6 @@ class UserCreate(BaseModel):
     phone: Optional[str] = None
     additional_info: Optional[str] = None
     activation_days: Optional[int] = 30  # Default 30 days activation period
-    telegram_chat_id: Optional[str] = None  # Telegram chat ID for notifications
 
 class UserUpdate(BaseModel):
     username: str
@@ -200,7 +167,6 @@ class UserUpdate(BaseModel):
     phone: Optional[str] = None
     additional_info: Optional[str] = None
     activation_days: Optional[int] = None  # For extending activation period
-    telegram_chat_id: Optional[str] = None  # Telegram chat ID for notifications
 
 class UserProfileUpdate(BaseModel):
     password: Optional[str] = None
@@ -209,7 +175,6 @@ class UserProfileUpdate(BaseModel):
     email: Optional[str] = None
     phone: Optional[str] = None
     additional_info: Optional[str] = None
-    telegram_chat_id: Optional[str] = None  # Telegram chat ID for notifications
 
 class User(BaseModel):
     username: str
@@ -224,25 +189,11 @@ class User(BaseModel):
     additional_info: Optional[str] = None
     activation_expires_at: Optional[str] = None
     activation_days: Optional[int] = None
-    telegram_chat_id: Optional[str] = None  # Telegram chat ID for notifications
 
 class UserActivationExtension(BaseModel):
     username: str
     additional_days: int
     reason: Optional[str] = None
-
-class TelegramConnection(BaseModel):
-    username: str
-    chat_id: str
-    first_name: Optional[str] = None
-    last_name: Optional[str] = None
-    connected_at: Optional[str] = None
-    notifications_enabled: bool = True
-
-class TelegramConnectionRequest(BaseModel):
-    chat_id: str
-    first_name: Optional[str] = None
-    last_name: Optional[str] = None
 
 class SignalRequest(BaseModel):
     symbol: str
@@ -280,7 +231,6 @@ class AgentStatus(BaseModel):
     active_symbols: List[str]
     total_trading_tips: int
     uptime: str
-    maintenance_message: str = ""
 
 # JWT tokens (in production, use proper JWT library)
 ACTIVE_TOKENS = {}
@@ -291,33 +241,29 @@ async def initialize_default_admin():
     try:
         redis_client = await get_redis_client()
         if redis_client:
-            # Get admin configuration from config
-            admin_username = config.security.default_admin_username
-            admin_password = config.security.default_admin_password
-            
             # Check if admin user exists
-            admin_user = await redis_client.get_user(admin_username)
+            admin_user = await redis_client.get_user("admin")
             if not admin_user:
-                # Create default admin user with configurable credentials
+                # Create default admin user
                 admin_data = {
-                    "username": admin_username,
-                    "password_hash": hashlib.sha256(admin_password.encode()).hexdigest(),
+                    "username": "admin",
+                    "password_hash": hashlib.sha256("admin123".encode()).hexdigest(),
                     "role": "admin",
                     "status": "active",
-                    "created_at": get_israel_time().isoformat(),
+                    "created_at": datetime.now().isoformat(),
                     "last_login": None
                 }
-                await redis_client.store_user(admin_username, admin_data)
-                logger.info(f"Default admin user '{admin_username}' created in Redis")
+                await redis_client.store_user("admin", admin_data)
+                logger.info("Default admin user created in Redis")
             else:
-                logger.info(f"Admin user '{admin_username}' already exists in Redis")
+                logger.info("Admin user already exists in Redis")
             
             # Log system startup
             await redis_client.log_activity(
                 "system_startup",
                 "Trading AI Tips system started successfully",
                 "system",
-                {"version": "1.0.0", "startup_time": get_israel_time().isoformat()}
+                {"version": "1.0.0", "startup_time": datetime.now().isoformat()}
             )
     except Exception as e:
         logger.error(f"Failed to initialize default admin user: {e}")
@@ -371,16 +317,11 @@ async def run_monitoring_cycle():
         test_signals = await redis_client.get_signals(limit=10)
         logger.info(f"Direct signal retrieval test: {len(test_signals) if test_signals else 0} signals")
         
-        # Initialize sentiment analyzer
-        sentiment_analyzer = None
-        try:
-            config = load_config_from_env()
-            sentiment_analyzer = SentimentAnalyzer(config.models.sentiment_model)
-        except Exception as e:
-            logger.warning(f"Could not initialize sentiment analyzer: {e}")
+        # Get sentiment analyzer (lazy initialization)
+        analyzer = get_sentiment_analyzer()
         
         # Create monitor and run monitoring
-        monitor = SignalMonitor(redis_client, sentiment_analyzer)
+        monitor = SignalMonitor(redis_client, analyzer)
         result = await monitor.monitor_all_signals()
         
         logger.info(f"Monitoring cycle completed: {result}")
@@ -428,7 +369,7 @@ def create_access_token(username: str, role: str) -> str:
     ACTIVE_TOKENS[token] = {
         "username": username,
         "role": role,
-        "expires": get_israel_time() + timedelta(hours=24)
+        "expires": datetime.now() + timedelta(hours=24)
     }
     return token
 
@@ -443,7 +384,7 @@ def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)) 
         )
     
     token_data = ACTIVE_TOKENS[token]
-    if get_israel_time() > token_data["expires"]:
+    if datetime.now() > token_data["expires"]:
         del ACTIVE_TOKENS[token]
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -557,10 +498,6 @@ async def admin_dashboard(current_user: Dict[str, Any] = Depends(verify_token)):
     if current_user["role"] != "admin":
         raise HTTPException(status_code=403, detail="Admin access required")
     
-    # Check if admin dashboard is enabled
-    if not FEATURES.admin_dashboard:
-        raise HTTPException(status_code=503, detail="Admin dashboard is currently disabled")
-    
     # Get user stats from Redis
     try:
         all_users = await get_all_users_from_redis()
@@ -581,7 +518,7 @@ async def admin_dashboard(current_user: Dict[str, Any] = Depends(verify_token)):
             total_signals = await redis_client.get_signal_count()
             logger.info(f"Admin dashboard: total_signals = {total_signals}")
             # Get today's signals
-            today = get_israel_time().date()
+            today = datetime.now().date()
             all_signals = await redis_client.get_signals(1000)
             logger.info(f"Admin dashboard: all_signals count = {len(all_signals)}")
             today_signals = len([s for s in all_signals if datetime.fromisoformat(s['timestamp']).date() == today])
@@ -602,7 +539,7 @@ async def admin_dashboard(current_user: Dict[str, Any] = Depends(verify_token)):
     try:
         # System uptime
         boot_time = datetime.fromtimestamp(psutil.boot_time())
-        uptime = get_israel_time() - boot_time
+        uptime = datetime.now() - boot_time
         uptime_str = str(uptime).split('.')[0]  # Remove microseconds
         
         # System resources
@@ -611,7 +548,7 @@ async def admin_dashboard(current_user: Dict[str, Any] = Depends(verify_token)):
         disk = psutil.disk_usage('/')
         
         # Application uptime (since last restart)
-        app_uptime = get_israel_time() - APP_START_TIME
+        app_uptime = datetime.now() - APP_START_TIME
         app_uptime_str = str(app_uptime).split('.')[0]
         
         system_info = {
@@ -625,7 +562,7 @@ async def admin_dashboard(current_user: Dict[str, Any] = Depends(verify_token)):
             "platform": platform.system(),
             "python_version": platform.python_version(),
             "app_version": APP_VERSION,
-            "server_time": get_israel_time().strftime("%Y-%m-%d %H:%M:%S")
+            "server_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         }
     except Exception as e:
         logger.warning(f"Could not get system information: {e}")
@@ -640,7 +577,7 @@ async def admin_dashboard(current_user: Dict[str, Any] = Depends(verify_token)):
             "platform": "Unknown",
             "python_version": "Unknown",
             "app_version": APP_VERSION,
-            "server_time": get_israel_time().strftime("%Y-%m-%d %H:%M:%S")
+            "server_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         }
     
     # Get Redis connection status
@@ -659,7 +596,7 @@ async def admin_dashboard(current_user: Dict[str, Any] = Depends(verify_token)):
         "today_trading_tips": today_signals,
         "system_info": system_info,
         "redis_status": redis_status,
-        "last_updated": get_israel_time().isoformat()
+        "last_updated": datetime.now().isoformat()
     }
 
 @app.get("/api/admin/activities")
@@ -691,7 +628,7 @@ async def user_dashboard(current_user: Dict[str, Any] = Depends(verify_token)):
             total_user_signals = len(user_signals)
             
             # Get today's signals for this user
-            today = get_israel_time().date()
+            today = datetime.now().date()
             today_user_signals = len([s for s in user_signals if datetime.fromisoformat(s['timestamp']).date() == today])
         else:
             total_user_signals = 0
@@ -712,10 +649,6 @@ async def admin_get_users(current_user: Dict[str, Any] = Depends(verify_token)):
     """Get all users (admin only)"""
     if current_user["role"] != "admin":
         raise HTTPException(status_code=403, detail="Admin access required")
-    
-    # Check if user management is enabled
-    if not FEATURES.user_management:
-        raise HTTPException(status_code=503, detail="User management is currently disabled")
     
     try:
         all_users = await get_all_users_from_redis()
@@ -772,7 +705,7 @@ async def admin_create_user(user_data: UserCreate, current_user: Dict[str, Any] 
         "password_hash": password_hash,
         "role": user_data.role,
         "status": "active",
-        "created_at": get_israel_time().isoformat(),
+        "created_at": datetime.now().isoformat(),
         "last_login": None,
         "first_name": user_data.first_name,
         "last_name": user_data.last_name,
@@ -932,7 +865,7 @@ async def admin_edit_user(username: str, user_data: UserUpdate, current_user: Di
             "username": user_data.username,
             "password_hash": password_hash,
             "role": user_data.role,
-            "created_at": existing_user.get("created_at", get_israel_time().isoformat()),
+            "created_at": existing_user.get("created_at", datetime.now().isoformat()),
             "last_login": existing_user.get("last_login"),
             "status": existing_user.get("status", "active"),
             "first_name": user_data.first_name,
@@ -1136,8 +1069,7 @@ async def get_user_profile(current_user: Dict[str, Any] = Depends(verify_token))
             "phone": user_data.get("phone"),
             "additional_info": user_data.get("additional_info"),
             "activation_expires_at": user_data.get("activation_expires_at"),
-            "activation_days": user_data.get("activation_days"),
-            "telegram_chat_id": user_data.get("telegram_chat_id")
+            "activation_days": user_data.get("activation_days")
         }
         
     except HTTPException:
@@ -1367,7 +1299,7 @@ async def admin_export_settings(current_user: Dict[str, Any] = Depends(verify_to
     try:
         return {
             "config": system_config.dict(),
-            "exported_at": get_israel_time().isoformat(),
+            "exported_at": datetime.now().isoformat(),
             "version": "1.0"
         }
     except Exception as e:
@@ -1403,11 +1335,10 @@ async def admin_import_settings(config_data: dict, current_user: Dict[str, Any] 
 # Global state
 agent_status = {
     "status": "running",
-    "last_update": get_israel_time().isoformat(),
+    "last_update": datetime.now().isoformat(),
     "active_symbols": [],
-    "total_trading_tips": 0,
-    "uptime": "0:00:00",
-    "maintenance_message": ""
+    "total_signals": 0,
+    "uptime": "0:00:00"
 }
 
 # Global system configuration
@@ -1482,7 +1413,7 @@ def calculate_activation_expiry(activation_days: int) -> Optional[str]:
     """Calculate activation expiry date"""
     if activation_days <= 0:
         return None  # No expiry set for zero or negative days (immediate deactivation)
-    expiry_date = get_israel_time() + timedelta(days=activation_days)
+    expiry_date = datetime.now() + timedelta(days=activation_days)
     return expiry_date.isoformat()
 
 def is_user_activation_valid(activation_expires_at: Optional[str], activation_days: Optional[int] = None) -> bool:
@@ -1496,7 +1427,7 @@ def is_user_activation_valid(activation_expires_at: Optional[str], activation_da
     
     try:
         expiry_date = datetime.fromisoformat(activation_expires_at)
-        return get_israel_time() < expiry_date
+        return datetime.now() < expiry_date
     except (ValueError, TypeError):
         return True  # Invalid date format, assume valid
 
@@ -1509,7 +1440,7 @@ def extend_user_activation(current_expiry: Optional[str], additional_days: int) 
     try:
         current_date = datetime.fromisoformat(current_expiry)
         # If current expiry is in the past, extend from now
-        if current_date < get_israel_time():
+        if current_date < datetime.now():
             return calculate_activation_expiry(additional_days)
         else:
             # Extend from current expiry date
@@ -1534,12 +1465,19 @@ market_data_cache = {}
 CACHE_TTL = 300  # 5 minutes in seconds
 
 
-# Initialize sentiment analyzer
+# Initialize sentiment analyzer lazily (only when needed)
 sentiment_analyzer = None
-try:
-    sentiment_analyzer = SentimentAnalyzer("ProsusAI/finbert")
-except Exception as e:
-    logger.warning(f"Could not initialize sentiment analyzer: {e}")
+
+def get_sentiment_analyzer():
+    """Get sentiment analyzer instance, initializing it lazily if needed"""
+    global sentiment_analyzer
+    if sentiment_analyzer is None:
+        try:
+            sentiment_analyzer = SentimentAnalyzer("ProsusAI/finbert")
+            logger.info("Sentiment analyzer initialized")
+        except Exception as e:
+            logger.warning(f"Could not initialize sentiment analyzer: {e}")
+    return sentiment_analyzer
 
 
 
@@ -1559,7 +1497,7 @@ async def get_status(request: Request) -> AgentStatus:
                 # Verify token manually
                 if token in ACTIVE_TOKENS:
                     token_data = ACTIVE_TOKENS[token]
-                    if get_israel_time() < token_data["expires"]:  # Fixed: use "expires" not "expires_at"
+                    if datetime.now() < token_data["expires"]:  # Fixed: use "expires" not "expires_at"
                         current_user = {"username": token_data["username"], "role": token_data["role"]}
         except Exception:
             # If token verification fails, treat as unauthenticated
@@ -1576,17 +1514,9 @@ async def get_status(request: Request) -> AgentStatus:
             else:
                 # For unauthenticated requests, show global count
                 status_data["total_trading_tips"] = await redis_client.get_signal_count()
-                logger.debug(f"Unauthenticated request sees {status_data['total_trading_tips']} signals")
+                logger.debug(f"Unauthenticated request sees {status_data['total_signals']} signals")
     except Exception as e:
         logger.warning(f"Failed to update signal count from Redis: {e}")
-    
-    # Load maintenance message from configuration
-    try:
-        config = load_config_from_env()
-        status_data["maintenance_message"] = config.app.maintenance_message
-    except Exception as e:
-        logger.warning(f"Failed to load maintenance message: {e}")
-        status_data["maintenance_message"] = ""
     
     return AgentStatus(**status_data)
 
@@ -1613,26 +1543,27 @@ async def get_signals(symbol: Optional[str] = None, limit: int = 50, current_use
                         signal_dict['applied_tech_weight'] = None
                         signal_dict['applied_sentiment_weight'] = None
                     
-                    # Sanitize inf/nan values before creating TradingSignal object
-                    def safe_float(value):
-                        if value is None or math.isnan(value) or math.isinf(value):
-                            return 0.0
-                        return float(value)
-                    
-                    # Apply safe_float to all numeric fields
-                    signal_dict['confidence'] = safe_float(signal_dict.get('confidence', 0.0))
-                    signal_dict['technical_score'] = safe_float(signal_dict.get('technical_score', 0.0))
-                    signal_dict['sentiment_score'] = safe_float(signal_dict.get('sentiment_score', 0.0))
-                    signal_dict['fused_score'] = safe_float(signal_dict.get('fused_score', 0.0))
-                    signal_dict['stop_loss'] = safe_float(signal_dict.get('stop_loss')) if signal_dict.get('stop_loss') is not None else None
-                    signal_dict['take_profit'] = safe_float(signal_dict.get('take_profit')) if signal_dict.get('take_profit') is not None else None
-                    signal_dict['applied_buy_threshold'] = safe_float(signal_dict.get('applied_buy_threshold')) if signal_dict.get('applied_buy_threshold') is not None else None
-                    signal_dict['applied_sell_threshold'] = safe_float(signal_dict.get('applied_sell_threshold')) if signal_dict.get('applied_sell_threshold') is not None else None
-                    signal_dict['applied_tech_weight'] = safe_float(signal_dict.get('applied_tech_weight')) if signal_dict.get('applied_tech_weight') is not None else None
-                    signal_dict['applied_sentiment_weight'] = safe_float(signal_dict.get('applied_sentiment_weight')) if signal_dict.get('applied_sentiment_weight') is not None else None
-                    
                     signal = TradingSignal(**signal_dict)
-                    valid_signals.append(signal)
+                    
+                    # Validate signal data
+                    if (isinstance(signal.confidence, (int, float)) and 
+                        isinstance(signal.technical_score, (int, float)) and
+                        isinstance(signal.sentiment_score, (int, float)) and
+                        isinstance(signal.fused_score, (int, float)) and
+                        (signal.stop_loss is None or isinstance(signal.stop_loss, (int, float))) and
+                        (signal.take_profit is None or isinstance(signal.take_profit, (int, float)))):
+                        
+                        # Check for inf/nan values
+                        if (not math.isnan(signal.confidence) and not math.isinf(signal.confidence) and
+                            not math.isnan(signal.technical_score) and not math.isinf(signal.technical_score) and
+                            not math.isnan(signal.sentiment_score) and not math.isinf(signal.sentiment_score) and
+                            not math.isnan(signal.fused_score) and not math.isinf(signal.fused_score) and
+                            (signal.stop_loss is None or (not math.isnan(signal.stop_loss) and not math.isinf(signal.stop_loss))) and
+                            (signal.take_profit is None or (not math.isnan(signal.take_profit) and not math.isinf(signal.take_profit)))):
+                            
+                            valid_signals.append(signal)
+                        else:
+                            logger.warning(f"Signal {signal.symbol} has inf/nan values, skipping")
                 except Exception as e:
                     logger.warning(f"Failed to convert signal dict: {e}")
                     continue
@@ -1805,10 +1736,6 @@ async def admin_get_all_signals(limit: int = 100, offset: int = 0, current_user:
 @app.post("/api/signals/generate")
 async def generate_signal(request: SignalRequest, current_user: Dict[str, Any] = Depends(verify_token)) -> TradingSignal:
     """Generate a new trading signal for a symbol"""
-    # Check if signal generation is enabled
-    if not FEATURES.signal_generation:
-        raise HTTPException(status_code=503, detail="Signal generation is currently disabled")
-    
     try:
         logger.info(f"Starting signal generation for {request.symbol}")
         # Fetch market data
@@ -1829,156 +1756,96 @@ async def generate_signal(request: SignalRequest, current_user: Dict[str, Any] =
             raise HTTPException(status_code=400, detail="Could not fetch market data")
         
         # Calculate indicators
-        logger.info("=== STARTING INDICATORS CALCULATION ===")
+        logger.info("Starting indicators calculation")
         close = ohlcv['close']
         high = ohlcv['high']
         low = ohlcv['low']
-        
-        logger.info(f"OHLCV Data Summary:")
-        logger.info(f"  - Data points: {len(close)}")
-        logger.info(f"  - Latest close price: {close.iloc[-1]:.2f}")
-        logger.info(f"  - Price range: {low.min():.2f} - {high.max():.2f}")
-        
-        # RSI Calculation
-        logger.info("Calculating RSI...")
         rsi = compute_rsi(close)
-        current_rsi = rsi.iloc[-1] if not rsi.empty else 50
-        logger.info(f"  - RSI: {current_rsi:.2f}")
-        
-        # EMA Calculations
-        logger.info("Calculating EMAs...")
         ema_12 = compute_ema(close, 12)
         ema_26 = compute_ema(close, 26)
-        current_ema_12 = ema_12.iloc[-1] if not ema_12.empty else close.iloc[-1]
-        current_ema_26 = ema_26.iloc[-1] if not ema_26.empty else close.iloc[-1]
-        logger.info(f"  - EMA 12: {current_ema_12:.2f}")
-        logger.info(f"  - EMA 26: {current_ema_26:.2f}")
-        
-        # MACD Calculation
-        logger.info("Calculating MACD...")
         macd_df = compute_macd(close)
         macd = macd_df['macd']
         macd_signal = macd_df['signal']
         macd_hist = macd_df['hist']
-        current_macd = macd.iloc[-1] if not macd.empty else 0
-        current_macd_signal = macd_signal.iloc[-1] if not macd_signal.empty else 0
-        current_macd_hist = macd_hist.iloc[-1] if not macd_hist.empty else 0
-        logger.info(f"  - MACD: {current_macd:.4f}")
-        logger.info(f"  - MACD Signal: {current_macd_signal:.4f}")
-        logger.info(f"  - MACD Histogram: {current_macd_hist:.4f}")
-        
-        # ATR Calculation
-        logger.info("Calculating ATR...")
         atr = compute_atr(high, low, close)
-        current_atr = atr.iloc[-1] if not atr.empty else 0
-        logger.info(f"  - ATR: {current_atr:.2f}")
-        
-        logger.info("=== INDICATORS CALCULATION COMPLETED ===")
-        
-        # Load configuration early for use in sentiment analysis
-        config = load_config_from_env()
+        logger.info("Indicators calculation completed")
         
         # Get sentiment from multiple sources (RSS + Reddit)
-        logger.info("=== STARTING SENTIMENT ANALYSIS ===")
+        logger.info("Starting sentiment analysis from multiple sources")
         sentiment_score = 0.0
-        
-        # Check if sentiment analysis is enabled
-        if not FEATURES.sentiment_analysis:
-            logger.info("Sentiment analysis disabled, using neutral score")
-            sentiment_score = 0.0
-        elif sentiment_analyzer:
+        analyzer = get_sentiment_analyzer()
+        if analyzer:
             try:
                 all_texts = []
                 
-                # Fetch RSS headlines using configuration
-                if config.sentiment_analysis.rss_enabled:
-                    rss_feeds = config.sentiment_analysis.rss_feeds
-                    headlines = fetch_headlines(rss_feeds, limit_per_feed=config.sentiment_analysis.rss_max_headlines_per_feed)
-                    logger.info(f"  - RSS headlines fetched: {len(headlines) if headlines else 0}")
-                    if headlines:
-                        all_texts.extend(headlines)
-                        logger.info(f"RSS: Collected {len(headlines)} headlines")
+                # Fetch RSS headlines
+                logger.info("Fetching RSS headlines...")
+                headlines = fetch_headlines([
+                    "https://news.google.com/rss/search?q=stock+market&hl=en-US&gl=US&ceid=US:en",
+                    "https://news.google.com/rss/search?q=crypto+btc&hl=en-US&gl=US&ceid=US:en",
+                ], limit_per_feed=10)  # Reduced to 10 to make room for Reddit
+                if headlines:
+                    all_texts.extend(headlines)
+                    logger.info(f"RSS: Collected {len(headlines)} headlines")
                 
-                # Fetch Reddit posts using configuration
-                if config.sentiment_analysis.reddit_enabled:
-                    logger.info("Fetching Reddit posts...")
-                    try:
-                        from agent.news.reddit import fetch_reddit_posts
-                        reddit_posts = fetch_reddit_posts(
-                            subreddits=config.sentiment_analysis.reddit_subreddits,
-                            limit_per_subreddit=config.sentiment_analysis.reddit_max_posts_per_subreddit
-                        )
-                        if reddit_posts:
-                            all_texts.extend(reddit_posts)
-                            logger.info(f"  - Reddit posts fetched: {len(reddit_posts)} from {len(config.sentiment_analysis.reddit_subreddits)} subreddits")
-                    except Exception as e:
-                        logger.warning(f"Could not fetch Reddit posts: {e}")
+                # Fetch Reddit posts based on symbol type
+                logger.info("Fetching Reddit posts...")
+                if "BTC" in request.symbol or "ETH" in request.symbol or "crypto" in request.symbol.lower():
+                    # Crypto symbol - fetch crypto Reddit posts
+                    reddit_posts = fetch_crypto_reddit_posts(limit_per_subreddit=5)
+                    if reddit_posts:
+                        all_texts.extend(reddit_posts)
+                    logger.info(f"Reddit: Collected {len(reddit_posts)} crypto posts")
+                else:
+                    # Stock symbol - fetch stock Reddit posts
+                    reddit_posts = fetch_stock_reddit_posts(limit_per_subreddit=5)
+                    if reddit_posts:
+                        all_texts.extend(reddit_posts)
+                        logger.info(f"Reddit: Collected {len(reddit_posts)} stock posts")
                 
                 if all_texts:
-                    # Use sample size from configuration
+                    # Use optimal sample size with mixed sources
                     import random
-                    sample_size = min(config.sentiment_analysis.reddit_sample_size, len(all_texts))
+                    sample_size = min(20, len(all_texts))  # Increased to 20 for mixed sources
                     shuffled_texts = all_texts.copy()
                     random.shuffle(shuffled_texts)
                     text_sample = shuffled_texts[:sample_size]
-                    logger.info(f"  - Total texts collected: {len(all_texts)}")
-                    logger.info(f"  - Sample size for analysis: {len(text_sample)}")
-                    logger.info(f"  - Analyzing texts for sentiment...")
-                    sentiment_score = sentiment_analyzer.score(text_sample)
-                    logger.info(f"  - Sentiment analysis result: {sentiment_score:.3f}")
+                    logger.info(f"Analyzing {len(text_sample)} texts (RSS + Reddit) for sentiment")
+                    sentiment_score = analyzer.score(text_sample)
+                    logger.info(f"Sentiment analysis result: {sentiment_score:.3f}")
                 else:
-                    logger.warning("  - No texts collected from any source")
+                    logger.warning("No texts collected from any source")
                     
             except Exception as e:
                 logger.warning(f"Could not fetch sentiment: {e}")
-        logger.info("=== SENTIMENT ANALYSIS COMPLETED ===")
+        logger.info("Sentiment analysis completed")
         
         # Calculate technical score
-        logger.info("=== CALCULATING TECHNICAL SCORE ===")
+        logger.info(f"Close type: {type(close)}, value: {close if isinstance(close, str) else 'Series'}")
+        logger.info(f"RSI type: {type(rsi)}, empty: {rsi.empty if hasattr(rsi, 'empty') else 'no empty attr'}")
+        logger.info(f"MACD hist type: {type(macd_hist)}, empty: {macd_hist.empty if hasattr(macd_hist, 'empty') else 'no empty attr'}")
         tech_score = 0.0
         if not close.empty:
             current_close = close.iloc[-1]
             current_rsi = rsi.iloc[-1] if not rsi.empty else 50
             current_macd_hist = macd_hist.iloc[-1] if not macd_hist.empty else 0
             
-            logger.info(f"Current values:")
-            logger.info(f"  - Close price: {current_close:.2f}")
-            logger.info(f"  - RSI: {current_rsi:.2f}")
-            logger.info(f"  - MACD Histogram: {current_macd_hist:.4f}")
-            
             # Normalize RSI to [-1, 1]
             rsi_score = (current_rsi - 50) / 50
-            logger.info(f"  - RSI normalized: ({current_rsi:.2f} - 50) / 50 = {rsi_score:.3f}")
             
             # Normalize MACD histogram
             macd_score = max(min(current_macd_hist / 1000, 1), -1)
-            logger.info(f"  - MACD normalized: max(min({current_macd_hist:.4f} / 1000, 1), -1) = {macd_score:.3f}")
             
             tech_score = (rsi_score + macd_score) / 2
-            logger.info(f"  - Technical score: ({rsi_score:.3f} + {macd_score:.3f}) / 2 = {tech_score:.3f}")
-        else:
-            logger.warning("Close data is empty, using default technical score: 0.0")
         
         # Debug logging for custom thresholds
-        logger.info("=== APPLYING THRESHOLDS AND WEIGHTS ===")
-        logger.info(f"Request parameters:")
-        logger.info(f"  - buy_threshold: {request.buy_threshold}")
-        logger.info(f"  - sell_threshold: {request.sell_threshold}")
-        logger.info(f"  - technical_weight: {request.technical_weight}")
-        logger.info(f"  - sentiment_weight: {request.sentiment_weight}")
+        logger.info(f"Custom threshold values received: buy_threshold={request.buy_threshold}, sell_threshold={request.sell_threshold}, technical_weight={request.technical_weight}, sentiment_weight={request.sentiment_weight}")
         
         # Use custom parameters if provided, otherwise use config defaults
+        config = load_config_from_env()
         tech_weight = request.technical_weight if request.technical_weight is not None else config.thresholds.technical_weight
         sentiment_weight = request.sentiment_weight if request.sentiment_weight is not None else config.thresholds.sentiment_weight
-        
-        logger.info(f"Applied weights:")
-        logger.info(f"  - technical_weight: {tech_weight}")
-        logger.info(f"  - sentiment_weight: {sentiment_weight}")
-        
-        # Calculate fused score
         fused_score = tech_weight * tech_score + sentiment_weight * sentiment_score
-        logger.info(f"Fused score calculation:")
-        logger.info(f"  - {tech_weight} * {tech_score:.3f} + {sentiment_weight} * {sentiment_score:.3f} = {fused_score:.3f}")
         
         # Define thresholds - use config defaults if not provided
         buy_threshold = request.buy_threshold if request.buy_threshold is not None else config.thresholds.buy_threshold
@@ -1988,35 +1855,20 @@ async def generate_signal(request: SignalRequest, current_user: Dict[str, Any] =
         else:
             sell_threshold = -buy_threshold
         
-        logger.info(f"Applied thresholds:")
-        logger.info(f"  - buy_threshold: {buy_threshold}")
-        logger.info(f"  - sell_threshold: {sell_threshold}")
+        # Debug logging for applied thresholds
+        logger.info(f"Applied threshold values: buy_threshold={buy_threshold}, sell_threshold={sell_threshold}, technical_weight={tech_weight}, sentiment_weight={sentiment_weight}")
         
         # Determine signal type
-        logger.info("=== DETERMINING SIGNAL TYPE ===")
-        logger.info(f"Signal determination logic:")
-        logger.info(f"  - If fused_score ({fused_score:.3f}) >= buy_threshold ({buy_threshold}): BUY")
-        logger.info(f"  - If fused_score ({fused_score:.3f}) <= sell_threshold ({sell_threshold}): SELL")
-        logger.info(f"  - Otherwise: HOLD")
-        
         if fused_score >= buy_threshold:
             signal_type = "BUY"
-            logger.info(f"  - Result: BUY (fused_score {fused_score:.3f} >= buy_threshold {buy_threshold})")
         elif fused_score <= sell_threshold:
             signal_type = "SELL"
-            logger.info(f"  - Result: SELL (fused_score {fused_score:.3f} <= sell_threshold {sell_threshold})")
         else:
             signal_type = "HOLD"
-            logger.info(f"  - Result: HOLD (fused_score {fused_score:.3f} between thresholds)")
         
         # Calculate stop loss and take profit
-        logger.info("=== CALCULATING STOP LOSS AND TAKE PROFIT ===")
         current_close = close.iloc[-1] if not close.empty else 0
         current_atr = atr.iloc[-1] if not atr.empty else 0
-        
-        logger.info(f"Current values for SL/TP:")
-        logger.info(f"  - Close price: {current_close:.2f}")
-        logger.info(f"  - ATR: {current_atr:.2f}")
         
         stop_loss = None
         take_profit = None
@@ -2025,61 +1877,28 @@ async def generate_signal(request: SignalRequest, current_user: Dict[str, Any] =
             if signal_type == "BUY":
                 stop_loss = current_close - (2 * current_atr)
                 take_profit = current_close + (3 * current_atr)
-                logger.info(f"  - BUY signal SL/TP:")
-                logger.info(f"    - Stop Loss: {current_close:.2f} - (2 * {current_atr:.2f}) = {stop_loss:.2f}")
-                logger.info(f"    - Take Profit: {current_close:.2f} + (3 * {current_atr:.2f}) = {take_profit:.2f}")
             elif signal_type == "SELL":
                 stop_loss = current_close + (2 * current_atr)
                 take_profit = current_close - (3 * current_atr)
-                logger.info(f"  - SELL signal SL/TP:")
-                logger.info(f"    - Stop Loss: {current_close:.2f} + (2 * {current_atr:.2f}) = {stop_loss:.2f}")
-                logger.info(f"    - Take Profit: {current_close:.2f} - (3 * {current_atr:.2f}) = {take_profit:.2f}")
-        else:
-            logger.info(f"  - ATR is 0 or invalid, no SL/TP calculated")
         
-        # Safe float function to handle inf/nan values
-        def safe_float(value):
-            import math
-            if value is None or math.isnan(value) or math.isinf(value):
-                return 0.0
-            return float(value)
-        
-        # Create signal with sanitized values
-        logger.info("=== CREATING FINAL SIGNAL ===")
-        logger.info(f"Final signal parameters:")
-        logger.info(f"  - Symbol: {request.symbol}")
-        logger.info(f"  - Timeframe: {request.timeframe}")
-        logger.info(f"  - Signal Type: {signal_type}")
-        logger.info(f"  - Confidence: {safe_float(abs(fused_score)):.3f}")
-        logger.info(f"  - Technical Score: {safe_float(tech_score):.3f}")
-        logger.info(f"  - Sentiment Score: {safe_float(sentiment_score):.3f}")
-        logger.info(f"  - Fused Score: {safe_float(fused_score):.3f}")
-        logger.info(f"  - Stop Loss: {safe_float(stop_loss) if stop_loss is not None else None}")
-        logger.info(f"  - Take Profit: {safe_float(take_profit) if take_profit is not None else None}")
-        logger.info(f"  - Applied Buy Threshold: {safe_float(buy_threshold)}")
-        logger.info(f"  - Applied Sell Threshold: {safe_float(sell_threshold)}")
-        logger.info(f"  - Applied Tech Weight: {safe_float(tech_weight)}")
-        logger.info(f"  - Applied Sentiment Weight: {safe_float(sentiment_weight)}")
-        
+        # Create signal
         signal = TradingSignal(
             symbol=request.symbol,
             timeframe=request.timeframe,
             timestamp=get_israel_time().isoformat(),
             signal_type=signal_type,
-            confidence=safe_float(abs(fused_score)),
-            technical_score=safe_float(tech_score),
-            sentiment_score=safe_float(sentiment_score),
-            fused_score=safe_float(fused_score),
-            stop_loss=safe_float(stop_loss) if stop_loss is not None else None,
-            take_profit=safe_float(take_profit) if take_profit is not None else None,
-            reasoning=f"Technical: {safe_float(tech_score):.2f}, Sentiment: {safe_float(sentiment_score):.2f}, Fused: {safe_float(fused_score):.2f}",
-            applied_buy_threshold=safe_float(buy_threshold),
-            applied_sell_threshold=safe_float(sell_threshold),
-            applied_tech_weight=safe_float(tech_weight),
-            applied_sentiment_weight=safe_float(sentiment_weight)
+            confidence=abs(fused_score),
+            technical_score=tech_score,
+            sentiment_score=sentiment_score,
+            fused_score=fused_score,
+            stop_loss=stop_loss,
+            take_profit=take_profit,
+            reasoning=f"Technical: {tech_score:.2f}, Sentiment: {sentiment_score:.2f}, Fused: {fused_score:.2f}",
+            applied_buy_threshold=buy_threshold,
+            applied_sell_threshold=sell_threshold,
+            applied_tech_weight=tech_weight,
+            applied_sentiment_weight=sentiment_weight
         )
-        
-        logger.info("=== SIGNAL CREATION COMPLETED ===")
         
         # Add user information to signal
         signal_dict = signal.dict()
@@ -2138,15 +1957,15 @@ async def generate_signal(request: SignalRequest, current_user: Dict[str, Any] =
         try:
             redis_client = await get_redis_client()
             if redis_client:
-                agent_status["total_trading_tips"] = await redis_client.get_signal_count()
+                agent_status["total_signals"] = await redis_client.get_signal_count()
             else:
-                agent_status["total_trading_tips"] += 1
+                agent_status["total_signals"] += 1
         except Exception as e:
             logger.error(f"Failed to update signal count: {e}")
-            agent_status["total_trading_tips"] += 1
+            agent_status["total_signals"] += 1
         
 
-        agent_status["last_update"] = get_israel_time().isoformat()
+        agent_status["last_update"] = datetime.now().isoformat()
         
         return signal
         
@@ -2154,67 +1973,678 @@ async def generate_signal(request: SignalRequest, current_user: Dict[str, Any] =
         logger.error(f"Error generating signal: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/api/config")
-async def get_config() -> Dict[str, Any]:
-    """Get current agent configuration"""
+
+
+
+@app.get("/api/config/app")
+async def get_app_config() -> Dict[str, Any]:
+    """Get application configuration section"""
     try:
-        config = load_config_from_env()
+        from agent.config import get_config
+        from dataclasses import asdict
+        
+        # Get the loaded configuration
+        loaded_config = get_config()
+        
         return {
-            "tickers": config.universe.tickers,
-            "timeframe": config.universe.timeframe,
-            "timeframes": config.universe.timeframes if hasattr(config.universe, 'timeframes') else ["15m", "1h", "4h", "1d"],
-            "buy_threshold": config.thresholds.buy_threshold,
-            "sell_threshold": config.thresholds.sell_threshold,
-            "technical_weight": config.thresholds.technical_weight,
-            "sentiment_weight": config.thresholds.sentiment_weight,
-            "log_level": os.getenv("AGENT_LOG_LEVEL", "info"),
-            "log_format": os.getenv("AGENT_LOG_FORMAT", "simple"),
-            "sentiment_thresholds": {
-                "positive_threshold": config.sentiment_analysis.positive_threshold,
-                "negative_threshold": config.sentiment_analysis.negative_threshold,
-                "neutral_range": config.sentiment_analysis.neutral_range
+            "message": "Application configuration section",
+            "source": "runtime_config",
+            "section": "app",
+            "config": {
+                "app": asdict(loaded_config.app),
+                "server": asdict(loaded_config.server),
+                "database": asdict(loaded_config.database),
+                "security": asdict(loaded_config.security),
+                "api": asdict(loaded_config.api),
+                "telegram": asdict(loaded_config.telegram),
+                "monitoring": asdict(loaded_config.monitoring),
+                "features": asdict(loaded_config.features),
+                "development": asdict(loaded_config.development)
             },
-            "technical_analysis": {
-                "rsi": {
-                    "period": config.technical_analysis.rsi_period,
-                    "overbought": config.technical_analysis.rsi_overbought,
-                    "oversold": config.technical_analysis.rsi_oversold
-                },
-                "macd": {
-                    "fast": config.technical_analysis.macd_fast,
-                    "slow": config.technical_analysis.macd_slow,
-                    "signal": config.technical_analysis.macd_signal
-                },
-                "atr": {
-                    "period": config.technical_analysis.atr_period,
-                    "multiplier": config.technical_analysis.atr_multiplier
-                }
-            },
-            "risk_management": {
-                "stop_loss_percentage": config.risk_management.stop_loss_percentage,
-                "take_profit_percentage": config.risk_management.take_profit_percentage,
-                "atr_stop_multiplier": config.risk_management.atr_stop_multiplier,
-                "atr_take_profit_multiplier": config.risk_management.atr_take_profit_multiplier
-            },
-            "sentiment_analysis": {
-                "model_name": config.sentiment_analysis.model_name,
-                "rss_feeds": config.sentiment_analysis.rss_feeds,
-                "reddit_subreddits": config.sentiment_analysis.reddit_subreddits
-            }
+            "timestamp": datetime.now().isoformat()
         }
     except Exception as e:
-        logger.error(f"Error loading config: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error loading app config: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to load app config: {str(e)}")
 
-@app.get("/api/sentiment/interpret/{score}")
-async def interpret_sentiment(score: float) -> Dict[str, Any]:
-    """Interpret a sentiment score using configuration thresholds"""
+# Redis-based configuration manager
+from agent.redis_config_manager import get_redis_config_manager
+
+def get_cached_config():
+    """Get cached configuration from Redis"""
+    # This will be replaced with async Redis calls in the endpoints
+    from agent.config import get_config
+    return get_config()  # Fallback to file-based config
+
+@app.get("/api/config/symbols")
+async def get_symbols_config() -> Dict[str, Any]:
+    """Get symbols configuration (fast endpoint for UI dropdown)"""
     try:
-        interpretation = interpret_sentiment_score(score)
-        return interpretation
+        redis_config_manager = get_redis_config_manager()
+        universe_config = await redis_config_manager.get_universe_config()
+        
+        if universe_config:
+            return {
+                "crypto_symbols": universe_config.get("crypto_symbols", []),
+                "stock_symbols": universe_config.get("stock_symbols", []),
+                "timeframes": universe_config.get("timeframes", []),
+                "default_timeframe": universe_config.get("timeframe", "5m")
+            }
+        else:
+            # Fallback to file-based config if Redis is not available
+            logger.warning("Redis config not available, falling back to file-based config")
+            cached_config = get_cached_config()
+            return {
+                "crypto_symbols": cached_config.universe.crypto_symbols,
+                "stock_symbols": cached_config.universe.stock_symbols,
+                "timeframes": cached_config.universe.timeframes,
+                "default_timeframe": cached_config.universe.timeframe
+            }
     except Exception as e:
-        logger.error(f"Error interpreting sentiment score {score}: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error loading symbols config: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to load symbols config: {str(e)}")
+
+@app.get("/api/config/trading")
+async def get_trading_config() -> Dict[str, Any]:
+    """Get trading configuration section"""
+    try:
+        from dataclasses import asdict
+        
+        # Get the cached configuration
+        loaded_config = get_cached_config()
+        
+        return {
+            "message": "Trading configuration section",
+            "source": "runtime_config",
+            "section": "trading",
+            "config": {
+                "universe": asdict(loaded_config.universe),
+                "signals": asdict(loaded_config.signals),
+                "guardrails": asdict(loaded_config.guardrails),
+                "safety": asdict(loaded_config.safety),
+                "technical_analysis": asdict(loaded_config.technical_analysis),
+                "sentiment_analysis": asdict(loaded_config.sentiment_analysis),
+                "exchanges": asdict(loaded_config.exchanges),
+                "risk_management": asdict(loaded_config.risk_management),
+            },
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error loading trading config: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to load trading config: {str(e)}")
+
+@app.get("/api/config/logging")
+async def get_logging_config() -> Dict[str, Any]:
+    """Get logging configuration section"""
+    try:
+        from agent.config import get_config
+        from dataclasses import asdict
+        
+        # Get the loaded configuration
+        loaded_config = get_config()
+        
+        return {
+            "message": "Logging configuration section",
+            "source": "runtime_config",
+            "section": "logging",
+            "config": {
+                "logging": asdict(loaded_config.logging)
+            },
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error loading logging config: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to load logging config: {str(e)}")
+
+@app.get("/api/telegram/connection")
+async def get_telegram_connection(current_user: Dict[str, Any] = Depends(verify_token)):
+    """Get Telegram connection status for the current user"""
+    try:
+        redis_client = await get_redis_client()
+        if not redis_client:
+            raise HTTPException(status_code=500, detail="Redis not available")
+        
+        # Get user's Telegram connection from Redis
+        telegram_connection = await redis_client.get_telegram_connection(current_user['username'])
+        
+        # Check if Telegram is enabled in config
+        from agent.config import get_config
+        config = get_config()
+        telegram_enabled = config.telegram.enabled and bool(config.telegram.bot_token)
+        
+        return {
+            "connected": bool(telegram_connection),
+            "chat_id": telegram_connection.get('chat_id') if telegram_connection else None,
+            "telegram_enabled": telegram_enabled,
+            "bot_token_configured": bool(config.telegram.bot_token)
+        }
+    except Exception as e:
+        logger.error(f"Error getting Telegram connection status: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get Telegram connection status: {str(e)}")
+
+@app.post("/api/telegram/connect")
+async def connect_telegram(
+    chat_id: str,
+    current_user: Dict[str, Any] = Depends(verify_token)
+):
+    """Connect user's Telegram account"""
+    try:
+        redis_client = await get_redis_client()
+        if not redis_client:
+            raise HTTPException(status_code=500, detail="Redis not available")
+        
+        # Validate chat ID format (should be numeric)
+        if not chat_id.isdigit():
+            raise HTTPException(status_code=400, detail="Invalid chat ID format")
+        
+        # Store chat ID in Redis using the proper method
+        await redis_client.store_telegram_connection(current_user['username'], chat_id)
+        
+        # Log the connection
+        await redis_client.log_activity(
+            "telegram_connected",
+            f"User {current_user['username']} connected Telegram chat ID {chat_id}",
+            current_user['username'],
+            {"chat_id": chat_id}
+        )
+        
+        return {"status": "success", "message": "Telegram connected successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error connecting Telegram: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to connect Telegram: {str(e)}")
+
+@app.post("/api/telegram/disconnect")
+async def disconnect_telegram(current_user: Dict[str, Any] = Depends(verify_token)):
+    """Disconnect user's Telegram account"""
+    try:
+        redis_client = await get_redis_client()
+        if not redis_client:
+            raise HTTPException(status_code=500, detail="Redis not available")
+        
+        # Remove Telegram connection from Redis
+        await redis_client.remove_telegram_connection(current_user['username'])
+        
+        # Log the disconnection
+        await redis_client.log_activity(
+            "telegram_disconnected",
+            f"User {current_user['username']} disconnected Telegram",
+            current_user['username']
+        )
+        
+        return {"status": "success", "message": "Telegram disconnected successfully"}
+    except Exception as e:
+        logger.error(f"Error disconnecting Telegram: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to disconnect Telegram: {str(e)}")
+
+@app.post("/api/telegram/test")
+async def test_telegram_connection(current_user: Dict[str, Any] = Depends(verify_token)):
+    """Send a test message to user's Telegram"""
+    try:
+        redis_client = await get_redis_client()
+        if not redis_client:
+            raise HTTPException(status_code=500, detail="Redis not available")
+        
+        # Get user's Telegram connection
+        telegram_connection = await redis_client.get_telegram_connection(current_user['username'])
+        if not telegram_connection:
+            raise HTTPException(status_code=400, detail="No Telegram account connected")
+        
+        chat_id = telegram_connection.get('chat_id')
+        if not chat_id:
+            raise HTTPException(status_code=400, detail="No chat ID found in connection")
+        
+        # Get Telegram configuration
+        from agent.config import get_config
+        config = get_config()
+        
+        if not config.telegram.bot_token:
+            raise HTTPException(status_code=500, detail="Telegram bot token not configured")
+        
+        # Send test message
+        import requests
+        import json
+        from datetime import datetime
+        
+        message = f"🧪 Test message from Trading AI Tips System\n\n" \
+                 f"✅ Connection successful!\n" \
+                 f"👤 User: {current_user['username']}\n" \
+                 f"🕐 Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n" \
+                 f"📱 Chat ID: {chat_id}\n\n" \
+                 f"You will now receive trading notifications here!"
+        
+        url = f"{config.telegram.api_url}{config.telegram.bot_token}/sendMessage"
+        payload = {
+            "chat_id": chat_id,
+            "text": message,
+            "parse_mode": "HTML"
+        }
+        
+        response = requests.post(url, json=payload, timeout=config.telegram.timeout)
+        
+        if response.status_code == 200:
+            result = response.json()
+            if result.get('ok'):
+                # Log the test message
+                await redis_client.log_activity(
+                    "telegram_test_sent",
+                    f"Test message sent to Telegram for user {current_user['username']}",
+                    current_user['username'],
+                    {"chat_id": chat_id, "message_id": result.get('result', {}).get('message_id')}
+                )
+                
+                return {
+                    "status": "success", 
+                    "message": "Test message sent successfully",
+                    "chat_id": chat_id,
+                    "message_id": result.get('result', {}).get('message_id')
+                }
+            else:
+                raise HTTPException(status_code=500, detail=f"Telegram API error: {result.get('description', 'Unknown error')}")
+        else:
+            raise HTTPException(status_code=500, detail=f"Failed to send message: HTTP {response.status_code}")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error sending test message: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to send test message: {str(e)}")
+
+# Message endpoints
+@app.get("/api/messages")
+async def get_user_messages(current_user: Dict[str, Any] = Depends(verify_token)):
+    """Get user's messages (received and sent)"""
+    try:
+        redis_client = await get_redis_client()
+        if not redis_client:
+            raise HTTPException(status_code=500, detail="Redis not available")
+        
+        username = current_user['username']
+        
+        # Get received messages
+        received_messages = await redis_client.get_user_messages(username, "received", 50)
+        
+        # Get sent messages
+        sent_messages = await redis_client.get_user_messages(username, "sent", 50)
+        
+        # Count unread messages
+        unread_count = len([msg for msg in received_messages if msg.get("status") == "unread"])
+        
+        return {
+            "received_messages": received_messages,
+            "sent_messages": sent_messages,
+            "unread_count": unread_count,
+            "total_received": len(received_messages),
+            "total_sent": len(sent_messages)
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting user messages: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get messages: {str(e)}")
+
+@app.post("/api/messages/{message_id}/read")
+async def mark_message_as_read(message_id: str, current_user: Dict[str, Any] = Depends(verify_token)):
+    """Mark a message as read"""
+    try:
+        redis_client = await get_redis_client()
+        if not redis_client:
+            raise HTTPException(status_code=500, detail="Redis not available")
+        
+        username = current_user['username']
+        success = await redis_client.mark_message_as_read(message_id, username)
+        
+        if success:
+            return {"status": "success", "message": "Message marked as read"}
+        else:
+            raise HTTPException(status_code=404, detail="Message not found")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error marking message as read: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to mark message as read: {str(e)}")
+
+@app.post("/api/messages/delete")
+async def delete_messages(request: Dict[str, Any], current_user: Dict[str, Any] = Depends(verify_token)):
+    """Delete messages"""
+    try:
+        redis_client = await get_redis_client()
+        if not redis_client:
+            raise HTTPException(status_code=500, detail="Redis not available")
+        
+        message_ids = request.get("message_ids", [])
+        message_type = request.get("type", "received")  # received or sent
+        
+        if not message_ids:
+            raise HTTPException(status_code=400, detail="No message IDs provided")
+        
+        username = current_user['username']
+        deleted_count = await redis_client.delete_messages(message_ids, username)
+        
+        return {
+            "status": "success", 
+            "message": f"Deleted {deleted_count} messages",
+            "deleted_count": deleted_count
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting messages: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to delete messages: {str(e)}")
+
+@app.post("/api/messages/send")
+async def send_message_to_admin(request: Dict[str, Any], current_user: Dict[str, Any] = Depends(verify_token)):
+    """Send a message to admin"""
+    try:
+        redis_client = await get_redis_client()
+        if not redis_client:
+            raise HTTPException(status_code=500, detail="Redis not available")
+        
+        message = request.get("message", "").strip()
+        subject = request.get("subject", "").strip()
+        
+        if not message:
+            raise HTTPException(status_code=400, detail="Message content is required")
+        
+        username = current_user['username']
+        success = await redis_client.send_message_to_admin(username, message, subject)
+        
+        if success:
+            # Log the activity
+            await redis_client.log_activity(
+                "message_sent_to_admin",
+                f"User {username} sent a message to admin",
+                username,
+                {"subject": subject, "message_length": len(message)}
+            )
+            
+            return {"status": "success", "message": "Message sent to admin successfully"}
+        else:
+            raise HTTPException(status_code=500, detail="Failed to send message")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error sending message to admin: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to send message: {str(e)}")
+
+@app.post("/api/contact-admin")
+async def contact_admin(request: Dict[str, Any], current_user: Dict[str, Any] = Depends(verify_token)):
+    """Contact admin endpoint (alias for /api/messages/send)"""
+    try:
+        redis_client = await get_redis_client()
+        if not redis_client:
+            raise HTTPException(status_code=500, detail="Redis not available")
+        
+        message = request.get("message", "").strip()
+        subject = request.get("subject", "").strip()
+        
+        if not message:
+            raise HTTPException(status_code=400, detail="Message content is required")
+        
+        username = current_user['username']
+        success = await redis_client.send_message_to_admin(username, message, subject)
+        
+        if success:
+            # Log the activity
+            await redis_client.log_activity(
+                "message_sent_to_admin",
+                f"User {username} sent a message to admin",
+                username,
+                {"subject": subject, "message_length": len(message)}
+            )
+            
+            return {"status": "success", "message": "Message sent to admin successfully"}
+        else:
+            raise HTTPException(status_code=500, detail="Failed to send message")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error sending message to admin: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to send message: {str(e)}")
+
+# Admin message endpoints
+@app.get("/api/admin/messages")
+async def get_admin_messages(current_user: Dict[str, Any] = Depends(verify_token)):
+    """Get admin messages (admin only)"""
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    try:
+        redis_client = await get_redis_client()
+        if not redis_client:
+            raise HTTPException(status_code=500, detail="Redis not available")
+        
+        # Get messages sent to admin
+        admin_messages = await redis_client.get_admin_messages(100)
+        
+        # Get messages sent by admin
+        admin_sent_messages = await redis_client.get_admin_sent_messages(100)
+        
+        # Count unread messages
+        unread_count = len([msg for msg in admin_messages if msg.get("status") == "unread"])
+        
+        logger.info(f"Admin messages API: {len(admin_messages)} received, {len(admin_sent_messages)} sent, {unread_count} unread")
+        
+        return {
+            "received_messages": admin_messages,
+            "sent_messages": admin_sent_messages,
+            "unread_count": unread_count,
+            "total_count": len(admin_messages),
+            "total_sent": len(admin_sent_messages)
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting admin messages: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get admin messages: {str(e)}")
+
+@app.post("/api/admin/messages/{message_id}/read")
+async def mark_admin_message_as_read(message_id: str, current_user: Dict[str, Any] = Depends(verify_token)):
+    """Mark an admin message as read (admin only)"""
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    try:
+        redis_client = await get_redis_client()
+        if not redis_client:
+            raise HTTPException(status_code=500, detail="Redis not available")
+        
+        success = await redis_client.mark_admin_message_as_read(message_id)
+        
+        if success:
+            return {"status": "success", "message": "Message marked as read"}
+        else:
+            raise HTTPException(status_code=404, detail="Message not found")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error marking admin message as read: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to mark message as read: {str(e)}")
+
+@app.get("/api/admin/messages/sent")
+async def get_admin_sent_messages(current_user: Dict[str, Any] = Depends(verify_token)):
+    """Get admin sent messages (admin only)"""
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    try:
+        redis_client = await get_redis_client()
+        if not redis_client:
+            raise HTTPException(status_code=500, detail="Redis not available")
+        
+        # Get admin sent messages
+        sent_messages = await redis_client.get_admin_sent_messages()
+        
+        return {
+            "sent_messages": sent_messages,
+            "total_sent": len(sent_messages)
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting admin sent messages: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get admin sent messages: {str(e)}")
+
+@app.get("/api/admin/users/unread-messages")
+async def get_unread_message_counts(current_user: Dict[str, Any] = Depends(verify_token)):
+    """Get unread message counts for all users (admin only)"""
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    try:
+        redis_client = await get_redis_client()
+        if not redis_client:
+            raise HTTPException(status_code=500, detail="Redis not available")
+        
+        # Get admin messages to calculate unread counts per user
+        admin_messages = await redis_client.get_admin_messages()
+        unread_counts = {}
+        
+        # Count unread messages per user
+        for message in admin_messages:
+            if message.get("status") == "unread":
+                from_username = message.get("from_username")
+                if from_username and from_username != "admin":
+                    unread_counts[from_username] = unread_counts.get(from_username, 0) + 1
+        
+        return unread_counts
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting unread message counts: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get unread message counts: {str(e)}")
+
+@app.post("/api/admin/messages/bulk-delete")
+async def bulk_delete_admin_messages(request: Dict[str, Any], current_user: Dict[str, Any] = Depends(verify_token)):
+    """Bulk delete admin messages (admin only)"""
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    try:
+        redis_client = await get_redis_client()
+        if not redis_client:
+            raise HTTPException(status_code=500, detail="Redis not available")
+        
+        message_ids = request.get("message_ids", [])
+        message_type = request.get("message_type", "received")  # "received" or "sent"
+        
+        if not message_ids:
+            raise HTTPException(status_code=400, detail="No message IDs provided")
+        
+        deleted_count = 0
+        
+        if message_type == "received":
+            # Delete from admin messages
+            deleted_count = await redis_client.bulk_delete_admin_messages(message_ids)
+        elif message_type == "sent":
+            # Delete from admin sent messages
+            deleted_count = await redis_client.bulk_delete_admin_sent_messages(message_ids)
+        else:
+            raise HTTPException(status_code=400, detail="Invalid message type")
+        
+        return {
+            "status": "success",
+            "message": f"Successfully deleted {deleted_count} messages",
+            "deleted_count": deleted_count
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error bulk deleting admin messages: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to delete messages: {str(e)}")
+
+@app.post("/api/admin/messages/send")
+async def send_message_to_user(request: Dict[str, Any], current_user: Dict[str, Any] = Depends(verify_token)):
+    """Send a message from admin to user (admin only)"""
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    try:
+        redis_client = await get_redis_client()
+        if not redis_client:
+            raise HTTPException(status_code=500, detail="Redis not available")
+        
+        to_username = request.get("to_username", "").strip()
+        message = request.get("message", "").strip()
+        subject = request.get("subject", "").strip()
+        
+        if not to_username or not message:
+            raise HTTPException(status_code=400, detail="Username and message content are required")
+        
+        # Check if user exists
+        user_data = await redis_client.get_user(to_username)
+        if not user_data:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        from_username = current_user['username']
+        success = await redis_client.send_message_to_user(from_username, to_username, message, subject)
+        
+        if success:
+            # Log the activity
+            await redis_client.log_activity(
+                "admin_message_sent",
+                f"Admin {from_username} sent a message to user {to_username}",
+                from_username,
+                {"to_username": to_username, "subject": subject, "message_length": len(message)}
+            )
+            
+            return {"status": "success", "message": f"Message sent to {to_username} successfully"}
+        else:
+            raise HTTPException(status_code=500, detail="Failed to send message")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error sending message to user: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to send message: {str(e)}")
+
+@app.get("/api/admin/users/messaging")
+async def get_users_for_messaging(current_user: Dict[str, Any] = Depends(verify_token)):
+    """Get list of users for messaging (admin only)"""
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    try:
+        redis_client = await get_redis_client()
+        if not redis_client:
+            raise HTTPException(status_code=500, detail="Redis not available")
+        
+        # Get all users
+        users = await redis_client.get_all_users()
+        
+        # Format users for messaging dropdown
+        messaging_users = []
+        for user in users:
+            if user.get("username") != "admin":  # Don't include admin in the list
+                messaging_users.append({
+                    "username": user.get("username", ""),
+                    "first_name": user.get("first_name", ""),
+                    "last_name": user.get("last_name", ""),
+                    "email": user.get("email", ""),
+                    "role": user.get("role", "user")
+                })
+        
+        return {
+            "users": messaging_users,
+            "total": len(messaging_users)
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting users for messaging: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get users: {str(e)}")
 
 @app.post("/api/config/update")
 async def update_config(update: ConfigUpdate):
@@ -2260,29 +2690,15 @@ async def get_market_data(symbol: str, timeframe: str = "1h", limit: int = 100):
 
 @app.get("/api/market-data/all/overview")
 async def get_market_overview(timeframe: str = "1h"):
-    """Get market overview for all configured symbols with caching"""
+    """Get market overview for all configured symbols"""
     try:
-        # Check cache first
-        redis_client = await get_redis_client()
-        cache_key = f"market_overview:{timeframe}"
-        
-        if redis_client:
-            try:
-                cached_data = await redis_client.get(cache_key)
-                if cached_data:
-                    logger.info(f"Returning cached market overview for {timeframe}")
-                    return json.loads(cached_data)
-            except Exception as e:
-                logger.warning(f"Cache read failed: {e}")
-        
         # Get configured symbols
         config = load_config_from_env()
         symbols = config.universe.tickers
         
-        # Fetch data for all symbols in parallel
-        import asyncio
-        
-        async def fetch_symbol_data(symbol):
+        # Fetch data for all symbols
+        symbols_data = []
+        for symbol in symbols:
             try:
                 if "/" in symbol:  # Crypto
                     ohlcv = fetch_ohlcv(symbol, timeframe)
@@ -2299,7 +2715,7 @@ async def get_market_overview(timeframe: str = "1h"):
                     # Handle NaN and infinite values
                     def safe_float(value):
                         import math
-                        if value is None or math.isnan(value) or math.isinf(value):
+                        if math.isnan(value) or math.isinf(value):
                             return 0.0
                         return float(value)
                     
@@ -2307,7 +2723,7 @@ async def get_market_overview(timeframe: str = "1h"):
                     high = safe_float(ohlcv['high'].max())
                     low = safe_float(ohlcv['low'].min())
                     
-                    return {
+                    symbols_data.append({
                         "symbol": symbol,
                         "current_price": safe_float(latest['close']),
                         "price": safe_float(latest['close']),  # Keep both for compatibility
@@ -2317,142 +2733,88 @@ async def get_market_overview(timeframe: str = "1h"):
                         "high": high,
                         "low": low,
                         "timestamp": latest.name.isoformat() if hasattr(latest.name, 'isoformat') else str(latest.name)
-                    }
+                    })
                 else:
-                    return {
+                    symbols_data.append({
                         "symbol": symbol,
                         "error": "No data available"
-                    }
+                    })
             except Exception as e:
-                return {
+                symbols_data.append({
                     "symbol": symbol,
                     "error": str(e)
-                }
+                })
         
-        # Execute all symbol fetches in parallel
-        logger.info(f"Fetching market data for {len(symbols)} symbols in parallel")
-        symbols_data = await asyncio.gather(*[fetch_symbol_data(symbol) for symbol in symbols])
-        
-        result = {
+        return {
             "symbols": symbols_data,
             "timeframe": timeframe,
-            "timestamp": get_israel_time().isoformat()
+            "timestamp": datetime.now().isoformat()
         }
-        
-        # Cache the result for 30 seconds
-        if redis_client:
-            try:
-                await redis_client.setex(cache_key, 30, json.dumps(result))
-                logger.info(f"Cached market overview for {timeframe}")
-            except Exception as e:
-                logger.warning(f"Cache write failed: {e}")
-        
-        return result
     except Exception as e:
         logger.error(f"Error fetching market overview: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/api/market-data/quick-overview")
-async def get_quick_market_overview():
-    """Get quick market overview for dashboard - only essential symbols"""
-    try:
-        # Check cache first
-        redis_client = await get_redis_client()
-        cache_key = "quick_market_overview"
-        
-        if redis_client:
-            try:
-                cached_data = await redis_client.get(cache_key)
-                if cached_data:
-                    logger.info("Returning cached quick market overview")
-                    return json.loads(cached_data)
-            except Exception as e:
-                logger.warning(f"Cache read failed: {e}")
-        
-        # Only fetch essential symbols for quick overview
-        essential_symbols = ["BTC/USDT", "ETH/USDT", "SPY", "QQQ", "AAPL"]
-        
-        import asyncio
-        
-        async def fetch_quick_symbol_data(symbol):
-            try:
-                if "/" in symbol:  # Crypto
-                    ohlcv = fetch_ohlcv(symbol, "1h")
-                else:  # Stock/ETF
-                    ohlcv = fetch_alpaca_ohlcv(symbol, "1h")
-                
-                if ohlcv is not None and not ohlcv.empty:
-                    latest = ohlcv.iloc[-1]
-                    prev = ohlcv.iloc[-2] if len(ohlcv) > 1 else latest
-                    
-                    change = latest['close'] - prev['close']
-                    change_percent = (change / prev['close']) * 100 if prev['close'] != 0 else 0
-                    
-                    def safe_float(value):
-                        import math
-                        if value is None or math.isnan(value) or math.isinf(value):
-                            return 0.0
-                        return float(value)
-                    
-                    return {
-                        "symbol": symbol,
-                        "price": safe_float(latest['close']),
-                        "change_percent": safe_float(change_percent),
-                        "timestamp": latest.name.isoformat() if hasattr(latest.name, 'isoformat') else str(latest.name)
-                    }
-                else:
-                    return {"symbol": symbol, "error": "No data available"}
-            except Exception as e:
-                return {"symbol": symbol, "error": str(e)}
-        
-        # Execute all symbol fetches in parallel
-        logger.info(f"Fetching quick market data for {len(essential_symbols)} essential symbols")
-        symbols_data = await asyncio.gather(*[fetch_quick_symbol_data(symbol) for symbol in essential_symbols])
-        
-        result = {
-            "symbols": symbols_data,
-            "timestamp": get_israel_time().isoformat()
-        }
-        
-        # Cache the result for 60 seconds
-        if redis_client:
-            try:
-                await redis_client.setex(cache_key, 60, json.dumps(result))
-                logger.info("Cached quick market overview")
-            except Exception as e:
-                logger.warning(f"Cache write failed: {e}")
-        
-        return result
-    except Exception as e:
-        logger.error(f"Error fetching quick market overview: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
 @app.get("/api/health")
 async def health_check():
-    """Fast health check endpoint with essential information only"""
+    """Health check endpoint with system information"""
     try:
+        # Get system information
+        import psutil
         import platform
         
-        # Redis status (fast check)
+        # System uptime
+        boot_time = datetime.fromtimestamp(psutil.boot_time())
+        uptime = datetime.now() - boot_time
+        uptime_str = str(uptime).split('.')[0]
+        
+        # Application uptime
+        app_uptime = datetime.now() - APP_START_TIME
+        app_uptime_str = str(app_uptime).split('.')[0]
+        
+        # CPU and memory
+        cpu_percent = psutil.cpu_percent(interval=0.1)
+        memory = psutil.virtual_memory()
+        disk = psutil.disk_usage('/')
+        
+        # Redis status
         redis_client = await get_redis_client()
         redis_status = "Connected" if redis_client and await redis_client.is_connected() else "Disconnected"
         
         return {
             "status": "healthy",
-            "timestamp": get_israel_time().isoformat(),
+            "timestamp": datetime.now().isoformat(),
             "version": APP_VERSION,
+            "system_info": {
+                "system_uptime": uptime_str,
+                "app_uptime": app_uptime_str,
+                "cpu_usage": round(cpu_percent, 1),
+                "memory_usage": round(memory.percent, 1),
+                "memory_available": f"{memory.available // (1024**3)} GB",
+                "disk_usage": round(disk.percent, 1),
+                "disk_free": f"{disk.free // (1024**3)} GB",
+                "platform": platform.system(),
             "python_version": platform.python_version(),
             "redis_status": redis_status
         }
-        
+        }
     except Exception as e:
-        logger.warning(f"Health check error: {e}")
+        logger.warning(f"Could not get system information for health check: {e}")
         return {
             "status": "healthy",
-            "timestamp": get_israel_time().isoformat(),
+            "timestamp": datetime.now().isoformat(),
             "version": APP_VERSION,
+            "system_info": {
+                "system_uptime": "Unknown",
+                "app_uptime": "Unknown",
+                "cpu_usage": 0,
+                "memory_usage": 0,
+                "memory_available": "Unknown",
+                "disk_usage": 0,
+                "disk_free": "Unknown",
+                "platform": "Unknown",
             "python_version": "Unknown",
             "redis_status": "Unknown"
+            }
         }
 
 @app.get("/api/redis/status")
@@ -2500,46 +2862,78 @@ async def get_redis_metrics(metric_name: str, days: int = 7):
 # Background task to update agent status
 async def update_status():
     """Background task to update agent status"""
-    logger.info("Status update background task started")
     while True:
         try:
-            # Update uptime
-            agent_status["uptime"] = str(get_israel_time() - datetime.fromisoformat(agent_status["last_update"]))
-            
-            # Update active symbols from config and total signals from Redis
-            redis_client = await get_redis_client()
-            
-            # Get active symbols from configuration (all supported markets)
-            try:
-                config = load_config_from_env()
-                active_symbols = config.universe.tickers  # All supported symbols from config
-                agent_status["active_symbols"] = active_symbols
-                logger.info(f"Updated active symbols from config: {len(active_symbols)} supported markets")
-            except Exception as e:
-                logger.warning(f"Could not load active symbols from config: {e}")
-                agent_status["active_symbols"] = []
-            
-            # Get total signals count from Redis
-            if redis_client:
-                try:
-                    all_signals = await redis_client.get_signals(limit=1000)
-                    agent_status["total_trading_tips"] = len(all_signals) if all_signals else 0
-                    logger.info(f"Updated total signals: {agent_status['total_trading_tips']} trading tips")
-                except Exception as e:
-                    logger.warning(f"Could not update signal counts: {e}")
-                    agent_status["total_trading_tips"] = 0
-            
+            agent_status["uptime"] = str(datetime.now() - datetime.fromisoformat(agent_status["last_update"]))
             await asyncio.sleep(60)  # Update every minute
         except Exception as e:
             logger.error(f"Error updating status: {e}")
             await asyncio.sleep(60)
 
-# Removed duplicate startup event - functionality merged into main startup event above
+@app.on_event("startup")
+async def startup_event():
+    """Initialize the application"""
+    logger.info("Starting Trading Agent Web Interface")
+    
+    # Initialize Redis connection
+    try:
+        redis_client = await get_redis_client()
+        if redis_client and await redis_client.is_connected():
+            logger.info("Redis connection established")
+            
+            # Start background configuration loader
+            from agent.background_config_loader import start_config_loader, load_config_once
+            await load_config_once()  # Load configuration immediately
+            await start_config_loader(interval_minutes=1)  # Then reload every minute
+            logger.info("Background configuration loader started")
+        else:
+            logger.warning("Redis not available - caching disabled")
+    except Exception as e:
+        logger.warning(f"Could not initialize Redis: {e}")
+    
+    # Start background tasks
+    asyncio.create_task(update_status())
+    
+    # Load initial configuration
+    try:
+        config = load_config_from_env()
+        agent_status["active_symbols"] = config.universe.tickers
+    except Exception as e:
+        logger.warning(f"Could not load initial config: {e}")
+            
+    # Load system configuration from Redis
+    try:
+        await load_config_from_redis()
+        logger.info("System configuration loaded")
+    except Exception as e:
+        logger.warning(f"Could not load system configuration: {e}")
+    
+    # Initialize default admin
+    try:
+        await initialize_default_admin()
+        logger.info("Default admin initialized")
+    except Exception as e:
+        logger.warning(f"Could not initialize default admin: {e}")
+    
+    # Start the signal monitoring scheduler
+    try:
+        await start_signal_monitoring()
+        logger.info("Signal monitoring started")
+    except Exception as e:
+        logger.warning(f"Could not start signal monitoring: {e}")
 
 @app.on_event("shutdown")
 async def shutdown_event():
     """Cleanup on shutdown"""
     logger.info("Shutting down Trading Agent Web Interface")
+    
+    # Stop background configuration loader
+    try:
+        from agent.background_config_loader import stop_config_loader
+        await stop_config_loader()
+        logger.info("Background configuration loader stopped")
+    except Exception as e:
+        logger.warning(f"Error stopping configuration loader: {e}")
     
     # Close Redis connection
     try:
@@ -2733,221 +3127,11 @@ async def get_position_performance(current_user: Dict[str, Any] = Depends(verify
         logger.error(f"Failed to get position performance: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get position performance: {str(e)}")
 
-# Telegram connection endpoints
-
-@app.get("/api/telegram/instructions")
-async def get_telegram_instructions():
-    """Get instructions for connecting Telegram"""
-    return {
-        "instructions": [
-            {
-                "method": "userinfobot",
-                "title": "Using @userinfobot",
-                "steps": [
-                    "1. Open Telegram and search for @userinfobot",
-                    "2. Start a conversation with @userinfobot",
-                    "3. Send the command: /start",
-                    "4. The bot will reply with your user information including chat ID",
-                    "5. Copy the chat ID and enter it in your profile"
-                ]
-            }
-        ],
-        "note": "Your chat ID is a unique number that identifies your Telegram account. It's safe to share and required for receiving notifications."
-    }
-
-@app.post("/api/telegram/connect")
-async def connect_telegram(connection_request: TelegramConnectionRequest, current_user: Dict[str, Any] = Depends(verify_token)):
-    """Connect user's Telegram account"""
-    try:
-        
-        username = current_user.get("username")
-        
-        # Get Redis client
-        redis_client = await get_redis_client()
-        if not redis_client:
-            raise HTTPException(status_code=500, detail="Redis connection failed")
-        
-        # Check if chat ID is already connected to another user
-        existing_username = await redis_client.get_username_by_telegram_chat_id(connection_request.chat_id)
-        if existing_username and existing_username != username:
-            raise HTTPException(status_code=400, detail="This Telegram account is already connected to another user")
-        
-        # Store Telegram connection
-        success = await redis_client.store_telegram_connection(
-            username=username,
-            chat_id=connection_request.chat_id,
-            first_name=connection_request.first_name,
-            last_name=connection_request.last_name
-        )
-        
-        if not success:
-            raise HTTPException(status_code=500, detail="Failed to connect Telegram account")
-        
-        logger.info(f"User {username} connected Telegram chat ID: {connection_request.chat_id}")
-        
-        # Send welcome message via Telegram
-        try:
-            from agent.notifications.telegram_client import get_telegram_client
-            from agent.notifications import message_templates as templates
-            
-            telegram_client = get_telegram_client()
-            if telegram_client and telegram_client.enabled:
-                welcome_message = templates.USER_CONNECTED_TEMPLATE.format(
-                    username=username,
-                    app_name="TradeAI"
-                )
-                async with telegram_client:
-                    await telegram_client.send_simple_message(connection_request.chat_id, welcome_message)
-        except Exception as e:
-            logger.warning(f"Failed to send welcome message to Telegram: {e}")
-        
-        return {
-            "message": "Telegram account connected successfully",
-            "chat_id": connection_request.chat_id
-        }
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error connecting Telegram account: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")
-
-@app.get("/api/telegram/connection")
-async def get_telegram_connection(current_user: Dict[str, Any] = Depends(verify_token)):
-    """Get user's Telegram connection status"""
-    try:
-        
-        username = current_user.get("username")
-        
-        # Get Redis client
-        redis_client = await get_redis_client()
-        if not redis_client:
-            raise HTTPException(status_code=500, detail="Redis connection failed")
-        
-        # Get Telegram connection
-        connection = await redis_client.get_telegram_connection(username)
-        
-        if connection:
-            return {
-                "connected": True,
-                "chat_id": connection.get("chat_id"),
-                "first_name": connection.get("first_name"),
-                "last_name": connection.get("last_name"),
-                "connected_at": connection.get("connected_at"),
-                "notifications_enabled": connection.get("notifications_enabled", True)
-            }
-        else:
-            return {
-                "connected": False,
-                "chat_id": None,
-                "first_name": None,
-                "last_name": None,
-                "connected_at": None,
-                "notifications_enabled": False
-            }
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error getting Telegram connection: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")
-
-@app.delete("/api/telegram/disconnect")
-async def disconnect_telegram(current_user: Dict[str, Any] = Depends(verify_token)):
-    """Disconnect user's Telegram account"""
-    try:
-        
-        username = current_user.get("username")
-        
-        # Get Redis client
-        redis_client = await get_redis_client()
-        if not redis_client:
-            raise HTTPException(status_code=500, detail="Redis connection failed")
-        
-        # Remove Telegram connection
-        success = await redis_client.remove_telegram_connection(username)
-        
-        if not success:
-            raise HTTPException(status_code=500, detail="Failed to disconnect Telegram account")
-        
-        logger.info(f"User {username} disconnected Telegram account")
-        
-        return {"message": "Telegram account disconnected successfully"}
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error disconnecting Telegram account: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")
-
-@app.post("/api/telegram/test")
-async def test_telegram_connection(current_user: Dict[str, Any] = Depends(verify_token)):
-    """Send a test message to user's Telegram"""
-    try:
-        
-        username = current_user.get("username")
-        
-        # Get Redis client
-        redis_client = await get_redis_client()
-        if not redis_client:
-            raise HTTPException(status_code=500, detail="Redis connection failed")
-        
-        # Get Telegram connection
-        connection = await redis_client.get_telegram_connection(username)
-        if not connection:
-            raise HTTPException(status_code=400, detail="No Telegram account connected")
-        
-        # Send test message
-        try:
-            from agent.notifications.telegram_client import get_telegram_client
-            from agent.notifications import message_templates as templates
-            
-            telegram_client = get_telegram_client()
-            if not telegram_client or not telegram_client.enabled:
-                raise HTTPException(status_code=503, detail="Telegram notifications are not enabled")
-            
-            test_message = templates.TEST_MESSAGE_TEMPLATE.format(
-                username=username,
-                timestamp=get_israel_time().strftime("%Y-%m-%d %H:%M:%S")
-            )
-            
-            async with telegram_client:
-                success = await telegram_client.send_simple_message(connection["chat_id"], test_message)
-            
-            if success:
-                return {"message": "Test message sent successfully"}
-            else:
-                # Check the last error from telegram client for more specific error message
-                last_error = getattr(telegram_client, 'last_error', None)
-                logger.info(f"Telegram client last_error: {last_error}")
-                if last_error:
-                    if 'chat not found' in str(last_error).lower():
-                        raise HTTPException(status_code=400, detail="Telegram chat not found. Please follow these steps: 1) Open Telegram and search for @userinfobot, 2) Start a conversation with @userinfobot, 3) Send the command: /start, 4) The bot will reply with your user information including chat ID, 5) Copy the chat ID and enter it in your profile, 6) Try test again.")
-                    elif 'bot was blocked' in str(last_error).lower():
-                        raise HTTPException(status_code=400, detail="Bot was blocked. Please unblock @fh_tips_bot on Telegram.")
-                    elif 'user is deactivated' in str(last_error).lower():
-                        raise HTTPException(status_code=400, detail="Telegram account deactivated. Please check your Telegram account.")
-                    else:
-                        raise HTTPException(status_code=400, detail=f"Telegram error: {str(last_error)}")
-                else:
-                    # If we don't have a specific error, provide a helpful message
-                    raise HTTPException(status_code=400, detail="Failed to send Telegram message after 3 attempts. Please follow these steps: 1) Open Telegram and search for @userinfobot, 2) Start a conversation with @userinfobot, 3) Send the command: /start, 4) The bot will reply with your user information including chat ID, 5) Copy the chat ID and enter it in your profile, 6) Try test again.")
-                
-        except ImportError:
-            raise HTTPException(status_code=503, detail="Telegram client not available")
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error sending test Telegram message: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")
-
 if __name__ == "__main__":
     uvicorn.run(
         "web.main:app",
-        host=config.server.host,
-        port=config.server.port,
-        reload=config.server.reload,
-        workers=config.server.workers if not config.server.reload else 1,
+        host="0.0.0.0",
+        port=8000,
+        reload=False,
         log_level="info"
     )
