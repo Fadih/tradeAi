@@ -1218,9 +1218,14 @@
 
         async function loadAppConfiguration() {
             try {
-                const response = await fetch('/api/config/trading');
-                if (response.ok) {
-                    const config = await response.json();
+                // Load both trading and app configuration
+                const [tradingResponse, appResponse] = await Promise.all([
+                    fetch('/api/config/trading'),
+                    fetch('/api/config/app')
+                ]);
+                
+                if (tradingResponse.ok) {
+                    const config = await tradingResponse.json();
                     const tradingConfig = config.config;
                     
                     // Update app configuration with loaded values
@@ -1259,11 +1264,26 @@
                         appConfig.sentiment_analysis = tradingConfig.sentiment_analysis;
                     }
                     
-                    console.log('Loaded app configuration:', appConfig);
-                    
-                    // Update UI with loaded configuration
-                    await updateUIWithConfiguration();
+                    console.log('Loaded trading configuration:', appConfig);
                 }
+                
+                // Load UI configuration from app config
+                if (appResponse.ok) {
+                    const appConfigData = await appResponse.json();
+                    const systemConfig = appConfigData.config.system_config;
+                    
+                    if (systemConfig) {
+                        // Update refresh intervals from configuration
+                        appConfig.refresh_interval_seconds = systemConfig.refresh_interval_seconds || 60;
+                        appConfig.auto_refresh_enabled = systemConfig.auto_refresh_enabled !== false;
+                        
+                        console.log('✅ Loaded UI configuration - refresh interval:', appConfig.refresh_interval_seconds, 'seconds');
+                        console.log('✅ Auto refresh enabled:', appConfig.auto_refresh_enabled);
+                    }
+                }
+                
+                // Update UI with loaded configuration
+                await updateUIWithConfiguration();
             } catch (error) {
                 console.error('Error loading app configuration:', error);
             }
@@ -1386,6 +1406,32 @@
             
             // Update help text with configuration values
             updateHelpTextWithConfiguration();
+            
+            // Restart refresh intervals with new configuration
+            restartRefreshIntervals();
+        }
+        
+        function restartRefreshIntervals() {
+            // Clear existing intervals
+            if (marketDataInterval) {
+                clearInterval(marketDataInterval);
+                marketDataInterval = null;
+            }
+            if (messageRefreshInterval) {
+                clearInterval(messageRefreshInterval);
+                messageRefreshInterval = null;
+            }
+            
+            // Restart intervals with new configuration
+            if (appConfig.auto_refresh_enabled) {
+                startMarketDataUpdates();
+                startMessageRefresh();
+                console.log('🔄 Refresh intervals restarted with new configuration');
+                console.log('🔄 Market data interval:', appConfig.refresh_interval_seconds, 'seconds');
+                console.log('🔄 Message refresh interval:', appConfig.refresh_interval_seconds, 'seconds');
+            } else {
+                console.log('⚠️ Auto refresh is disabled in configuration');
+            }
         }
 
         function updateTooltipsWithConfiguration() {
@@ -1606,10 +1652,12 @@
         }
         
         function startMessageRefresh() {
-            // Refresh messages every 60 seconds with loading indicator
+            // Use configuration value for refresh interval (convert seconds to milliseconds)
+            const refreshIntervalMs = (appConfig.refresh_interval_seconds || 60) * 1000;
             messageRefreshInterval = setInterval(() => {
                 loadUserMessages(true); // Show loading indicator for auto-refresh
-            }, 60000); // Changed from 30 seconds to 60 seconds
+            }, refreshIntervalMs);
+            console.log(`Message refresh interval set to ${appConfig.refresh_interval_seconds} seconds`);
         }
 
 
@@ -2017,7 +2065,7 @@
             return 'secondary';
         }
 
-        // Configuration loaded from trading.yaml
+        // Configuration loaded from trading.yaml and app.yaml
         let appConfig = {
             sentimentThresholds: {
                 positive_threshold: 0.1,
@@ -2045,7 +2093,10 @@
                 model_name: "ProsusAI/finbert",
                 rss_feeds: ["Google News RSS feeds"],
                 reddit_subreddits: ["CryptoCurrency", "Bitcoin", "ethereum", "investing", "stocks"]
-            }
+            },
+            // UI refresh configuration (loaded from app.yaml)
+            refresh_interval_seconds: 60, // Default 1 minute
+            auto_refresh_enabled: true
         };
 
         function interpretSentimentScore(score) {
@@ -2209,7 +2260,7 @@
                 
                 console.log(`Deleting signal for ${symbol} at ${timestamp}`);
                 
-                const response = await fetch(`/api/signals/${timestamp}`, {
+                const response = await fetch(`/api/signals/${timestamp}?symbol=${encodeURIComponent(symbol)}`, {
                     method: 'DELETE',
                     headers: {
                         'Authorization': `Bearer ${token}`
@@ -2366,22 +2417,11 @@
                         break;
                 }
 
-                // Format metadata in a single line
+                // Format metadata in a single line - only show essential fields
                 let metadataText = '';
                 if (event.metadata && Object.keys(event.metadata).length > 0) {
                     const metadata = event.metadata;
                     const parts = [];
-                    
-                    // Add signal type if available
-                    if (metadata.signal_type) {
-                        parts.push(`SIGNAL TYPE: ${metadata.signal_type}`);
-                    }
-                    
-                    // Add confidence if available
-                    if (metadata.confidence !== undefined && metadata.confidence !== null) {
-                        const confidence = typeof metadata.confidence === 'number' ? metadata.confidence.toFixed(4) : metadata.confidence;
-                        parts.push(`CONFIDENCE: ${confidence}`);
-                    }
                     
                     // Add fused score if available
                     if (metadata.fused_score !== undefined && metadata.fused_score !== null) {
@@ -2401,19 +2441,10 @@
                         parts.push(`SENTIMENT SCORE: ${sentimentScore}`);
                     }
                     
-                    // Add created by if available
-                    if (metadata.created_by) {
-                        parts.push(`CREATED BY: ${metadata.created_by}`);
+                    // Add current status (signal type) if available
+                    if (metadata.signal_type) {
+                        parts.push(`CURRENT STATUS: ${metadata.signal_type}`);
                     }
-                    
-                    // Add any other metadata fields
-                    Object.entries(metadata).forEach(([key, value]) => {
-                        if (!['signal_type', 'confidence', 'fused_score', 'technical_score', 'sentiment_score', 'created_by'].includes(key)) {
-                            if (typeof value === 'object' || value === null || value === undefined) return;
-                            const formattedValue = typeof value === 'number' ? value.toFixed(4) : value;
-                            parts.push(`${key.replace(/_/g, ' ').toUpperCase()}: ${formattedValue}`);
-                        }
-                    });
                     
                     if (parts.length > 0) {
                         metadataText = parts.join(' | ');
@@ -3161,7 +3192,10 @@
         
         // Start market data updates
         function startMarketDataUpdates() {
-            marketDataInterval = setInterval(loadMarketData, 30000); // Update every 30 seconds
+            // Use configuration value for refresh interval (convert seconds to milliseconds)
+            const refreshIntervalMs = (appConfig.refresh_interval_seconds || 60) * 1000;
+            marketDataInterval = setInterval(loadMarketData, refreshIntervalMs);
+            console.log(`Market data refresh interval set to ${appConfig.refresh_interval_seconds} seconds`);
         }
         
         

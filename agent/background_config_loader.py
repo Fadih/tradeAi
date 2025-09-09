@@ -70,6 +70,13 @@ class BackgroundConfigLoader:
                 logger.error("Redis client not available")
                 return
             
+            # Ensure Redis connection is active
+            if not await redis_client.is_connected():
+                logger.warning("Redis connection lost, attempting to reconnect...")
+                if not await redis_client.connect():
+                    logger.error("Failed to reconnect to Redis")
+                    return
+            
             # Cache different sections of configuration
             config_sections = {
                 'universe': asdict(config.universe),
@@ -89,23 +96,41 @@ class BackgroundConfigLoader:
             
             # Cache each section with 1 hour TTL
             for section_name, section_data in config_sections.items():
-                try:
-                    success = await redis_client.cache_config(section_name, section_data, ttl=3600)
-                    if success:
-                        logger.debug(f"Cached config section: {section_name}")
-                    else:
-                        logger.error(f"Failed to cache config section: {section_name}")
-                except Exception as e:
-                    logger.error(f"Exception caching config section {section_name}: {e}")
-                    logger.error(f"Section data type: {type(section_data)}, data: {section_data}")
+                max_retries = 3
+                for attempt in range(max_retries):
+                    try:
+                        success = await redis_client.cache_config(section_name, section_data, ttl=3600)
+                        if success:
+                            logger.debug(f"Cached config section: {section_name}")
+                            break
+                        else:
+                            logger.warning(f"Failed to cache config section: {section_name} (attempt {attempt + 1}/{max_retries})")
+                            if attempt < max_retries - 1:
+                                await asyncio.sleep(1)  # Wait before retry
+                    except Exception as e:
+                        logger.error(f"Exception caching config section {section_name} (attempt {attempt + 1}/{max_retries}): {e}")
+                        if attempt < max_retries - 1:
+                            await asyncio.sleep(1)  # Wait before retry
+                        else:
+                            logger.error(f"Section data type: {type(section_data)}, data: {section_data}")
             
             # Cache the full configuration as well
             full_config = asdict(config)
-            success = await redis_client.cache_config('full', full_config, ttl=3600)
-            if success:
-                logger.debug("Cached full configuration")
-            else:
-                logger.error("Failed to cache full configuration")
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    success = await redis_client.cache_config('full', full_config, ttl=3600)
+                    if success:
+                        logger.debug("Cached full configuration")
+                        break
+                    else:
+                        logger.warning(f"Failed to cache full configuration (attempt {attempt + 1}/{max_retries})")
+                        if attempt < max_retries - 1:
+                            await asyncio.sleep(1)  # Wait before retry
+                except Exception as e:
+                    logger.error(f"Exception caching full configuration (attempt {attempt + 1}/{max_retries}): {e}")
+                    if attempt < max_retries - 1:
+                        await asyncio.sleep(1)  # Wait before retry
             
             logger.info("Configuration loaded to Redis successfully")
             

@@ -16,6 +16,7 @@ import asyncio
 import json
 import os
 import math
+import time
 from datetime import datetime, timedelta
 import pytz
 
@@ -29,11 +30,14 @@ APP_START_TIME = datetime.now()
 ISRAEL_TZ = pytz.timezone('Asia/Jerusalem')
 
 def get_israel_time():
-    """Get current time in Israel timezone"""
+    """Get current time in Israel timezone with microsecond precision"""
     return datetime.now(ISRAEL_TZ)
 import logging
 import hashlib
 import secrets
+import yaml
+from pathlib import Path
+from dataclasses import asdict
 
 # Import trading agent modules
 import sys
@@ -86,34 +90,16 @@ class UserLogin(BaseModel):
     password: str
 
 class SystemConfig(BaseModel):
-    # Trading Agent Settings
-    active_markets: List[str] = ["BTC/USD", "ETH/USD", "AAPL", "GOOGL", "MSFT", "TSLA", "AMZN", "NVDA"]
-    signal_generation_enabled: bool = True
-    generation_frequency_minutes: int = 30
-    default_timeframe: str = "1h"
-    
-    # Technical Analysis Settings
-    buy_threshold: float = 0.7
-    sell_threshold: float = -0.7
-    technical_weight: float = 0.6
-    sentiment_weight: float = 0.4
-    
-    # Data Sources
-    data_provider: str = "alpaca"
-    data_refresh_rate_minutes: int = 5
-    historical_data_days: int = 30
-    
-    # News Sources
-    news_weight: float = 0.3
-    news_keywords: List[str] = ["bitcoin", "ethereum", "crypto", "stock", "market", "trading"]
-    
-    # Security Settings
+    # Trading Agent Settings (loaded from trading.yaml)
+    active_markets: List[str] = []
+
+    # Security Settings (loaded from app.yaml)
     session_timeout_hours: int = 24
     max_login_attempts: int = 5
     password_min_length: int = 8
     api_rate_limit_per_minute: int = 100
     
-    # UI Settings
+    # UI Settings (loaded from app.yaml)
     auto_refresh_enabled: bool = True
     refresh_interval_seconds: int = 30
     theme: str = "light"
@@ -121,13 +107,13 @@ class SystemConfig(BaseModel):
     timezone: str = "UTC"
     currency: str = "USD"
     
-    # Trading Configuration
+    # Trading Configuration (loaded from trading.yaml)
     max_position_size: float = 10000.0
     default_stop_loss_percent: float = 5.0
     default_take_profit_percent: float = 10.0
     risk_per_trade_percent: float = 2.0
     
-    # Notifications
+    # Notifications (loaded from app.yaml)
     email_notifications_enabled: bool = False
     smtp_server: str = ""
     smtp_port: int = 587
@@ -135,11 +121,85 @@ class SystemConfig(BaseModel):
     smtp_password: str = ""
     alert_recipients: List[str] = []
     
-    # System Settings
+    # System Settings (loaded from app.yaml)
     log_level: str = "INFO"
     cache_ttl_hours: int = 24
     backup_enabled: bool = True
     backup_frequency_hours: int = 24
+    
+    @classmethod
+    def load_from_config_files(cls) -> 'SystemConfig':
+        """Load SystemConfig from configuration files instead of hardcoded defaults"""
+        try:
+            # Load app.yaml configuration
+            app_config_path = Path("config/app.yaml")
+            if app_config_path.exists():
+                with open(app_config_path, 'r') as f:
+                    app_config = yaml.safe_load(f)
+            else:
+                app_config = {}
+            
+            # Load trading.yaml configuration
+            trading_config_path = Path("config/trading.yaml")
+            if trading_config_path.exists():
+                with open(trading_config_path, 'r') as f:
+                    trading_config = yaml.safe_load(f)
+            else:
+                trading_config = {}
+            
+            # Extract values from configuration files
+            security_config = app_config.get('security', {})
+            session_config = security_config.get('session', {})
+            password_config = security_config.get('password', {})
+            api_config = app_config.get('api', {})
+            rate_limit_config = api_config.get('rate_limit', {})
+            ui_config = app_config.get('ui', {})
+            email_config = app_config.get('email', {})
+            system_config = app_config.get('system', {})
+            trading_config_section = trading_config.get('trading', {})
+            
+            return cls(
+                # Trading Agent Settings
+                active_markets=trading_config_section.get('active_markets', []),
+                
+                # Security Settings
+                session_timeout_hours=session_config.get('timeout_hours', 24),
+                max_login_attempts=session_config.get('max_login_attempts', 5),
+                password_min_length=password_config.get('min_length', 8),
+                api_rate_limit_per_minute=rate_limit_config.get('requests_per_minute', 100),
+                
+                # UI Settings
+                auto_refresh_enabled=ui_config.get('auto_refresh_enabled', True),
+                refresh_interval_seconds=ui_config.get('refresh_interval_seconds', 30),
+                theme=ui_config.get('theme', 'light'),
+                date_format=ui_config.get('date_format', 'YYYY-MM-DD'),
+                timezone=ui_config.get('timezone', 'UTC'),
+                currency=ui_config.get('currency', 'USD'),
+                
+                # Trading Configuration
+                max_position_size=trading_config_section.get('max_position_size', 10000.0),
+                default_stop_loss_percent=trading_config_section.get('default_stop_loss_percent', 5.0),
+                default_take_profit_percent=trading_config_section.get('default_take_profit_percent', 10.0),
+                risk_per_trade_percent=trading_config_section.get('risk_per_trade_percent', 2.0),
+                
+                # Notifications
+                email_notifications_enabled=email_config.get('enabled', False),
+                smtp_server=email_config.get('smtp_server', ''),
+                smtp_port=email_config.get('smtp_port', 587),
+                smtp_username=email_config.get('smtp_username', ''),
+                smtp_password=email_config.get('smtp_password', ''),
+                alert_recipients=email_config.get('alert_recipients', []),
+                
+                # System Settings
+                log_level=system_config.get('log_level', 'INFO'),
+                cache_ttl_hours=system_config.get('cache_ttl_hours', 24),
+                backup_enabled=system_config.get('backup_enabled', True),
+                backup_frequency_hours=system_config.get('backup_frequency_hours', 24)
+            )
+        except Exception as e:
+            logger.error(f"Error loading SystemConfig from files: {e}")
+            # Return default instance if loading fails
+            return cls()
 
 class ConfigUpdate(BaseModel):
     key: str
@@ -296,9 +356,12 @@ async def start_signal_monitoring():
             except Exception as e:
                 logger.error(f"Error starting monitoring job: {e}")
         
-        # Start scheduler to run every 2 minutes
-        scheduler = start_scheduler(monitoring_job, cron="*/2 * * * *")
-        logger.info("Signal monitoring scheduler started - running every 2 minutes")
+        # Start scheduler using configuration value
+        from agent.config import get_config
+        config = get_config()
+        monitoring_interval = config.monitoring.signal_check_interval_minutes
+        scheduler = start_scheduler(monitoring_job, cron=f"*/{monitoring_interval} * * * *")
+        logger.info(f"Signal monitoring scheduler started - running every {monitoring_interval} minutes")
         
     except Exception as e:
         logger.error(f"Failed to start signal monitoring: {e}")
@@ -1272,7 +1335,7 @@ async def admin_reset_settings(current_user: Dict[str, Any] = Depends(verify_tok
     
     try:
         global system_config
-        system_config = SystemConfig()
+        system_config = SystemConfig.load_from_config_files()
         await save_config_to_redis()
         
         # Log activity
@@ -1342,7 +1405,7 @@ agent_status = {
 }
 
 # Global system configuration
-system_config = SystemConfig()
+system_config = SystemConfig.load_from_config_files()
 
 # Configuration change callbacks
 config_change_callbacks = []
@@ -1560,10 +1623,11 @@ async def get_signals(symbol: Optional[str] = None, limit: int = 50, current_use
                             not math.isnan(signal.fused_score) and not math.isinf(signal.fused_score) and
                             (signal.stop_loss is None or (not math.isnan(signal.stop_loss) and not math.isinf(signal.stop_loss))) and
                             (signal.take_profit is None or (not math.isnan(signal.take_profit) and not math.isinf(signal.take_profit)))):
-                            
                             valid_signals.append(signal)
                         else:
                             logger.warning(f"Signal {signal.symbol} has inf/nan values, skipping")
+                    else:
+                        logger.warning(f"Signal {signal.symbol} has invalid data types, skipping")
                 except Exception as e:
                     logger.warning(f"Failed to convert signal dict: {e}")
                     continue
@@ -1578,8 +1642,8 @@ async def get_signals(symbol: Optional[str] = None, limit: int = 50, current_use
         raise HTTPException(status_code=500, detail=f"Error retrieving signals: {str(e)}")
 
 @app.delete("/api/signals/{timestamp}")
-async def delete_signal(timestamp: str, current_user: Dict[str, Any] = Depends(verify_token)):
-    """Delete a specific signal by timestamp (user-specific)"""
+async def delete_signal(timestamp: str, symbol: str = None, current_user: Dict[str, Any] = Depends(verify_token)):
+    """Delete a specific signal by timestamp and symbol (user-specific)"""
     try:
         redis_client = await get_redis_client()
         if not redis_client:
@@ -1588,12 +1652,14 @@ async def delete_signal(timestamp: str, current_user: Dict[str, Any] = Depends(v
         # Get all signals for the user
         user_signals = await redis_client.get_signals(1000, None, current_user['username'])
         
-        # Find the signal with matching timestamp
+        # Find the signal with matching timestamp and symbol (if provided)
         signal_to_delete = None
         for signal in user_signals:
             if signal.get('timestamp') == timestamp:
-                signal_to_delete = signal
-                break
+                # If symbol is provided, also match it for better uniqueness
+                if symbol is None or signal.get('symbol') == symbol:
+                    signal_to_delete = signal
+                    break
         
         if not signal_to_delete:
             raise HTTPException(status_code=404, detail="Signal not found")
@@ -1602,7 +1668,7 @@ async def delete_signal(timestamp: str, current_user: Dict[str, Any] = Depends(v
         deleted = await redis_client.delete_signal(timestamp, current_user['username'])
         
         if deleted:
-            logger.info(f"Signal {timestamp} deleted by user {current_user['username']}")
+            logger.info(f"Signal {timestamp} for {signal_to_delete.get('symbol', 'unknown')} deleted by user {current_user['username']}")
             return {"message": "Signal deleted successfully"}
         else:
             raise HTTPException(status_code=500, detail="Failed to delete signal")
@@ -1978,7 +2044,7 @@ async def generate_signal(request: SignalRequest, current_user: Dict[str, Any] =
 
 @app.get("/api/config/app")
 async def get_app_config() -> Dict[str, Any]:
-    """Get application configuration section"""
+    """Get application configuration section including SystemConfig"""
     try:
         from agent.config import get_config
         from dataclasses import asdict
@@ -1999,7 +2065,9 @@ async def get_app_config() -> Dict[str, Any]:
                 "telegram": asdict(loaded_config.telegram),
                 "monitoring": asdict(loaded_config.monitoring),
                 "features": asdict(loaded_config.features),
-                "development": asdict(loaded_config.development)
+                "development": asdict(loaded_config.development),
+                # Include SystemConfig values loaded from configuration files
+                "system_config": system_config.dict() if system_config else {}
             },
             "timestamp": datetime.now().isoformat()
         }
@@ -2688,17 +2756,34 @@ async def get_market_data(symbol: str, timeframe: str = "1h", limit: int = 100):
         logger.error(f"Error fetching market data: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+# Simple in-memory cache for market data
+_market_data_cache = {}
+_market_data_cache_time = {}
+
 @app.get("/api/market-data/all/overview")
 async def get_market_overview(timeframe: str = "1h"):
     """Get market overview for all configured symbols"""
     try:
+        # Check cache first (30 second cache)
+        cache_key = f"market_overview_{timeframe}"
+        current_time = time.time()
+        
+        if (cache_key in _market_data_cache and 
+            cache_key in _market_data_cache_time and 
+            current_time - _market_data_cache_time[cache_key] < 30):
+            logger.info(f"Returning cached market data for {timeframe}")
+            return _market_data_cache[cache_key]
+        
         # Get configured symbols
         config = load_config_from_env()
         symbols = config.universe.tickers
         
-        # Fetch data for all symbols
-        symbols_data = []
-        for symbol in symbols:
+        # Fetch data for all symbols in parallel
+        import asyncio
+        from concurrent.futures import ThreadPoolExecutor
+        
+        async def fetch_symbol_data(symbol):
+            """Fetch data for a single symbol"""
             try:
                 if "/" in symbol:  # Crypto
                     ohlcv = fetch_ohlcv(symbol, timeframe)
@@ -2719,37 +2804,46 @@ async def get_market_overview(timeframe: str = "1h"):
                             return 0.0
                         return float(value)
                     
-                    # Get high/low for the period
-                    high = safe_float(ohlcv['high'].max())
-                    low = safe_float(ohlcv['low'].min())
-                    
-                    symbols_data.append({
+                    return {
                         "symbol": symbol,
-                        "current_price": safe_float(latest['close']),
-                        "price": safe_float(latest['close']),  # Keep both for compatibility
+                        "price": safe_float(latest['close']),
                         "change": safe_float(change),
                         "change_percent": safe_float(change_percent),
                         "volume": safe_float(latest['volume']),
-                        "high": high,
-                        "low": low,
-                        "timestamp": latest.name.isoformat() if hasattr(latest.name, 'isoformat') else str(latest.name)
-                    })
+                        "high": safe_float(latest['high']),
+                        "low": safe_float(latest['low']),
+                        "open": safe_float(latest['open'])
+                    }
                 else:
-                    symbols_data.append({
-                        "symbol": symbol,
-                        "error": "No data available"
-                    })
+                    logger.warning(f"No data available for {symbol}")
+                    return None
             except Exception as e:
-                symbols_data.append({
-                    "symbol": symbol,
-                    "error": str(e)
-                })
+                logger.error(f"Error fetching data for {symbol}: {e}")
+                return None
         
-        return {
+        # Execute all symbol fetches in parallel
+        loop = asyncio.get_event_loop()
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            tasks = [loop.run_in_executor(executor, lambda s=s: asyncio.run(fetch_symbol_data(s))) for s in symbols]
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        # Filter out None results and exceptions
+        symbols_data = []
+        for result in results:
+            if result is not None and not isinstance(result, Exception):
+                symbols_data.append(result)
+        
+        result = {
             "symbols": symbols_data,
             "timeframe": timeframe,
             "timestamp": datetime.now().isoformat()
         }
+        
+        # Cache the result
+        _market_data_cache[cache_key] = result
+        _market_data_cache_time[cache_key] = current_time
+        
+        return result
     except Exception as e:
         logger.error(f"Error fetching market overview: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -2907,7 +3001,7 @@ async def startup_event():
         logger.info("System configuration loaded")
     except Exception as e:
         logger.warning(f"Could not load system configuration: {e}")
-    
+            
     # Initialize default admin
     try:
         await initialize_default_admin()

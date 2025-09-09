@@ -180,6 +180,10 @@ class SignalMonitor:
             if not self.sentiment_analyzer:
                 return 0.0
             
+            # Load configuration
+            from .config import load_config_from_env
+            config = load_config_from_env()
+            
             all_texts = []
             
             # Fetch RSS headlines

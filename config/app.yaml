@@ -182,7 +182,7 @@ telegram:
 # =============================================================================
 monitoring:
   # Interval between signal monitoring checks (minutes)
-  signal_check_interval_minutes: 2
+  signal_check_interval_minutes: 1
   
   # Interval between health checks (seconds)
   health_check_interval_seconds: 30
@@ -252,6 +252,61 @@ features:
   # Enable/disable news integration for sentiment
   news_integration: true
   
+# =============================================================================
+# UI CONFIGURATION
+# =============================================================================
+ui:
+  # Enable/disable auto-refresh functionality
+  auto_refresh_enabled: true
+  
+  # Auto-refresh interval in seconds
+  refresh_interval_seconds: 60
+  
+  # Default theme (light/dark)
+  theme: "light"
+  
+  # Date format for display
+  date_format: "YYYY-MM-DD"
+  
+  # Default timezone for display
+  timezone: "UTC"
+  
+  # Default currency for display
+  currency: "USD"
+
+
+# =============================================================================
+# EMAIL NOTIFICATIONS CONFIGURATION
+# =============================================================================
+email:
+  # Enable/disable email notifications
+  enabled: false
+  
+  # SMTP server configuration
+  smtp_server: ""
+  smtp_port: 587
+  smtp_username: ""
+  smtp_password: ""
+  
+  # Email recipients for alerts
+  alert_recipients: []
+
+# =============================================================================
+# SYSTEM CONFIGURATION
+# =============================================================================
+system:
+  # Log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+  log_level: "INFO"
+  
+  # Cache TTL in hours
+  cache_ttl_hours: 24
+  
+  # Enable/disable backup functionality
+  backup_enabled: true
+  
+  # Backup frequency in hours
+  backup_frequency_hours: 24
+
 # =============================================================================
 # DEVELOPMENT CONFIGURATION
 # =============================================================================
