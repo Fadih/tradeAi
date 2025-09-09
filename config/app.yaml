@@ -28,34 +28,6 @@ app:
   maintenance_message: "Scheduled maintenance window: Sunday, January 15th, 2024 from 2:00 AM to 4:00 AM EST. The system will be temporarily unavailable during this time."
   #maintenance_message: ""
 
-# =============================================================================
-# TELEGRAM NOTIFICATIONS CONFIGURATION
-# =============================================================================
-telegram:
-  # Telegram Bot Token (get from @BotFather)
-  # Store securely in environment variable TELEGRAM_BOT_TOKEN
-  bot_token: "7584767041:AAFz4DQ0fuSl2zPXuNMA3hKXBeyi3SyvLtA"
-  
-  # Enable/disable Telegram notifications globally
-  enabled: true
-  
-  # Telegram Bot API settings
-  api_url: "https://api.telegram.org/bot"
-  timeout: 10  # Request timeout in seconds
-  max_retries: 3  # Retry failed notifications
-  
-  # Notification settings
-  notifications:
-    # Send notifications for these events
-    signal_created: true
-    signal_changed: true
-    signal_deleted: true
-    maintenance: true
-    system_errors: false  # Set to true for admin notifications
-    
-    # Rate limiting (prevent spam)
-    max_notifications_per_minute: 10
-    cooldown_seconds: 5  # Minimum time between notifications for same user
 
 # =============================================================================
 # SERVER CONFIGURATION
@@ -173,7 +145,38 @@ api:
     
     # Allow credentials in CORS requests
     allow_credentials: true
+
+  # =============================================================================
+# TELEGRAM NOTIFICATIONS CONFIGURATION
+# =============================================================================
+telegram:
+  # Telegram Bot Token (get from @BotFather)
+  # Store securely in environment variable TELEGRAM_BOT_TOKEN
+  bot_token: "7584767041:AAFz4DQ0fuSl2zPXuNMA3hKXBeyi3SyvLtA"
+  
+  # Enable/disable Telegram notifications globally
+  enabled: true
+  
+  # Telegram Bot API settings
+  api_url: "https://api.telegram.org/bot"
+  timeout: 10  # Request timeout in seconds
+  max_retries: 3  # Retry failed notifications
+  
+  # Notification settings
+  notifications:
+    # Send notifications for these events
+    signal_created: true
+    signal_changed: true
+    signal_deleted: true
+    maintenance: true
+    system_errors: false  # Set to true for admin notifications
     
+    # Rate limiting (prevent spam)
+    max_notifications_per_minute: 10
+    cooldown_seconds: 5  # Minimum time between notifications for same user
+
+
+
 # =============================================================================
 # MONITORING CONFIGURATION
 # =============================================================================

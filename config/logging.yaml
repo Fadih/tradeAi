@@ -19,7 +19,7 @@ logging:
   # simple: Basic format with timestamp and message
   # detailed: Includes module, function, and line number
   # json: Structured JSON format for log aggregation systems
-  format: "simple"
+  format: "detailed"
   
   # Log destinations (where logs are written)
   destinations:
