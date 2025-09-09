@@ -61,8 +61,8 @@ def fetch_ohlcv(symbol: str, timeframe: str, limit: int = None) -> pd.DataFrame:
 	logger.info(f"Fetching OHLCV: {symbol} @ {timeframe}, limit={limit}")
 	
 	if not _alpaca_ok:
-		logger.warning("Alpaca SDK not available, using stub data")
-		return fetch_ohlcv_stub(symbol, timeframe, limit)
+		logger.error("Alpaca SDK not available - cannot fetch real stock data")
+		raise RuntimeError("Alpaca SDK not available. Please install alpaca-trade-api to fetch real stock data.")
 
 	key = os.getenv("ALPACA_KEY_ID")
 	secret = os.getenv("ALPACA_SECRET_KEY")
@@ -75,8 +75,8 @@ def fetch_ohlcv(symbol: str, timeframe: str, limit: int = None) -> pd.DataFrame:
 		base_url = os.getenv("ALPACA_BASE_URL", "https://paper-api.alpaca.markets")
 	
 	if not key or not secret:
-		logger.warning("Alpaca API keys not configured, using stub data")
-		return fetch_ohlcv_stub(symbol, timeframe, limit)
+		logger.error("Alpaca API keys not configured")
+		raise RuntimeError("Alpaca API keys not configured. Please set ALPACA_KEY_ID and ALPACA_SECRET_KEY environment variables.")
 
 	logger.debug(f"Using Alpaca base URL: {base_url}")
 
@@ -93,8 +93,8 @@ def fetch_ohlcv(symbol: str, timeframe: str, limit: int = None) -> pd.DataFrame:
 		bars = rest.get_bars(symbol, timeframe=alp_tf, limit=limit).df
 		
 		if bars is None or bars.empty:
-			logger.warning(f"No data returned from Alpaca for {symbol}, using stub")
-			return fetch_ohlcv_stub(symbol, timeframe, limit)
+			logger.error(f"No data returned from Alpaca for {symbol}")
+			raise RuntimeError(f"No market data available for {symbol} from Alpaca. Please check the symbol and try again.")
 		
 		logger.info(f"Received {len(bars)} bars from Alpaca")
 		
@@ -109,7 +109,6 @@ def fetch_ohlcv(symbol: str, timeframe: str, limit: int = None) -> pd.DataFrame:
 		
 	except Exception as e:
 		logger.error(f"Failed to fetch data from Alpaca: {e}")
-		logger.debug(f"Falling back to stub data for {symbol}")
-		return fetch_ohlcv_stub(symbol, timeframe, limit)
+		raise RuntimeError(f"Failed to fetch market data for {symbol} from Alpaca: {str(e)}")
 
 

@@ -64,8 +64,8 @@ def fetch_ohlcv(symbol: str, timeframe: str, limit: int = None) -> pd.DataFrame:
 	logger.info(f"Fetching OHLCV: {symbol} @ {timeframe}, limit={limit}")
 	
 	if not _ccxt_ok:
-		logger.warning("CCXT not available, using stub data")
-		return fetch_ohlcv_stub(symbol, timeframe, limit)
+		logger.error("CCXT not available - cannot fetch real crypto data")
+		raise RuntimeError("CCXT library not available. Please install ccxt to fetch real crypto data.")
 
 	# Try to get exchange from config first, then environment variable
 	try:
@@ -78,8 +78,8 @@ def fetch_ohlcv(symbol: str, timeframe: str, limit: int = None) -> pd.DataFrame:
 	
 	exchange_class = getattr(ccxt, exchange_name, None)
 	if exchange_class is None:
-		logger.error(f"Exchange {exchange_name} not found in CCXT, using stub")
-		return fetch_ohlcv_stub(symbol, timeframe, limit)
+		logger.error(f"Exchange {exchange_name} not found in CCXT")
+		raise RuntimeError(f"Exchange '{exchange_name}' not found in CCXT. Please check your exchange configuration.")
 	
 	# Setup exchange with optional API keys
 	api_key = os.getenv("CCXT_API_KEY")
@@ -101,8 +101,8 @@ def fetch_ohlcv(symbol: str, timeframe: str, limit: int = None) -> pd.DataFrame:
 		bars = exchange.fetch_ohlcv(symbol, timeframe=timeframe, limit=limit)
 		
 		if not bars:
-			logger.warning(f"No data returned from {exchange_name} for {symbol}, using stub")
-			return fetch_ohlcv_stub(symbol, timeframe, limit)
+			logger.error(f"No data returned from {exchange_name} for {symbol}")
+			raise RuntimeError(f"No market data available for {symbol} from {exchange_name}. Please check the symbol and try again.")
 		
 		logger.info(f"Received {len(bars)} bars from {exchange_name}")
 		
@@ -118,7 +118,6 @@ def fetch_ohlcv(symbol: str, timeframe: str, limit: int = None) -> pd.DataFrame:
 		
 	except Exception as e:
 		logger.error(f"Failed to fetch data from {exchange_name}: {e}")
-		logger.debug(f"Falling back to stub data for {symbol}")
-		return fetch_ohlcv_stub(symbol, timeframe, limit)
+		raise RuntimeError(f"Failed to fetch market data for {symbol} from {exchange_name}: {str(e)}")
 
 

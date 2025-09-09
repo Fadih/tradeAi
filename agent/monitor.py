@@ -136,7 +136,9 @@ class SignalMonitor:
         """Monitor signals for a specific symbol"""
         try:
             # Fetch fresh market data
-            timeframe = signals[0].get('timeframe', '1h')
+            from .config import load_config_from_env
+            config = load_config_from_env()
+            timeframe = signals[0].get('timeframe', config.universe.timeframe)
             
             if "/" in symbol:  # Crypto
                 ohlcv_data = fetch_ccxt_ohlcv(symbol, timeframe, limit=200)

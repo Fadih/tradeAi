@@ -78,9 +78,11 @@ def setup_logging(
         if log_file is None:
             log_file = os.getenv(LOG_FILE_ENV)
         if max_bytes is None:
-            max_bytes = int(os.getenv(LOG_MAX_BYTES_ENV, "10485760"))  # 10MB default
+            max_bytes_str = os.getenv(LOG_MAX_BYTES_ENV, "10485760")
+            max_bytes = int(max_bytes_str) if max_bytes_str else 10485760  # 10MB default
         if backup_count is None:
-            backup_count = int(os.getenv(LOG_BACKUP_COUNT_ENV, "5"))  # 5 backups default
+            backup_count_str = os.getenv(LOG_BACKUP_COUNT_ENV, "5")
+            backup_count = int(backup_count_str) if backup_count_str else 5  # 5 backups default
     
     # Validate log level
     if level not in LOG_LEVELS:

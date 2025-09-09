@@ -101,10 +101,11 @@ def cmd_run_once() -> None:
 				config.universe.timeframe,
 				data,
 				sentiment_score=sent_score,
-				w_tech=0.7,
-				w_sent=0.3,
+				w_tech=config.signals.weights["technical_weight"],
+				w_sent=config.signals.weights["sentiment_weight"],
 				buy_th=config.thresholds.buy_threshold,
 				sell_th=config.thresholds.sell_threshold,
+				config=config,
 			)
 		)
 	
