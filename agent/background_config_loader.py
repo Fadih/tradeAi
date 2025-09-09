@@ -89,11 +89,15 @@ class BackgroundConfigLoader:
             
             # Cache each section with 1 hour TTL
             for section_name, section_data in config_sections.items():
-                success = await redis_client.cache_config(section_name, section_data, ttl=3600)
-                if success:
-                    logger.debug(f"Cached config section: {section_name}")
-                else:
-                    logger.error(f"Failed to cache config section: {section_name}")
+                try:
+                    success = await redis_client.cache_config(section_name, section_data, ttl=3600)
+                    if success:
+                        logger.debug(f"Cached config section: {section_name}")
+                    else:
+                        logger.error(f"Failed to cache config section: {section_name}")
+                except Exception as e:
+                    logger.error(f"Exception caching config section {section_name}: {e}")
+                    logger.error(f"Section data type: {type(section_data)}, data: {section_data}")
             
             # Cache the full configuration as well
             full_config = asdict(config)
