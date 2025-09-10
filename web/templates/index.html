@@ -1979,7 +1979,7 @@
                                                data-bs-placement="top" 
                                                title="Automatic exit price to limit losses. Calculated as: Current Price ± (2 × ATR). For BUY signals: Current Price - (2 × ATR). For SELL signals: Current Price + (2 × ATR). ATR = Average True Range (volatility measure)."></i>
                                         </small><br>
-                                        <strong>${signal.stop_loss ? signal.stop_loss.toFixed(2) : 'N/A'}</strong>
+                                        <strong>${signal.stop_loss ? '$' + signal.stop_loss.toFixed(2) : 'N/A'}</strong>
                                     </div>
                                     <div class="col-6">
                                         <small class="text-muted">
@@ -1989,7 +1989,7 @@
                                                data-bs-placement="top" 
                                                title="Target profit exit price. Calculated as: Current Price ± (3 × ATR). For BUY signals: Current Price + (3 × ATR). For SELL signals: Current Price - (3 × ATR). Risk-reward ratio is 1:1.5 (2 ATR risk vs 3 ATR reward)."></i>
                                         </small><br>
-                                        <strong>${signal.take_profit ? signal.take_profit.toFixed(2) : 'N/A'}</strong>
+                                        <strong>${signal.take_profit ? '$' + signal.take_profit.toFixed(2) : 'N/A'}</strong>
                                     </div>
                                 </div>
                                 <div class="row mt-2">
@@ -2790,13 +2790,13 @@
                 <div class="row mt-3">
                     <div class="col-12">
                         <h6>Risk Management</h6>
-                        ${signal.stop_loss ? `<p><strong>Stop Loss:</strong> ${signal.stop_loss.toFixed(2)} 
+                        ${signal.stop_loss ? `<p><strong>Stop Loss:</strong> $${signal.stop_loss.toFixed(2)} 
                             <i class="bi bi-info-circle text-primary" 
                                data-bs-toggle="tooltip" 
                                data-bs-placement="top" 
                                title="Automatic exit price to limit losses. Calculated as: Current Price ± (2 × ATR). For BUY signals: Current Price - (2 × ATR). For SELL signals: Current Price + (2 × ATR). ATR = Average True Range (volatility measure)."></i>
                         </p>` : ''}
-                        ${signal.take_profit ? `<p><strong>Take Profit:</strong> ${signal.take_profit.toFixed(2)} 
+                        ${signal.take_profit ? `<p><strong>Take Profit:</strong> $${signal.take_profit.toFixed(2)} 
                             <i class="bi bi-info-circle text-primary" 
                                data-bs-toggle="tooltip" 
                                data-bs-placement="top" 
