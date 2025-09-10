@@ -222,18 +222,43 @@ technical_analysis:
     min_limit: 50
     
   # RSI (Relative Strength Index) Configuration
-  # Optimized for short-term crypto trading - ultra-sensitive for quick scalping
+  # Enhanced for short-term crypto trading with multiple variants
   rsi:
-    # Period for RSI calculation - ultra-fast for short-term crypto trading
-    period: 5   
+    # Period for RSI calculation - optimized for short-term crypto trading
+    # 7-9 recommended for scalping, 5 for ultra-fast signals
+    period: 7   
     
-    # Overbought threshold (above this level = bearish signal)
-    # More sensitive for short-term trading
-    overbought_threshold: 70
+    # RSI calculation method
+    # "wilder" = Wilder's RMA (original, more responsive)
+    # "cutler" = Simple rolling means (steadier for short periods)
+    method: "wilder"
     
-    # Oversold threshold (below this level = bullish signal)
-    # More sensitive for short-term trading
-    oversold_threshold: 30
+    # Signal line smoothing (EMA of RSI to reduce whipsaws)
+    signal_period: 4
+    
+    # Stochastic RSI settings
+    stoch_rsi:
+      k_period: 14  # Period for %K calculation
+      d_period: 3   # Period for %D smoothing
+    
+    # Dynamic thresholds based on market regime
+    thresholds:
+      # Standard thresholds (for ranging markets)
+      overbought: 70
+      oversold: 30
+      
+      # Tight thresholds (for trending markets)
+      overbought_tight: 55
+      oversold_tight: 45
+      
+      # Extreme thresholds (for mean reversion)
+      overbought_extreme: 80
+      oversold_extreme: 20
+    
+    # Cross signal thresholds (for RSI signal line crosses)
+    cross_thresholds:
+      buy_cross: 45   # Buy when RSI crosses above signal below this level
+      sell_cross: 55  # Sell when RSI crosses below signal above this level
     
   # MACD stands for Moving Average Convergence Divergence - it's one of the most popular technical indicators in trading.
   macd:

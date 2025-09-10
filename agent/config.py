@@ -204,20 +204,71 @@ class DevelopmentConfig:
 	profiling: bool = False
 
 @dataclass
+class RSIConfig:
+	"""Enhanced RSI configuration for short-term crypto trading"""
+	# Basic RSI settings
+	period: int = 7  # Optimized for short-term crypto trading
+	method: str = "wilder"  # "wilder" or "cutler"
+	signal_period: int = 4  # EMA smoothing for RSI signal line
+	
+	# Stochastic RSI settings
+	stoch_rsi: dict = field(default_factory=lambda: {
+		"k_period": 14,
+		"d_period": 3
+	})
+	
+	# Dynamic thresholds based on market regime
+	thresholds: dict = field(default_factory=lambda: {
+		"overbought": 70,  # Standard thresholds (for ranging markets)
+		"oversold": 30,
+		"overbought_tight": 55,  # Tight thresholds (for trending markets)
+		"oversold_tight": 45,
+		"overbought_extreme": 80,  # Extreme thresholds (for mean reversion)
+		"oversold_extreme": 20
+	})
+	
+	# Cross signal thresholds (for RSI signal line crosses)
+	cross_thresholds: dict = field(default_factory=lambda: {
+		"buy_cross": 45,  # Buy when RSI crosses above signal below this level
+		"sell_cross": 55  # Sell when RSI crosses below signal above this level
+	})
+
+@dataclass
+class MACDConfig:
+	"""MACD configuration for short-term crypto trading"""
+	fast_period: int = 4  # Ultra-fast for short-term crypto scalping
+	slow_period: int = 9  # Ultra-fast for short-term crypto scalping
+	signal_period: int = 3  # Ultra-fast for short-term crypto scalping
+
+@dataclass
+class ATRConfig:
+	"""ATR configuration for risk management"""
+	period: int = 7  # Optimized for short-term crypto trading
+	multiplier: float = 2.0  # ATR multiplier for stop loss/take profit
+
+@dataclass
 class TechnicalAnalysisConfig:
 	# Data fetching configuration
 	data_fetching_default_limit: int = 200
 	data_fetching_max_limit: int = 1000
 	data_fetching_min_limit: int = 50
 	
-	rsi_period: int = 14
-	rsi_overbought: int = 70
-	rsi_oversold: int = 30
-	macd_fast: int = 12
-	macd_slow: int = 26
-	macd_signal: int = 9
-	atr_period: int = 14
-	atr_multiplier: float = 2.0
+	# Enhanced indicator configurations
+	rsi: RSIConfig = field(default_factory=RSIConfig)
+	macd: MACDConfig = field(default_factory=MACDConfig)
+	atr: ATRConfig = field(default_factory=ATRConfig)
+	
+	# Legacy fields for backward compatibility (deprecated)
+	rsi_period: int = 7  # Now uses rsi.period
+	rsi_overbought: int = 70  # Now uses rsi.thresholds.overbought
+	rsi_oversold: int = 30  # Now uses rsi.thresholds.oversold
+	macd_fast: int = 4  # Now uses macd.fast_period
+	macd_slow: int = 9  # Now uses macd.slow_period
+	macd_signal: int = 3  # Now uses macd.signal_period
+	atr_period: int = 7  # Now uses atr.period
+	atr_multiplier: float = 2.0  # Now uses atr.multiplier
+	
+	# Moving averages
 	sma_periods: List[int] = field(default_factory=lambda: [20, 50, 200])
 	ema_periods: List[int] = field(default_factory=lambda: [12, 26, 50])
 
@@ -572,25 +623,65 @@ def load_config_from_files() -> AgentConfig:
 		# Update technical analysis config
 		if "technical_analysis" in trading_config:
 			tech_data = trading_config["technical_analysis"]
+			
+			# Data fetching configuration
 			if "data_fetching" in tech_data:
 				data_fetching_data = tech_data["data_fetching"]
 				config.technical_analysis.data_fetching_default_limit = data_fetching_data.get("default_limit", 200)
 				config.technical_analysis.data_fetching_max_limit = data_fetching_data.get("max_limit", 1000)
 				config.technical_analysis.data_fetching_min_limit = data_fetching_data.get("min_limit", 50)
+			
+			# Enhanced RSI configuration
 			if "rsi" in tech_data:
 				rsi_data = tech_data["rsi"]
-				config.technical_analysis.rsi_period = rsi_data.get("period", 14)
-				config.technical_analysis.rsi_overbought = rsi_data.get("overbought_threshold", 70)
-				config.technical_analysis.rsi_oversold = rsi_data.get("oversold_threshold", 30)
+				# Update the new RSI config object
+				config.technical_analysis.rsi.period = rsi_data.get("period", 7)
+				config.technical_analysis.rsi.method = rsi_data.get("method", "wilder")
+				config.technical_analysis.rsi.signal_period = rsi_data.get("signal_period", 4)
+				
+				# Stochastic RSI settings
+				if "stoch_rsi" in rsi_data:
+					stoch_data = rsi_data["stoch_rsi"]
+					config.technical_analysis.rsi.stoch_rsi.update(stoch_data)
+				
+				# Dynamic thresholds
+				if "thresholds" in rsi_data:
+					config.technical_analysis.rsi.thresholds.update(rsi_data["thresholds"])
+				
+				# Cross signal thresholds
+				if "cross_thresholds" in rsi_data:
+					config.technical_analysis.rsi.cross_thresholds.update(rsi_data["cross_thresholds"])
+				
+				# Legacy fields for backward compatibility
+				config.technical_analysis.rsi_period = rsi_data.get("period", 7)
+				config.technical_analysis.rsi_overbought = rsi_data.get("thresholds", {}).get("overbought", 70)
+				config.technical_analysis.rsi_oversold = rsi_data.get("thresholds", {}).get("oversold", 30)
+			
+			# Enhanced MACD configuration
 			if "macd" in tech_data:
 				macd_data = tech_data["macd"]
-				config.technical_analysis.macd_fast = macd_data.get("fast_period", 12)
-				config.technical_analysis.macd_slow = macd_data.get("slow_period", 26)
-				config.technical_analysis.macd_signal = macd_data.get("signal_period", 9)
+				# Update the new MACD config object
+				config.technical_analysis.macd.fast_period = macd_data.get("fast_period", 4)
+				config.technical_analysis.macd.slow_period = macd_data.get("slow_period", 9)
+				config.technical_analysis.macd.signal_period = macd_data.get("signal_period", 3)
+				
+				# Legacy fields for backward compatibility
+				config.technical_analysis.macd_fast = macd_data.get("fast_period", 4)
+				config.technical_analysis.macd_slow = macd_data.get("slow_period", 9)
+				config.technical_analysis.macd_signal = macd_data.get("signal_period", 3)
+			
+			# Enhanced ATR configuration
 			if "atr" in tech_data:
 				atr_data = tech_data["atr"]
-				config.technical_analysis.atr_period = atr_data.get("period", 14)
+				# Update the new ATR config object
+				config.technical_analysis.atr.period = atr_data.get("period", 7)
+				config.technical_analysis.atr.multiplier = atr_data.get("multiplier", 2.0)
+				
+				# Legacy fields for backward compatibility
+				config.technical_analysis.atr_period = atr_data.get("period", 7)
 				config.technical_analysis.atr_multiplier = atr_data.get("multiplier", 2.0)
+			
+			# Moving averages configuration
 			if "moving_averages" in tech_data:
 				ma_data = tech_data["moving_averages"]
 				config.technical_analysis.sma_periods = ma_data.get("sma_periods", [20, 50, 200])

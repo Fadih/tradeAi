@@ -24,19 +24,139 @@ def get_config_value(config, path, default=None):
 	return current
 
 
-def compute_rsi(close: pd.Series, period: int = 14) -> pd.Series:
-	"""Compute RSI using Wilder's smoothing.
+def compute_rsi(
+    close: pd.Series, 
+    period: int = 14, 
+    method: str = "wilder",
+    min_periods: int = None,
+    fill_na: bool = False
+) -> pd.Series:
+    """
+    Enhanced RSI with selectable averaging methods for short-term crypto trading.
+    
+    Args:
+        close: Price series
+        period: RSI period (7-9 recommended for short-term crypto)
+        method: "wilder" (RMA) or "cutler" (simple rolling means)
+        min_periods: Minimum periods for calculation
+        fill_na: Whether to fill NaN values with 50 (not recommended)
+    
+    Returns:
+        RSI series (0-100) with proper NaN handling for warm-up period
+    """
+    import numpy as np
+    
+    close = close.astype("float64")
+    delta = close.diff()
+    
+    gain = delta.clip(lower=0.0)
+    loss = -delta.clip(upper=0.0)
+    
+    if min_periods is None:
+        min_periods = period
+    
+    if method.lower() == "wilder":
+        # Wilder's RMA via EWM (original method)
+        avg_gain = gain.ewm(alpha=1/period, adjust=False, min_periods=min_periods).mean()
+        avg_loss = loss.ewm(alpha=1/period, adjust=False, min_periods=min_periods).mean()
+    elif method.lower() == "cutler":
+        # Cutler's simple rolling means (sometimes steadier for short periods)
+        avg_gain = gain.rolling(period, min_periods=min_periods).mean()
+        avg_loss = loss.rolling(period, min_periods=min_periods).mean()
+    else:
+        raise ValueError("method must be 'wilder' or 'cutler'")
+    
+    # Avoid division by zero; map to 0/100 as appropriate
+    rs_den = avg_loss.replace(0.0, np.nan)
+    rs = avg_gain / rs_den
+    rsi = 100.0 - (100.0 / (1.0 + rs))
+    
+    # Handle edge cases properly
+    # Where avg_loss == 0 and avg_gain > 0, RSI should be 100
+    # Where avg_gain == 0 and avg_loss > 0, RSI should be 0
+    rsi = rsi.where(~(avg_loss == 0.0), 100.0).where(~(avg_gain == 0.0), 0.0)
+    
+    # Clip to valid range
+    rsi = rsi.clip(0, 100)
+    
+    # Only fill NaN if explicitly requested (not recommended for trading)
+    if fill_na:
+        rsi = rsi.fillna(50.0)
+    
+    return rsi
 
-	Returns a Series aligned to input index.
-	"""
-	delta = close.diff()
-	gain = delta.clip(lower=0)
-	loss = -delta.clip(upper=0)
-	avg_gain = gain.ewm(alpha=1 / period, adjust=False).mean()
-	avg_loss = loss.ewm(alpha=1 / period, adjust=False).mean()
-	rs = avg_gain / avg_loss.replace(0, pd.NA)
-	rsi = 100 - (100 / (1 + rs))
-	return rsi.fillna(50.0)
+
+def rsi_signal(rsi: pd.Series, signal_len: int = 4) -> pd.Series:
+    """
+    EMA-smoothed signal line on RSI for cross signals.
+    Reduces whipsaws in short-term crypto trading.
+    
+    Args:
+        rsi: RSI series
+        signal_len: EMA period for signal line (3-5 recommended)
+    
+    Returns:
+        Smoothed RSI signal line
+    """
+    return rsi.ewm(span=signal_len, adjust=False, min_periods=signal_len).mean()
+
+
+def stoch_rsi(rsi: pd.Series, k: int = 14, d: int = 3) -> pd.DataFrame:
+    """
+    Stochastic RSI: %K and %D (0..100)
+    Great for overbought/oversold timing on lower timeframes.
+    
+    Args:
+        rsi: RSI series
+        k: Period for %K calculation
+        d: Period for %D smoothing
+    
+    Returns:
+        DataFrame with 'stoch_rsi_k' and 'stoch_rsi_d' columns
+    """
+    rsi_min = rsi.rolling(k).min()
+    rsi_max = rsi.rolling(k).max()
+    
+    # Avoid division by zero
+    denominator = rsi_max - rsi_min
+    k_line = (rsi - rsi_min) / denominator.replace(0, np.nan)
+    k_line = (k_line * 100).clip(0, 100)
+    
+    d_line = k_line.rolling(d).mean()
+    
+    return pd.DataFrame({
+        "stoch_rsi_k": k_line, 
+        "stoch_rsi_d": d_line
+    })
+
+
+def compute_rsi_enhanced(close: pd.Series, period: int = 7, method: str = "wilder") -> dict:
+    """
+    Enhanced RSI calculation with multiple variants for short-term crypto trading.
+    
+    Args:
+        close: Price series
+        period: RSI period (7-9 recommended for short-term)
+        method: "wilder" or "cutler"
+    
+    Returns:
+        Dictionary with RSI variants and signal lines
+    """
+    # Main RSI
+    rsi = compute_rsi(close, period=period, method=method, fill_na=False)
+    
+    # Signal line (EMA of RSI)
+    rsi_sig = rsi_signal(rsi, signal_len=4)
+    
+    # Stochastic RSI
+    stoch = stoch_rsi(rsi, k=14, d=3)
+    
+    return {
+        'rsi': rsi,
+        'rsi_signal': rsi_sig,
+        'stoch_rsi_k': stoch['stoch_rsi_k'],
+        'stoch_rsi_d': stoch['stoch_rsi_d']
+    }
 
 
 def compute_ema(series: pd.Series, span: int) -> pd.Series:
