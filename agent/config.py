@@ -154,6 +154,7 @@ class TelegramNotificationConfig:
 @dataclass
 class TelegramConfig:
 	bot_token: str = ""
+	chat_id: str = ""
 	enabled: bool = False
 	api_url: str = "https://api.telegram.org/bot"
 	timeout: int = 10
@@ -757,6 +758,14 @@ def load_config_from_env() -> AgentConfig:
 	config.notifier.telegram_token = os.getenv("TELEGRAM_BOT_TOKEN", config.notifier.telegram_token)
 	config.notifier.telegram_chat_id = os.getenv("TELEGRAM_CHAT_ID", config.notifier.telegram_chat_id)
 	config.notifier.slack_webhook_url = os.getenv("SLACK_WEBHOOK_URL", config.notifier.slack_webhook_url)
+	
+	# Telegram config overrides (new structure)
+	# Note: chat_id is now per-user and stored in Redis, not in environment variables
+	# Only override if environment variable is not empty
+	if telegram_token := os.getenv("TELEGRAM_BOT_TOKEN"):
+		config.telegram.bot_token = telegram_token
+	if telegram_enabled := os.getenv("TELEGRAM_ENABLED"):
+		config.telegram.enabled = telegram_enabled.lower() == "true"
 	
 	# Thresholds overrides
 	if buy := os.getenv("AGENT_BUY_THRESHOLD"):

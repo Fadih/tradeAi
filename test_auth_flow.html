@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Auth Flow Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .test-section { margin: 20px 0; padding: 15px; border: 1px solid #ccc; }
+        .success { color: green; }
+        .error { color: red; }
+        .info { color: blue; }
+        button { padding: 10px 15px; margin: 5px; }
+        pre { background: #f5f5f5; padding: 10px; overflow-x: auto; }
+    </style>
+</head>
+<body>
+    <h1>Authentication Flow Test</h1>
+    
+    <div class="test-section">
+        <h2>Current localStorage Status</h2>
+        <div id="localStorageStatus"></div>
+        <button onclick="checkLocalStorage()">Check localStorage</button>
+        <button onclick="clearLocalStorage()">Clear localStorage</button>
+    </div>
+    
+    <div class="test-section">
+        <h2>Test Login</h2>
+        <input type="text" id="username" placeholder="Username" value="fadi">
+        <input type="password" id="password" placeholder="Password" value="fadi123">
+        <button onclick="testLogin()">Test Login</button>
+        <div id="loginResult"></div>
+    </div>
+    
+    <div class="test-section">
+        <h2>Test Token Validation</h2>
+        <button onclick="testTokenValidation()">Validate Token</button>
+        <div id="validationResult"></div>
+    </div>
+    
+    <div class="test-section">
+        <h2>Test Dashboard Access</h2>
+        <button onclick="testDashboardAccess()">Test Dashboard Access</button>
+        <div id="dashboardResult"></div>
+    </div>
+
+    <script>
+        function checkLocalStorage() {
+            const status = document.getElementById('localStorageStatus');
+            const token = localStorage.getItem('auth_token');
+            const username = localStorage.getItem('username');
+            const role = localStorage.getItem('user_role');
+            
+            status.innerHTML = `
+                <div class="info">Token: ${token ? 'Present (' + token.length + ' chars)' : 'Missing'}</div>
+                <div class="info">Username: ${username || 'Missing'}</div>
+                <div class="info">Role: ${role || 'Missing'}</div>
+                <pre>${JSON.stringify({token: token ? token.substring(0, 20) + '...' : null, username, role}, null, 2)}</pre>
+            `;
+        }
+        
+        function clearLocalStorage() {
+            localStorage.removeItem('auth_token');
+            localStorage.removeItem('username');
+            localStorage.removeItem('user_role');
+            checkLocalStorage();
+        }
+        
+        async function testLogin() {
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            const result = document.getElementById('loginResult');
+            
+            try {
+                result.innerHTML = '<div class="info">Logging in...</div>';
+                
+                const response = await fetch('/api/auth/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ username, password })
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    result.innerHTML = `<div class="success">Login successful!</div><pre>${JSON.stringify(data, null, 2)}</pre>`;
+                    checkLocalStorage();
+                } else {
+                    const error = await response.text();
+                    result.innerHTML = `<div class="error">Login failed: ${response.status} - ${error}</div>`;
+                }
+            } catch (error) {
+                result.innerHTML = `<div class="error">Login error: ${error.message}</div>`;
+            }
+        }
+        
+        async function testTokenValidation() {
+            const result = document.getElementById('validationResult');
+            const token = localStorage.getItem('auth_token');
+            
+            if (!token) {
+                result.innerHTML = '<div class="error">No token found in localStorage</div>';
+                return;
+            }
+            
+            try {
+                result.innerHTML = '<div class="info">Validating token...</div>';
+                
+                const response = await fetch('/api/user/profile', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    result.innerHTML = `<div class="success">Token is valid!</div><pre>${JSON.stringify(data, null, 2)}</pre>`;
+                } else {
+                    result.innerHTML = `<div class="error">Token validation failed: ${response.status}</div>`;
+                }
+            } catch (error) {
+                result.innerHTML = `<div class="error">Validation error: ${error.message}</div>`;
+            }
+        }
+        
+        async function testDashboardAccess() {
+            const result = document.getElementById('dashboardResult');
+            const token = localStorage.getItem('auth_token');
+            
+            if (!token) {
+                result.innerHTML = '<div class="error">No token found - would redirect to login</div>';
+                return;
+            }
+            
+            try {
+                result.innerHTML = '<div class="info">Testing dashboard access...</div>';
+                
+                const response = await fetch('/api/signals', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    result.innerHTML = `<div class="success">Dashboard access successful!</div><pre>${JSON.stringify(data, null, 2)}</pre>`;
+                } else {
+                    result.innerHTML = `<div class="error">Dashboard access failed: ${response.status}</div>`;
+                }
+            } catch (error) {
+                result.innerHTML = `<div class="error">Dashboard access error: ${error.message}</div>`;
+            }
+        }
+        
+        // Check localStorage on page load
+        window.onload = function() {
+            checkLocalStorage();
+        };
+    </script>
+</body>
+</html>

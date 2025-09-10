@@ -8,6 +8,7 @@ import logging
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any
 import pytz
+import requests
 
 from .cache.redis_client import TradingAgentRedis
 from .data.ccxt_client import fetch_ohlcv as fetch_ccxt_ohlcv
@@ -341,6 +342,12 @@ class SignalMonitor:
                     }
                 )
                 
+                # Send Telegram notification for status change
+                await self.send_telegram_notification(
+                    signal, original_signal_type, new_signal_type, 
+                    fresh_fused_score, tech_score, sentiment_score
+                )
+                
                 return True
             
             # Status didn't change, but add history event for monitoring activity
@@ -367,6 +374,86 @@ class SignalMonitor:
         except Exception as e:
             logger.error(f"Error updating signal status: {e}")
             return False
+    
+    async def send_telegram_notification(self, signal: Dict[str, Any], old_status: str, new_status: str, 
+                                       fused_score: float, technical_score: float, sentiment_score: float) -> None:
+        """Send Telegram notification when signal status changes"""
+        try:
+            # Get configuration
+            config = get_config()
+            
+            # Check if Telegram is enabled and bot token is configured
+            if not config.telegram.enabled or not config.telegram.bot_token:
+                logger.debug("Telegram not enabled or bot token not configured, skipping notification")
+                return
+            
+            # Get user's Telegram chat_id from Redis
+            username = signal.get('username', 'system')
+            telegram_connection = await self.redis_client.get_telegram_connection(username)
+            if not telegram_connection:
+                logger.debug(f"No Telegram connection found for user {username}, skipping notification")
+                return
+            
+            chat_id = telegram_connection.get('chat_id')
+            if not chat_id:
+                logger.debug(f"No chat_id found for user {username}, skipping notification")
+                return
+            
+            # Create notification message
+            symbol = signal.get('symbol', 'Unknown')
+            timeframe = signal.get('timeframe', 'Unknown')
+            timestamp = signal.get('timestamp', 'Unknown')
+            username = signal.get('username', 'system')
+            
+            # Format the message with emojis and clear structure
+            status_emoji = {
+                'BUY': '🟢',
+                'SELL': '🔴', 
+                'HOLD': '🟡'
+            }
+            
+            old_emoji = status_emoji.get(old_status, '⚪')
+            new_emoji = status_emoji.get(new_status, '⚪')
+            
+            message = f"""
+🚨 **Signal Status Changed** 🚨
+
+{old_emoji} **{old_status}** → {new_emoji} **{new_status}**
+
+📊 **Symbol**: {symbol}
+⏰ **Timeframe**: {timeframe}
+👤 **User**: {username}
+🕐 **Time**: {timestamp}
+
+📈 **Scores**:
+• Fused Score: {fused_score:.3f}
+• Technical Score: {technical_score:.3f}
+• Sentiment Score: {sentiment_score:.3f}
+
+💡 **Risk Management**:
+• Stop Loss: {signal.get('stop_loss', 'N/A')}
+• Take Profit: {signal.get('take_profit', 'N/A')}
+
+🔍 **Reason**: Market conditions changed
+            """.strip()
+            
+            # Send to Telegram
+            url = f"https://api.telegram.org/bot{config.telegram.bot_token}/sendMessage"
+            payload = {
+                "chat_id": chat_id,
+                "text": message,
+                "parse_mode": "Markdown"
+            }
+            
+            response = requests.post(url, json=payload, timeout=10)
+            
+            if response.status_code == 200:
+                logger.info(f"Telegram notification sent successfully for {symbol} status change")
+            else:
+                logger.error(f"Failed to send Telegram notification: {response.status_code} - {response.text}")
+                
+        except Exception as e:
+            logger.error(f"Error sending Telegram notification: {e}")
     
     async def start_monitoring(self, interval_minutes: int = 5):
         """Start continuous monitoring of signals"""

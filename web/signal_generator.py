@@ -9,6 +9,7 @@ import random
 from typing import Dict, Any, Optional, List
 from datetime import datetime
 import pytz
+import requests
 
 from pydantic import BaseModel
 from fastapi import HTTPException
@@ -310,6 +311,90 @@ class SignalGenerator:
             logger.error(f"Failed to store signal in Redis: {e}")
             return False
     
+    async def send_telegram_notification(self, signal: TradingSignal, username: str) -> None:
+        """Send Telegram notification for new signal generation"""
+        try:
+            # Get configuration
+            config = load_config_from_env()
+            
+            # Check if Telegram is enabled and bot token is configured
+            if not config.telegram.enabled or not config.telegram.bot_token:
+                logger.debug("Telegram not enabled or bot token not configured, skipping notification")
+                return
+            
+            # Get user's Telegram chat_id from Redis
+            from agent.cache.redis_client import get_redis_client
+            redis_client = await get_redis_client()
+            if not redis_client:
+                logger.debug("Redis not available, skipping Telegram notification")
+                return
+            
+            telegram_connection = await redis_client.get_telegram_connection(username)
+            if not telegram_connection:
+                logger.debug(f"No Telegram connection found for user {username}, skipping notification")
+                return
+            
+            chat_id = telegram_connection.get('chat_id')
+            if not chat_id:
+                logger.debug(f"No chat_id found for user {username}, skipping notification")
+                return
+            
+            # Create notification message
+            status_emoji = {
+                'BUY': '🟢',
+                'SELL': '🔴', 
+                'HOLD': '🟡'
+            }
+            
+            emoji = status_emoji.get(signal.signal_type, '⚪')
+            
+            message = f"""
+🎯 **New Trading Signal Generated** 🎯
+
+{emoji} **{signal.signal_type}** Signal
+
+📊 **Symbol**: {signal.symbol}
+⏰ **Timeframe**: {signal.timeframe}
+👤 **User**: {username}
+🕐 **Time**: {signal.timestamp}
+
+📈 **Scores**:
+• Fused Score: {signal.fused_score:.3f}
+• Technical Score: {signal.technical_score:.3f}
+• Sentiment Score: {signal.sentiment_score:.3f}
+• Confidence: {signal.confidence:.3f}
+
+💡 **Risk Management**:
+• Stop Loss: {signal.stop_loss or 'N/A'}
+• Take Profit: {signal.take_profit or 'N/A'}
+
+🎛️ **Parameters Used**:
+• Buy Threshold: {signal.applied_buy_threshold or 'Default'}
+• Sell Threshold: {signal.applied_sell_threshold or 'Default'}
+• Tech Weight: {signal.applied_tech_weight or 'Default'}
+• Sentiment Weight: {signal.applied_sentiment_weight or 'Default'}
+
+💭 **Reasoning**: {signal.reasoning}
+            """.strip()
+            
+            # Send to Telegram
+            url = f"https://api.telegram.org/bot{config.telegram.bot_token}/sendMessage"
+            payload = {
+                "chat_id": chat_id,
+                "text": message,
+                "parse_mode": "Markdown"
+            }
+            
+            response = requests.post(url, json=payload, timeout=10)
+            
+            if response.status_code == 200:
+                logger.info(f"Telegram notification sent successfully for new {signal.symbol} signal")
+            else:
+                logger.error(f"Failed to send Telegram notification: {response.status_code} - {response.text}")
+                
+        except Exception as e:
+            logger.error(f"Error sending Telegram notification: {e}")
+    
     async def generate_signal(self, request: SignalRequest, username: str) -> TradingSignal:
         """Generate a new trading signal for a symbol"""
         try:
@@ -373,6 +458,9 @@ class SignalGenerator:
             
             # Step 9: Store signal
             await self.store_signal(signal, username)
+            
+            # Step 10: Send Telegram notification for new signal
+            await self.send_telegram_notification(signal, username)
             
             logger.info(f"Signal generation completed for {request.symbol}: {signal_type}")
             return signal
