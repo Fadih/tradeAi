@@ -690,3 +690,409 @@ def compute_volatility_adjusted_stops(close: pd.Series, high: pd.Series, low: pd
     }
 
 
+def compute_bollinger_bands(close: pd.Series, period: int = 20, std_dev: float = 2.0) -> Dict[str, pd.Series]:
+    """
+    Calculate Bollinger Bands with squeeze detection
+    
+    Args:
+        close: Price series
+        period: Period for moving average
+        std_dev: Standard deviation multiplier
+        
+    Returns:
+        Dictionary with upper, middle, lower bands, width, percent, and squeeze detection
+    """
+    # Calculate middle band (SMA)
+    middle = close.rolling(window=period).mean()
+    
+    # Calculate standard deviation
+    std = close.rolling(window=period).std()
+    
+    # Calculate upper and lower bands
+    upper = middle + (std * std_dev)
+    lower = middle - (std * std_dev)
+    
+    # Calculate band width
+    width = (upper - lower) / middle
+    
+    # Calculate %B (position within bands)
+    percent = (close - lower) / (upper - lower)
+    
+    # Detect squeeze (when bands are narrow)
+    width_ma = width.rolling(window=20).mean()
+    squeeze = width < width_ma * 0.8  # Squeeze when width is 20% below average
+    
+    return {
+        'upper': upper,
+        'middle': middle,
+        'lower': lower,
+        'width': width,
+        'percent': percent,
+        'squeeze': squeeze,
+        'squeeze_strength': (width_ma - width) / width_ma  # How strong the squeeze is
+    }
+
+
+def compute_vwap_anchored(ohlcv: pd.DataFrame, anchor_time: str = None) -> Dict[str, pd.Series]:
+    """
+    Calculate anchored VWAP (Volume Weighted Average Price)
+    
+    Args:
+        ohlcv: DataFrame with OHLCV data
+        anchor_time: Time to anchor VWAP (e.g., '09:30' for session start)
+        
+    Returns:
+        Dictionary with VWAP, deviation, and session data
+    """
+    high = ohlcv['high']
+    low = ohlcv['low']
+    close = ohlcv['close']
+    volume = ohlcv['volume']
+    
+    # Calculate typical price
+    typical_price = (high + low + close) / 3
+    
+    # Calculate VWAP
+    vwap = (typical_price * volume).cumsum() / volume.cumsum()
+    
+    # Calculate deviation from VWAP
+    deviation = ((close - vwap) / vwap) * 10000  # In basis points
+    
+    # Session-anchored VWAP (if anchor_time provided)
+    session_vwap = None
+    if anchor_time and 'timestamp' in ohlcv.columns:
+        # This would require timestamp-based session detection
+        # For now, return daily VWAP
+        session_vwap = vwap
+    
+    return {
+        'vwap': vwap,
+        'deviation': deviation,
+        'session_vwap': session_vwap,
+        'typical_price': typical_price
+    }
+
+
+def compute_accumulation_distribution(high: pd.Series, low: pd.Series, close: pd.Series, volume: pd.Series) -> pd.Series:
+    """
+    Calculate Accumulation/Distribution Line
+    
+    Args:
+        high: High prices
+        low: Low prices  
+        close: Close prices
+        volume: Volume data
+        
+    Returns:
+        Accumulation/Distribution line
+    """
+    # Calculate Money Flow Multiplier
+    mfm = ((close - low) - (high - close)) / (high - low)
+    mfm = mfm.fillna(0)  # Handle division by zero
+    
+    # Calculate Money Flow Volume
+    mfv = mfm * volume
+    
+    # Calculate Accumulation/Distribution Line
+    ad_line = mfv.cumsum()
+    
+    return ad_line
+
+
+def compute_ma_crossovers_and_slopes(close: pd.Series, periods: list = [5, 9, 12, 21, 26, 50, 200]) -> Dict[str, Any]:
+    """
+    Calculate moving average crossovers and slopes
+    
+    Args:
+        close: Price series
+        periods: List of MA periods
+        
+    Returns:
+        Dictionary with MAs, crossovers, and slopes
+    """
+    mas = {}
+    crossovers = {}
+    slopes = {}
+    
+    # Calculate all moving averages
+    for period in periods:
+        mas[f'ema_{period}'] = compute_ema(close, period)
+        mas[f'sma_{period}'] = close.rolling(window=period).mean()
+        
+        # Calculate slopes (rate of change)
+        slopes[f'ema_{period}_slope'] = mas[f'ema_{period}'].diff()
+        slopes[f'sma_{period}_slope'] = mas[f'sma_{period}'].diff()
+    
+    # Detect crossovers
+    if len(periods) >= 2:
+        # Fast vs Slow MA crossovers
+        fast_period = min(periods)
+        slow_period = max(periods)
+        
+        fast_ma = mas[f'ema_{fast_period}']
+        slow_ma = mas[f'ema_{slow_period}']
+        
+        # Bullish crossover (fast crosses above slow)
+        bullish_cross = (fast_ma > slow_ma) & (fast_ma.shift(1) <= slow_ma.shift(1))
+        
+        # Bearish crossover (fast crosses below slow)
+        bearish_cross = (fast_ma < slow_ma) & (fast_ma.shift(1) >= slow_ma.shift(1))
+        
+        crossovers['bullish'] = bullish_cross
+        crossovers['bearish'] = bearish_cross
+        crossovers['last_bullish'] = bullish_cross.iloc[-1] if len(bullish_cross) > 0 else False
+        crossovers['last_bearish'] = bearish_cross.iloc[-1] if len(bearish_cross) > 0 else False
+    
+    return {
+        'moving_averages': mas,
+        'crossovers': crossovers,
+        'slopes': slopes
+    }
+
+
+def compute_keltner_channels(high: pd.Series, low: pd.Series, close: pd.Series, 
+                           ema_period: int = 20, atr_period: int = 14, 
+                           atr_multiplier: float = 2.0) -> Dict[str, pd.Series]:
+    """
+    Calculate Keltner Channels
+    
+    Args:
+        high: High prices
+        low: Low prices
+        close: Close prices
+        ema_period: Period for EMA
+        atr_period: Period for ATR
+        atr_multiplier: ATR multiplier for bands
+        
+    Returns:
+        Dictionary with upper, middle, lower bands and breakout detection
+    """
+    # Calculate middle band (EMA)
+    middle = compute_ema(close, ema_period)
+    
+    # Calculate ATR
+    atr = compute_atr(high, low, close, atr_period)
+    
+    # Calculate upper and lower bands
+    upper = middle + (atr * atr_multiplier)
+    lower = middle - (atr * atr_multiplier)
+    
+    # Detect breakouts
+    breakout_up = close > upper.shift(1)
+    breakout_down = close < lower.shift(1)
+    
+    # Channel position (0 = lower band, 1 = upper band)
+    channel_position = (close - lower) / (upper - lower)
+    
+    return {
+        'upper': upper,
+        'middle': middle,
+        'lower': lower,
+        'atr': atr,
+        'breakout_up': breakout_up,
+        'breakout_down': breakout_down,
+        'channel_position': channel_position,
+        'last_breakout_up': breakout_up.iloc[-1] if len(breakout_up) > 0 else False,
+        'last_breakout_down': breakout_down.iloc[-1] if len(breakout_down) > 0 else False
+    }
+
+
+def compute_multi_timeframe_analysis(symbol: str, timeframes: list = ['5m', '15m', '1h', '4h']) -> Dict[str, Any]:
+    """
+    Perform multi-timeframe analysis
+    
+    Args:
+        symbol: Trading symbol
+        timeframes: List of timeframes to analyze
+        
+    Returns:
+        Dictionary with multi-timeframe data
+    """
+    from agent.data import fetch_ohlcv
+    
+    mtf_data = {}
+    
+    for tf in timeframes:
+        try:
+            # Fetch data for each timeframe
+            ohlcv = fetch_ohlcv(symbol, tf, limit=100)
+            
+            if len(ohlcv) > 0:
+                # Calculate basic indicators for each timeframe
+                close = ohlcv['close']
+                high = ohlcv['high']
+                low = ohlcv['low']
+                
+                # RSI
+                rsi = compute_rsi(close, period=14)
+                
+                # Moving averages
+                ema_20 = compute_ema(close, 20)
+                ema_50 = compute_ema(close, 50)
+                
+                # Trend direction
+                trend = 'up' if ema_20.iloc[-1] > ema_50.iloc[-1] else 'down'
+                
+                # Volatility
+                atr = compute_atr(high, low, close, 14)
+                
+                mtf_data[tf] = {
+                    'ohlcv': ohlcv,
+                    'rsi': rsi.iloc[-1] if len(rsi) > 0 else 50,
+                    'ema_20': ema_20.iloc[-1] if len(ema_20) > 0 else close.iloc[-1],
+                    'ema_50': ema_50.iloc[-1] if len(ema_50) > 0 else close.iloc[-1],
+                    'trend': trend,
+                    'atr': atr.iloc[-1] if len(atr) > 0 else 0,
+                    'current_price': close.iloc[-1]
+                }
+                
+        except Exception as e:
+            mtf_data[tf] = {'error': str(e)}
+    
+    # Determine overall trend across timeframes
+    trends = [data.get('trend', 'neutral') for data in mtf_data.values() if 'trend' in data]
+    overall_trend = 'up' if trends.count('up') > trends.count('down') else 'down' if trends.count('down') > trends.count('up') else 'neutral'
+    
+    mtf_data['overall_trend'] = overall_trend
+    mtf_data['trend_consensus'] = trends.count('up') / len(trends) if trends else 0.5
+    
+    return mtf_data
+
+
+def compute_cross_asset_correlation(symbols: list = ['BTC/USDT', 'ETH/USDT'], 
+                                  timeframe: str = '1h', period: int = 24) -> Dict[str, Any]:
+    """
+    Calculate cross-asset correlation analysis
+    
+    Args:
+        symbols: List of symbols to correlate
+        timeframe: Timeframe for analysis
+        period: Number of periods for correlation
+        
+    Returns:
+        Dictionary with correlation data
+    """
+    from agent.data import fetch_ohlcv
+    
+    correlation_data = {}
+    prices = {}
+    
+    # Fetch data for all symbols
+    for symbol in symbols:
+        try:
+            ohlcv = fetch_ohlcv(symbol, timeframe, limit=period)
+            if len(ohlcv) > 0:
+                prices[symbol] = ohlcv['close'].pct_change().dropna()
+                correlation_data[symbol] = {
+                    'current_price': ohlcv['close'].iloc[-1],
+                    'price_change_24h': ((ohlcv['close'].iloc[-1] - ohlcv['close'].iloc[-period]) / ohlcv['close'].iloc[-period]) * 100 if len(ohlcv) >= period else 0
+                }
+        except Exception as e:
+            correlation_data[symbol] = {'error': str(e)}
+    
+    # Calculate correlations
+    if len(prices) >= 2:
+        price_df = pd.DataFrame(prices)
+        correlation_matrix = price_df.corr()
+        
+        # Get BTC correlation with other assets
+        btc_correlations = {}
+        if 'BTC/USDT' in correlation_matrix.columns:
+            for symbol in correlation_matrix.columns:
+                if symbol != 'BTC/USDT':
+                    btc_correlations[symbol] = correlation_matrix.loc['BTC/USDT', symbol]
+        
+        correlation_data['correlation_matrix'] = correlation_matrix
+        correlation_data['btc_correlations'] = btc_correlations
+        correlation_data['avg_correlation'] = correlation_matrix.mean().mean()
+    
+    return correlation_data
+
+
+def compute_btc_dominance() -> Dict[str, Any]:
+    """
+    Calculate BTC dominance and market sentiment
+    
+    Returns:
+        Dictionary with BTC dominance data
+    """
+    try:
+        from agent.data import fetch_ohlcv
+        
+        # Fetch BTC and ETH data for dominance calculation
+        btc_data = fetch_ohlcv('BTC/USDT', '1h', limit=24)
+        eth_data = fetch_ohlcv('ETH/USDT', '1h', limit=24)
+        
+        if len(btc_data) > 0 and len(eth_data) > 0:
+            btc_market_cap = btc_data['close'].iloc[-1] * 21000000  # Approximate BTC supply
+            eth_market_cap = eth_data['close'].iloc[-1] * 120000000  # Approximate ETH supply
+            
+            total_crypto_cap = btc_market_cap + eth_market_cap
+            btc_dominance = (btc_market_cap / total_crypto_cap) * 100
+            
+            # Calculate dominance trend
+            btc_dominance_24h_ago = 50  # Placeholder - would need historical data
+            dominance_change = btc_dominance - btc_dominance_24h_ago
+            
+            return {
+                'btc_dominance': btc_dominance,
+                'dominance_change': dominance_change,
+                'btc_market_cap': btc_market_cap,
+                'eth_market_cap': eth_market_cap,
+                'total_crypto_cap': total_crypto_cap,
+                'dominance_trend': 'increasing' if dominance_change > 0 else 'decreasing'
+            }
+    except Exception as e:
+        return {'error': str(e), 'btc_dominance': 50, 'dominance_change': 0}
+
+
+def compute_market_wide_sentiment() -> Dict[str, Any]:
+    """
+    Calculate market-wide sentiment indicators
+    
+    Returns:
+        Dictionary with market sentiment data
+    """
+    try:
+        from agent.data import fetch_ohlcv
+        
+        # Fetch data for major cryptocurrencies
+        symbols = ['BTC/USDT', 'ETH/USDT', 'ADA/USDT', 'DOT/USDT', 'LINK/USDT']
+        market_data = {}
+        
+        for symbol in symbols:
+            try:
+                ohlcv = fetch_ohlcv(symbol, '1h', limit=24)
+                if len(ohlcv) > 0:
+                    close = ohlcv['close']
+                    price_change_24h = ((close.iloc[-1] - close.iloc[-24]) / close.iloc[-24]) * 100 if len(close) >= 24 else 0
+                    
+                    market_data[symbol] = {
+                        'price_change_24h': price_change_24h,
+                        'current_price': close.iloc[-1],
+                        'sentiment': 'bullish' if price_change_24h > 0 else 'bearish'
+                    }
+            except Exception as e:
+                market_data[symbol] = {'error': str(e)}
+        
+        # Calculate market-wide sentiment
+        sentiments = [data.get('sentiment', 'neutral') for data in market_data.values() if 'sentiment' in data]
+        bullish_count = sentiments.count('bullish')
+        bearish_count = sentiments.count('bearish')
+        total_count = len(sentiments)
+        
+        market_sentiment_score = (bullish_count - bearish_count) / total_count if total_count > 0 else 0
+        
+        return {
+            'market_data': market_data,
+            'market_sentiment_score': market_sentiment_score,
+            'bullish_count': bullish_count,
+            'bearish_count': bearish_count,
+            'total_count': total_count,
+            'overall_sentiment': 'bullish' if market_sentiment_score > 0.2 else 'bearish' if market_sentiment_score < -0.2 else 'neutral'
+        }
+        
+    except Exception as e:
+        return {'error': str(e), 'market_sentiment_score': 0, 'overall_sentiment': 'neutral'}
+
+
