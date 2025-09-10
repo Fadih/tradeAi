@@ -58,6 +58,9 @@ from agent.scheduler import start_scheduler
 
 # Import signal generation module
 from .signal_generator import SignalRequest, TradingSignal, generate_trading_signal
+from .enhanced_signal_generator import enhanced_signal_generator, EnhancedTradingSignal
+from .phase2_signal_generator import phase2_signal_generator, Phase2TradingSignal
+from .phase3_signal_generator import phase3_signal_generator, Phase3TradingSignal
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -1803,6 +1806,94 @@ async def generate_signal(request: SignalRequest, current_user: Dict[str, Any] =
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/api/signals/generate-enhanced")
+async def generate_enhanced_signal(request: SignalRequest, current_user: Dict[str, Any] = Depends(verify_token)) -> EnhancedTradingSignal:
+    """Generate an enhanced trading signal with Phase 1 improvements (Bollinger Bands, VWAP, Volume indicators)"""
+    try:
+        logger.info(f"🚀 Enhanced signal generation requested by {current_user['username']} for {request.symbol}")
+        
+        # Use the enhanced signal generator
+        signal = await enhanced_signal_generator.generate_enhanced_signal(request, current_user['username'])
+        
+        # Update global state
+        try:
+            redis_client = await get_redis_client()
+            if redis_client:
+                agent_status["total_signals"] = await redis_client.get_signal_count()
+            else:
+                agent_status["total_signals"] += 1
+        except Exception as e:
+            logger.error(f"Failed to update signal count: {e}")
+            agent_status["total_signals"] += 1
+        
+        agent_status["last_update"] = datetime.now().isoformat()
+        
+        logger.info(f"✅ Enhanced signal generated successfully: {signal.signal_type} for {signal.symbol}")
+        return signal
+        
+    except Exception as e:
+        logger.error(f"Error generating enhanced signal: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/signals/generate-phase2")
+async def generate_phase2_signal(request: SignalRequest, current_user: Dict[str, Any] = Depends(verify_token)) -> Phase2TradingSignal:
+    """Generate a Phase 2 enhanced trading signal with multi-timeframe analysis, cross-asset correlation, and advanced market microstructure"""
+    try:
+        logger.info(f"🚀 Phase 2 signal generation requested by {current_user['username']} for {request.symbol}")
+        
+        # Use the Phase 2 signal generator
+        signal = await phase2_signal_generator.generate_phase2_signal(request, current_user['username'])
+        
+        # Update global state
+        try:
+            redis_client = await get_redis_client()
+            if redis_client:
+                agent_status["total_signals"] = await redis_client.get_signal_count()
+            else:
+                agent_status["total_signals"] += 1
+        except Exception as e:
+            logger.error(f"Failed to update signal count: {e}")
+            agent_status["total_signals"] += 1
+        
+        agent_status["last_update"] = datetime.now().isoformat()
+        
+        logger.info(f"✅ Phase 2 signal generated successfully: {signal.signal_type} for {signal.symbol}")
+        return signal
+        
+    except Exception as e:
+        logger.error(f"Error generating Phase 2 signal: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/signals/generate-phase3")
+async def generate_phase3_signal(request: SignalRequest, current_user: Dict[str, Any] = Depends(verify_token)) -> Phase3TradingSignal:
+    """Generate a Phase 3 advanced trading signal with regime detection, advanced RSI variants, and enhanced risk management"""
+    try:
+        logger.info(f"🚀 Phase 3 signal generation requested by {current_user['username']} for {request.symbol}")
+        
+        # Use the Phase 3 signal generator
+        signal = await phase3_signal_generator.generate_phase3_signal(request, current_user['username'])
+        
+        # Update global state
+        try:
+            redis_client = await get_redis_client()
+            if redis_client:
+                agent_status["total_signals"] = await redis_client.get_signal_count()
+            else:
+                agent_status["total_signals"] += 1
+        except Exception as e:
+            logger.error(f"Failed to update signal count: {e}")
+            agent_status["total_signals"] += 1
+        
+        agent_status["last_update"] = datetime.now().isoformat()
+        
+        logger.info(f"✅ Phase 3 signal generated successfully: {signal.signal_type} for {signal.symbol}")
+        return signal
+                    
+    except Exception as e:
+        logger.error(f"Error generating Phase 3 signal: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/api/config/app")

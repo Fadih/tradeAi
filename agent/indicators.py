@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import pandas as pd
+import numpy as np
+from typing import Dict, Any
 
 def get_config_value(config, path, default=None):
 	"""Helper function to get configuration values from either dict or object"""
@@ -44,8 +46,6 @@ def compute_rsi(
     Returns:
         RSI series (0-100) with proper NaN handling for warm-up period
     """
-    import numpy as np
-    
     close = close.astype("float64")
     delta = close.diff()
     
@@ -384,5 +384,309 @@ def compute_tech_score_series(ohlcv: pd.DataFrame) -> pd.Series:
 	macd_score = (hist / (std * 2)).clip(-1, 1)
 
 	return ((rsi_score + macd_score) / 2).clip(-1, 1)
+
+
+def compute_adx(high: pd.Series, low: pd.Series, close: pd.Series, period: int = 14) -> Dict[str, pd.Series]:
+    """
+    Calculate Average Directional Index (ADX) for trend strength
+    
+    Args:
+        high: High prices
+        low: Low prices
+        close: Close prices
+        period: ADX period
+        
+    Returns:
+        Dictionary with ADX, +DI, and -DI values
+    """
+    # Calculate True Range
+    tr1 = high - low
+    tr2 = abs(high - close.shift(1))
+    tr3 = abs(low - close.shift(1))
+    tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+    
+    # Calculate Directional Movement
+    dm_plus = high - high.shift(1)
+    dm_minus = low.shift(1) - low
+    
+    # Filter directional movement
+    dm_plus = np.where((dm_plus > dm_minus) & (dm_plus > 0), dm_plus, 0)
+    dm_minus = np.where((dm_minus > dm_plus) & (dm_minus > 0), dm_minus, 0)
+    
+    dm_plus = pd.Series(dm_plus, index=high.index)
+    dm_minus = pd.Series(dm_minus, index=high.index)
+    
+    # Calculate smoothed values using Wilder's smoothing
+    atr = tr.ewm(alpha=1/period, adjust=False).mean()
+    di_plus = 100 * (dm_plus.ewm(alpha=1/period, adjust=False).mean() / atr)
+    di_minus = 100 * (dm_minus.ewm(alpha=1/period, adjust=False).mean() / atr)
+    
+    # Calculate DX
+    dx = 100 * abs(di_plus - di_minus) / (di_plus + di_minus)
+    dx = dx.fillna(0)
+    
+    # Calculate ADX
+    adx = dx.ewm(alpha=1/period, adjust=False).mean()
+    
+    return {
+        'adx': adx,
+        'di_plus': di_plus,
+        'di_minus': di_minus,
+        'atr': atr
+    }
+
+
+def compute_volatility_regime(close: pd.Series, period: int = 20) -> Dict[str, Any]:
+    """
+    Calculate volatility regime classification
+    
+    Args:
+        close: Close prices
+        period: Period for volatility calculation
+        
+    Returns:
+        Dictionary with volatility regime information
+    """
+    # Calculate returns
+    returns = close.pct_change().dropna()
+    
+    # Calculate rolling volatility
+    rolling_vol = returns.rolling(window=period).std()
+    
+    # Calculate volatility percentiles
+    vol_percentile = rolling_vol.rolling(window=period*2).rank(pct=True) * 100
+    
+    # Classify volatility regime
+    def classify_volatility(vol_pct):
+        if vol_pct < 25:
+            return "low"
+        elif vol_pct < 75:
+            return "medium"
+        else:
+            return "high"
+    
+    vol_regime = vol_percentile.apply(classify_volatility)
+    
+    # Calculate volatility trend
+    vol_trend = rolling_vol.diff(period).apply(lambda x: "increasing" if x > 0 else "decreasing" if x < 0 else "stable")
+    
+    return {
+        'volatility': rolling_vol,
+        'volatility_percentile': vol_percentile,
+        'volatility_regime': vol_regime,
+        'volatility_trend': vol_trend,
+        'current_volatility': rolling_vol.iloc[-1] if len(rolling_vol) > 0 else 0.0,
+        'current_regime': vol_regime.iloc[-1] if len(vol_regime) > 0 else "medium"
+    }
+
+
+def compute_market_regime(high: pd.Series, low: pd.Series, close: pd.Series, 
+                         adx_period: int = 14, vol_period: int = 20) -> Dict[str, Any]:
+    """
+    Comprehensive market regime detection
+    
+    Args:
+        high: High prices
+        low: Low prices
+        close: Close prices
+        adx_period: ADX calculation period
+        vol_period: Volatility calculation period
+        
+    Returns:
+        Dictionary with comprehensive regime information
+    """
+    # Calculate ADX for trend strength
+    adx_data = compute_adx(high, low, close, adx_period)
+    adx = adx_data['adx']
+    di_plus = adx_data['di_plus']
+    di_minus = adx_data['di_minus']
+    
+    # Calculate volatility regime
+    vol_data = compute_volatility_regime(close, vol_period)
+    
+    # Determine trend direction
+    trend_direction = np.where(di_plus > di_minus, "uptrend", 
+                              np.where(di_minus > di_plus, "downtrend", "sideways"))
+    trend_direction = pd.Series(trend_direction, index=close.index)
+    
+    # Classify trend strength
+    def classify_trend_strength(adx_val):
+        if adx_val > 50:
+            return "very_strong"
+        elif adx_val > 25:
+            return "strong"
+        elif adx_val > 15:
+            return "moderate"
+        else:
+            return "weak"
+    
+    trend_strength = adx.apply(classify_trend_strength)
+    
+    # Overall market regime classification
+    def classify_market_regime(row):
+        trend_str = row['trend_strength']
+        vol_regime = row['volatility_regime']
+        
+        if trend_str in ["strong", "very_strong"]:
+            return "trending"
+        elif vol_regime == "low" and trend_str == "weak":
+            return "consolidation"
+        elif vol_regime == "high":
+            return "volatile"
+        else:
+            return "ranging"
+    
+    regime_df = pd.DataFrame({
+        'trend_strength': trend_strength,
+        'volatility_regime': vol_data['volatility_regime']
+    })
+    
+    market_regime = regime_df.apply(classify_market_regime, axis=1)
+    
+    return {
+        'adx': adx,
+        'di_plus': di_plus,
+        'di_minus': di_minus,
+        'trend_direction': trend_direction,
+        'trend_strength': trend_strength,
+        'market_regime': market_regime,
+        'volatility_data': vol_data,
+        'current_adx': adx.iloc[-1] if len(adx) > 0 else 0.0,
+        'current_trend_direction': trend_direction.iloc[-1] if len(trend_direction) > 0 else "sideways",
+        'current_trend_strength': trend_strength.iloc[-1] if len(trend_strength) > 0 else "weak",
+        'current_market_regime': market_regime.iloc[-1] if len(market_regime) > 0 else "ranging"
+    }
+
+
+def compute_advanced_rsi_variants(close: pd.Series, periods: list = [7, 9, 14]) -> Dict[str, Any]:
+    """
+    Calculate multiple RSI variants with signal lines and crossovers
+    
+    Args:
+        close: Close prices
+        periods: List of RSI periods to calculate
+        
+    Returns:
+        Dictionary with multiple RSI variants and signals
+    """
+    rsi_variants = {}
+    
+    for period in periods:
+        # Calculate RSI
+        rsi = compute_rsi(close, period=period)
+        
+        # Calculate RSI signal line (EMA of RSI)
+        rsi_signal = rsi.ewm(span=3).mean()
+        
+        # Calculate Stochastic RSI
+        stoch_rsi_data = stoch_rsi(rsi, k_period=14, d_period=3)
+        
+        # Detect crossovers
+        rsi_cross_up = (rsi > rsi_signal) & (rsi.shift(1) <= rsi_signal.shift(1))
+        rsi_cross_down = (rsi < rsi_signal) & (rsi.shift(1) >= rsi_signal.shift(1))
+        
+        rsi_variants[f'rsi_{period}'] = {
+            'rsi': rsi,
+            'signal_line': rsi_signal,
+            'stoch_k': stoch_rsi_data['stoch_k'],
+            'stoch_d': stoch_rsi_data['stoch_d'],
+            'cross_up': rsi_cross_up,
+            'cross_down': rsi_cross_down,
+            'current_rsi': rsi.iloc[-1] if len(rsi) > 0 else 50.0,
+            'current_signal': rsi_signal.iloc[-1] if len(rsi_signal) > 0 else 50.0,
+            'current_stoch_k': stoch_rsi_data['stoch_k'].iloc[-1] if len(stoch_rsi_data['stoch_k']) > 0 else 50.0,
+            'current_stoch_d': stoch_rsi_data['stoch_d'].iloc[-1] if len(stoch_rsi_data['stoch_d']) > 0 else 50.0
+        }
+    
+    return rsi_variants
+
+
+def compute_dynamic_position_sizing(close: pd.Series, volatility: pd.Series, 
+                                  account_balance: float = 10000.0, 
+                                  risk_per_trade: float = 0.02) -> Dict[str, Any]:
+    """
+    Calculate dynamic position sizing based on volatility and risk parameters
+    
+    Args:
+        close: Close prices
+        volatility: Volatility series (ATR or rolling std)
+        account_balance: Account balance
+        risk_per_trade: Risk per trade as percentage (0.02 = 2%)
+        
+    Returns:
+        Dictionary with position sizing information
+    """
+    # Calculate risk amount
+    risk_amount = account_balance * risk_per_trade
+    
+    # Calculate position size based on volatility
+    position_size = risk_amount / volatility
+    
+    # Calculate position value
+    position_value = position_size * close
+    
+    # Calculate position as percentage of account
+    position_percentage = (position_value / account_balance) * 100
+    
+    # Apply maximum position size limits
+    max_position_pct = 10.0  # Maximum 10% of account
+    position_percentage = np.minimum(position_percentage, max_position_pct)
+    
+    # Recalculate position size with limits
+    limited_position_value = (position_percentage / 100) * account_balance
+    limited_position_size = limited_position_value / close
+    
+    return {
+        'position_size': limited_position_size,
+        'position_value': limited_position_value,
+        'position_percentage': position_percentage,
+        'risk_amount': risk_amount,
+        'current_position_size': limited_position_size.iloc[-1] if len(limited_position_size) > 0 else 0.0,
+        'current_position_value': limited_position_value.iloc[-1] if len(limited_position_value) > 0 else 0.0,
+        'current_position_percentage': position_percentage.iloc[-1] if len(position_percentage) > 0 else 0.0
+    }
+
+
+def compute_volatility_adjusted_stops(close: pd.Series, high: pd.Series, low: pd.Series,
+                                    atr: pd.Series, volatility_multiplier: float = 2.0) -> Dict[str, Any]:
+    """
+    Calculate volatility-adjusted stop losses and take profits
+    
+    Args:
+        close: Close prices
+        high: High prices
+        low: Low prices
+        atr: Average True Range
+        volatility_multiplier: Multiplier for ATR-based stops
+        
+    Returns:
+        Dictionary with stop loss and take profit levels
+    """
+    # Calculate ATR-based stops
+    atr_stop_long = close - (atr * volatility_multiplier)
+    atr_stop_short = close + (atr * volatility_multiplier)
+    
+    # Calculate percentage-based stops (backup)
+    pct_stop_long = close * (1 - 0.02)  # 2% stop
+    pct_stop_short = close * (1 + 0.02)  # 2% stop
+    
+    # Use the more conservative stop (further from price)
+    stop_loss_long = np.maximum(atr_stop_long, pct_stop_long)
+    stop_loss_short = np.minimum(atr_stop_short, pct_stop_short)
+    
+    # Calculate take profits (2:1 risk-reward ratio)
+    take_profit_long = close + (2 * (close - stop_loss_long))
+    take_profit_short = close - (2 * (stop_loss_short - close))
+    
+    return {
+        'stop_loss_long': stop_loss_long,
+        'stop_loss_short': stop_loss_short,
+        'take_profit_long': take_profit_long,
+        'take_profit_short': take_profit_short,
+        'current_stop_long': stop_loss_long.iloc[-1] if len(stop_loss_long) > 0 else close.iloc[-1],
+        'current_stop_short': stop_loss_short.iloc[-1] if len(stop_loss_short) > 0 else close.iloc[-1],
+        'current_tp_long': take_profit_long.iloc[-1] if len(take_profit_long) > 0 else close.iloc[-1],
+        'current_tp_short': take_profit_short.iloc[-1] if len(take_profit_short) > 0 else close.iloc[-1]
+    }
 
 
