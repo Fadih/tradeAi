@@ -5,6 +5,8 @@ import requests
 import time
 import random
 from datetime import datetime, timedelta, timezone
+import aiohttp
+import asyncio
 
 from ..logging_config import get_logger
 
@@ -139,6 +141,111 @@ def fetch_crypto_reddit_posts(limit_per_subreddit: int = 8) -> List[str]:
     ]
     
     return fetch_reddit_posts(crypto_subreddits, limit_per_subreddit)
+
+async def fetch_reddit_posts_async(subreddits: List[str], limit_per_subreddit: int = 10, symbol: Optional[str] = None, hours_back: int = 6) -> List[str]:
+    """Async version of fetch_reddit_posts for better performance"""
+    logger.info(f"Fetching Reddit posts from {len(subreddits)} subreddits (async), limit per subreddit: {limit_per_subreddit}")
+    if symbol:
+        logger.info(f"Filtering Reddit posts for symbol: {symbol}")
+    logger.info(f"Time filter: Only posts from last {hours_back} hours")
+    
+    # Calculate cutoff time for recent posts (using UTC)
+    cutoff_time = datetime.now(timezone.utc) - timedelta(hours=hours_back)
+    cutoff_timestamp = cutoff_time.timestamp()
+    logger.info(f"Cutoff time (UTC): {cutoff_time.strftime('%Y-%m-%d %H:%M:%S UTC')}")
+    
+    async def fetch_single_subreddit(session: aiohttp.ClientSession, subreddit: str) -> List[str]:
+        """Fetch posts from a single subreddit"""
+        try:
+            # Fetch hot posts from subreddit
+            url = f"https://www.reddit.com/r/{subreddit}/hot.json?limit={limit_per_subreddit}"
+            headers = {
+                'User-Agent': 'TradingBot/1.0 (Educational Purpose)'
+            }
+            
+            logger.debug(f"Fetching Reddit posts from r/{subreddit}")
+            async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=15)) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    posts = data.get('data', {}).get('children', [])
+                    
+                    if not posts:
+                        logger.warning(f"No posts found in r/{subreddit}")
+                        return []
+                    
+                    logger.debug(f"Found {len(posts)} posts in r/{subreddit}")
+                    
+                    subreddit_texts = []
+                    for j, post in enumerate(posts):
+                        post_data = post.get('data', {})
+                        title = post_data.get('title', '')
+                        selftext = post_data.get('selftext', '')
+                        
+                        # Combine title and selftext for better sentiment analysis
+                        if selftext and len(selftext) > 50:  # Only include substantial selftext
+                            text = f"{title} - {selftext[:200]}..."  # Limit selftext length
+                        else:
+                            text = title
+                        
+                        if text and len(text.strip()) > 10:  # Filter out very short posts
+                            # Filter by time (only recent posts)
+                            post_time = post_data.get('created_utc', 0)
+                            if post_time:
+                                try:
+                                    # Reddit timestamps are already in UTC
+                                    post_datetime = datetime.fromtimestamp(post_time, tz=timezone.utc)
+                                    
+                                    if post_datetime < cutoff_time:
+                                        logger.debug(f"Post {j+1}: filtered out (too old, {post_datetime.strftime('%Y-%m-%d %H:%M:%S UTC')}): {title[:50]}...")
+                                        continue
+                                    else:
+                                        logger.debug(f"Post {j+1}: time OK ({post_datetime.strftime('%Y-%m-%d %H:%M:%S UTC')}): {title[:50]}...")
+                                except (ValueError, TypeError) as e:
+                                    logger.debug(f"Post {j+1}: time parsing error, including anyway: {e}")
+                                    # If we can't parse the time, include the post to be safe
+                            else:
+                                logger.debug(f"Post {j+1}: no time info, including anyway: {title[:50]}...")
+                            
+                            # Filter by symbol if provided
+                            if symbol and not _is_relevant_to_symbol(text, symbol):
+                                logger.debug(f"Post {j+1}: filtered out (not relevant to {symbol}): {title[:50]}...")
+                                continue
+                            
+                            subreddit_texts.append(text.strip())
+                            logger.debug(f"Post {j+1}: {title[:50]}...")
+                        else:
+                            logger.debug(f"Post {j+1}: skipped (too short or empty)")
+                    
+                    logger.info(f"Subreddit r/{subreddit}: processed {len(subreddit_texts)} valid posts")
+                    return subreddit_texts
+                else:
+                    logger.warning(f"Failed to fetch from r/{subreddit}: HTTP {response.status}")
+                    return []
+        except asyncio.TimeoutError:
+            logger.error(f"Timeout fetching from r/{subreddit}")
+            return []
+        except Exception as e:
+            logger.error(f"Error fetching from r/{subreddit}: {e}")
+            return []
+    
+    # Fetch all subreddits concurrently
+    async with aiohttp.ClientSession() as session:
+        tasks = [fetch_single_subreddit(session, subreddit) for subreddit in subreddits]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+    
+    # Flatten results and filter out exceptions
+    texts = []
+    for i, result in enumerate(results):
+        if isinstance(result, Exception):
+            logger.error(f"Error processing subreddit {subreddits[i]}: {result}")
+        else:
+            texts.extend(result)
+    
+    logger.info(f"Total Reddit posts collected (async): {len(texts)}")
+    if texts:
+        logger.debug(f"Sample Reddit posts: {texts[:2]}")
+    
+    return texts
 
 
 def fetch_stock_reddit_posts(limit_per_subreddit: int = 8) -> List[str]:

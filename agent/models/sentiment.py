@@ -1,9 +1,13 @@
 from __future__ import annotations
 
-from typing import List, Optional
-
+from typing import List, Optional, Dict, Any
 import os
 import requests
+import aiohttp
+import asyncio
+import json
+import hashlib
+from datetime import datetime, timedelta
 
 from ..logging_config import get_logger
 
@@ -20,6 +24,7 @@ class SentimentAnalyzer:
 		self.model_name = model_name
 		self.hf_token = os.getenv("HF_TOKEN")
 		self._pipe = None
+		self.cache_ttl = 300  # 5 minutes cache TTL
 		
 		logger.info(f"Initializing SentimentAnalyzer with model: {model_name}")
 		
@@ -38,6 +43,87 @@ class SentimentAnalyzer:
 			logger.debug("HF token available for Inference API")
 		else:
 			logger.warning("No HF token provided, sentiment will fallback to neutral")
+	
+	def _get_cache_key(self, prefix: str, *args) -> str:
+		"""Generate cache key from arguments"""
+		key_data = f"{prefix}:{':'.join(str(arg) for arg in args)}"
+		return hashlib.md5(key_data.encode()).hexdigest()
+	
+	async def _get_cached_data(self, cache_key: str) -> Optional[Any]:
+		"""Get data from Redis cache"""
+		try:
+			from agent.cache.redis_client import get_redis_client
+			redis_client = get_redis_client()
+			cached = await redis_client.get(cache_key)
+			if cached:
+				return json.loads(cached)
+		except Exception as e:
+			logger.warning(f"Cache get error: {e}")
+		return None
+	
+	async def _set_cached_data(self, cache_key: str, data: Any) -> None:
+		"""Set data in Redis cache"""
+		try:
+			from agent.cache.redis_client import get_redis_client
+			redis_client = get_redis_client()
+			await redis_client.setex(cache_key, self.cache_ttl, json.dumps(data, default=str))
+		except Exception as e:
+			logger.warning(f"Cache set error: {e}")
+	
+	async def analyze_sentiment_async(self, symbol: str, rss_feeds: List[str], reddit_subreddits: List[str],
+									  rss_max_headlines: int, reddit_max_posts: int,
+									  rss_hours_back: int = 6, reddit_hours_back: int = 6) -> float:
+		"""Async sentiment analysis with caching and parallel data fetching"""
+		start_time = datetime.now()
+		logger.info(f"🚀 Starting async sentiment analysis for {symbol}")
+		
+		# Check cache first
+		cache_key = self._get_cache_key("sentiment_async", symbol, rss_hours_back, reddit_hours_back)
+		cached_result = await self._get_cached_data(cache_key)
+		if cached_result:
+			duration = (datetime.now() - start_time).total_seconds()
+			logger.info(f"📦 Using cached sentiment for {symbol} ({duration:.3f}s)")
+			return cached_result
+		
+		# Import async functions
+		from agent.news.rss import fetch_headlines_async
+		from agent.news.reddit import fetch_reddit_posts_async
+		
+		# Fetch RSS and Reddit data in parallel
+		fetch_start = datetime.now()
+		logger.info(f"🔄 Fetching sentiment data for {symbol} (async)")
+		
+		rss_task = fetch_headlines_async(
+			rss_feeds, rss_max_headlines, symbol, rss_hours_back
+		)
+		reddit_task = fetch_reddit_posts_async(
+			reddit_subreddits, reddit_max_posts, symbol, reddit_hours_back
+		)
+		
+		rss_texts, reddit_posts = await asyncio.gather(rss_task, reddit_task)
+		fetch_duration = (datetime.now() - fetch_start).total_seconds()
+		logger.info(f"📊 Data fetch completed in {fetch_duration:.3f}s (RSS: {len(rss_texts)}, Reddit: {len(reddit_posts)})")
+		
+		all_texts = rss_texts + reddit_posts
+		
+		if not all_texts:
+			logger.warning(f"No texts collected for sentiment analysis for {symbol}")
+			await self._set_cached_data(cache_key, 0.0)
+			return 0.0
+		
+		# Score sentiment
+		score_start = datetime.now()
+		sentiment_score = self.score(all_texts)
+		score_duration = (datetime.now() - score_start).total_seconds()
+		logger.info(f"🧠 Sentiment scoring completed in {score_duration:.3f}s")
+		
+		# Cache the result
+		await self._set_cached_data(cache_key, sentiment_score)
+		
+		total_duration = (datetime.now() - start_time).total_seconds()
+		logger.info(f"✅ Async sentiment analysis completed for {symbol} in {total_duration:.3f}s (score: {sentiment_score:.3f})")
+		
+		return sentiment_score
 
 	def _score_local(self, texts: List[str]) -> Optional[float]:
 		if not self._pipe:

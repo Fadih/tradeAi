@@ -18,6 +18,7 @@ import os
 import math
 import time
 from datetime import datetime, timedelta
+import os
 import pytz
 
 # Application version
@@ -60,7 +61,7 @@ from agent.scheduler import start_scheduler
 from .signal_generator import SignalRequest, TradingSignal, generate_trading_signal
 from .enhanced_signal_generator import enhanced_signal_generator, EnhancedTradingSignal
 from .phase2_signal_generator import phase2_signal_generator, Phase2TradingSignal
-from .phase3_signal_generator import phase3_signal_generator, Phase3TradingSignal
+from .phase3_signal_generator import phase3_signal_generator, Phase3TradingSignal, Phase3SignalRequest
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -308,6 +309,8 @@ async def initialize_default_admin():
     except Exception as e:
         logger.error(f"Failed to initialize default admin user: {e}")
 
+monitoring_scheduler = None  # Global reference to allow stop/start
+
 async def start_signal_monitoring():
     """Start the signal monitoring scheduler"""
     try:
@@ -340,7 +343,8 @@ async def start_signal_monitoring():
         from agent.config import get_config
         config = get_config()
         monitoring_interval = config.monitoring.signal_check_interval_minutes
-        scheduler = start_scheduler(monitoring_job, cron=f"*/{monitoring_interval} * * * *")
+        global monitoring_scheduler
+        monitoring_scheduler = start_scheduler(monitoring_job, cron=f"*/{monitoring_interval} * * * *")
         logger.info(f"Signal monitoring scheduler started - running every {monitoring_interval} minutes")
         
     except Exception as e:
@@ -1564,29 +1568,173 @@ async def get_status(request: Request) -> AgentStatus:
     return AgentStatus(**status_data)
 
 @app.get("/api/signals")
-async def get_signals(symbol: Optional[str] = None, limit: int = 50, current_user: Dict[str, Any] = Depends(verify_token)) -> List[TradingSignal]:
-    """Get recent trading signals from Redis (user-specific)"""
+async def get_signals(
+    symbol: Optional[str] = None,
+    limit: int = 50,
+    fields: Optional[str] = None,
+    current_user: Dict[str, Any] = Depends(verify_token),
+):
+    """Get recent trading signals from Redis (user-specific) - supports both Phase1 and Phase3 signals"""
     try:
         redis_client = await get_redis_client()
         if redis_client:
-            # Get signals from Redis for current user
-            signal_dicts = await redis_client.get_signals(limit, symbol, current_user['username'])
+            # Get signals from Redis for current user with timeout
+            import asyncio
+            signal_dicts = await asyncio.wait_for(
+                redis_client.get_signals(limit, symbol, current_user['username']),
+                timeout=10.0  # 10 second timeout for Redis operations
+            )
             
-            # Convert dicts back to TradingSignal objects
+            # Fast path: summary mode (avoid heavy model parsing and payloads)
+            if fields == "summary":
+                summaries = []
+                for s in signal_dicts:
+                    try:
+                        # Extract technical indicators
+                        technical_indicators = s.get("technical_indicators", {})
+                        if isinstance(technical_indicators, str):
+                            import json
+                            try:
+                                technical_indicators = json.loads(technical_indicators)
+                            except:
+                                technical_indicators = {}
+                        
+                        # Extract regime detection
+                        regime_detection = s.get("regime_detection", {})
+                        if isinstance(regime_detection, str):
+                            try:
+                                regime_detection = json.loads(regime_detection)
+                            except:
+                                regime_detection = {}
+                        
+                        # Extract advanced RSI
+                        advanced_rsi = s.get("advanced_rsi", {})
+                        if isinstance(advanced_rsi, str):
+                            try:
+                                advanced_rsi = json.loads(advanced_rsi)
+                            except:
+                                advanced_rsi = {}
+                        
+                        # Extract position sizing
+                        position_sizing = s.get("position_sizing", {})
+                        if isinstance(position_sizing, str):
+                            try:
+                                position_sizing = json.loads(position_sizing)
+                            except:
+                                position_sizing = {}
+                        
+                        # Extract risk metrics
+                        risk_metrics = s.get("risk_metrics", {})
+                        if isinstance(risk_metrics, str):
+                            try:
+                                risk_metrics = json.loads(risk_metrics)
+                            except:
+                                risk_metrics = {}
+                        
+                        # Extract multi-timeframe
+                        multi_timeframe = s.get("multi_timeframe", {})
+                        if isinstance(multi_timeframe, str):
+                            try:
+                                multi_timeframe = json.loads(multi_timeframe)
+                            except:
+                                multi_timeframe = {}
+                        
+                        # Extract BTC dominance
+                        btc_dominance = s.get("btc_dominance", {})
+                        if isinstance(btc_dominance, str):
+                            try:
+                                btc_dominance = json.loads(btc_dominance)
+                            except:
+                                btc_dominance = {}
+                        
+                        # Helper function to safely convert float values
+                        def safe_float(value, default=0.0):
+                            try:
+                                if value is None:
+                                    return default
+                                val = float(value)
+                                if val == float('inf') or val == float('-inf') or val != val:  # NaN check
+                                    return default
+                                return val
+                            except (ValueError, TypeError):
+                                return default
+                        
+                        # Helper function to recursively clean nested dictionaries
+                        def clean_nested_data(data):
+                            if isinstance(data, dict):
+                                return {k: clean_nested_data(v) for k, v in data.items()}
+                            elif isinstance(data, list):
+                                return [clean_nested_data(item) for item in data]
+                            elif isinstance(data, (int, float)):
+                                return safe_float(data)
+                            else:
+                                return data
+                        
+                        summaries.append({
+                            "symbol": s.get("symbol"),
+                            "timeframe": s.get("timeframe"),
+                            "timestamp": s.get("timestamp"),
+                            "signal_type": s.get("signal_type", "HOLD"),
+                            "confidence": safe_float(s.get("confidence", 0.0)),
+                            "fused_score": safe_float(s.get("fused_score", 0.0)),
+                            "technical_score": safe_float(s.get("technical_score", 0.0)),
+                            "sentiment_score": safe_float(s.get("sentiment_score", 0.0)),
+                            "stop_loss": safe_float(s.get("stop_loss")),
+                            "take_profit": safe_float(s.get("take_profit")),
+                            "reasoning": s.get("reasoning"),
+                            "username": s.get("username"),
+                            "phase": s.get("phase", "phase3_complete" if ("regime_detection" in s or "advanced_rsi" in s or "position_sizing" in s) else s.get("phase")),
+                            # Applied thresholds
+                            "applied_buy_threshold": safe_float(s.get("applied_buy_threshold")),
+                            "applied_sell_threshold": safe_float(s.get("applied_sell_threshold")),
+                            "applied_tech_weight": safe_float(s.get("applied_tech_weight")),
+                            "applied_sentiment_weight": safe_float(s.get("applied_sentiment_weight")),
+                            # Technical indicators
+                            "technical_indicators": clean_nested_data(technical_indicators),
+                            # Phase 3 specific data
+                            "regime_detection": clean_nested_data(regime_detection),
+                            "advanced_rsi": clean_nested_data(advanced_rsi),
+                            "position_sizing": clean_nested_data(position_sizing),
+                            "risk_metrics": clean_nested_data(risk_metrics),
+                            "multi_timeframe": clean_nested_data(multi_timeframe),
+                            "btc_dominance": clean_nested_data(btc_dominance),
+                        })
+                    except Exception as e:
+                        logger.warning(f"Error processing signal for summary: {e}")
+                        continue
+                return summaries
+
+            # Convert dicts back to appropriate signal objects
             valid_signals = []
             for signal_dict in signal_dicts:
                 try:
                     # Debug logging for signal data from Redis
-                    logger.info(f"Signal from Redis: {signal_dict.get('symbol', 'unknown')} - applied_buy_threshold: {signal_dict.get('applied_buy_threshold', 'NOT_FOUND')}")
+                    logger.info(f"Signal from Redis: {signal_dict.get('symbol', 'unknown')} - phase: {signal_dict.get('phase', 'unknown')}")
                     
-                    # Handle both old and new signal formats
-                    if 'applied_buy_threshold' not in signal_dict:
-                        signal_dict['applied_buy_threshold'] = None
-                        signal_dict['applied_sell_threshold'] = None
-                        signal_dict['applied_tech_weight'] = None
-                        signal_dict['applied_sentiment_weight'] = None
+                    # Determine signal type based on phase or presence of Phase3 fields
+                    is_phase3 = (signal_dict.get('phase') == 'phase3_complete' or 
+                               'regime_detection' in signal_dict or 
+                               'advanced_rsi' in signal_dict or
+                               'position_sizing' in signal_dict)
                     
-                    signal = TradingSignal(**signal_dict)
+                    if is_phase3:
+                        # Handle Phase3 signals
+                        if 'applied_buy_threshold' not in signal_dict:
+                            signal_dict['applied_buy_threshold'] = None
+                            signal_dict['applied_sell_threshold'] = None
+                            signal_dict['applied_tech_weight'] = None
+                            signal_dict['applied_sentiment_weight'] = None
+                        
+                        signal = Phase3TradingSignal(**signal_dict)
+                    else:
+                        # Handle Phase1/Phase2 signals
+                        if 'applied_buy_threshold' not in signal_dict:
+                            signal_dict['applied_buy_threshold'] = None
+                            signal_dict['applied_sell_threshold'] = None
+                            signal_dict['applied_tech_weight'] = None
+                            signal_dict['applied_sentiment_weight'] = None
+                        
+                        signal = TradingSignal(**signal_dict)
                     
                     # Validate signal data
                     if (isinstance(signal.confidence, (int, float)) and 
@@ -1617,6 +1765,9 @@ async def get_signals(symbol: Optional[str] = None, limit: int = 50, current_use
             logger.warning("Redis not available - returning empty signals list")
             return []
         
+    except asyncio.TimeoutError:
+        logger.warning(f"Timeout getting signals for user {current_user['username']}")
+        return []  # Return empty list instead of error for better UX
     except Exception as e:
         logger.error(f"Error getting signals: {e}")
         raise HTTPException(status_code=500, detail=f"Error retrieving signals: {str(e)}")
@@ -1867,13 +2018,17 @@ async def generate_phase2_signal(request: SignalRequest, current_user: Dict[str,
 
 
 @app.post("/api/signals/generate-phase3")
-async def generate_phase3_signal(request: SignalRequest, current_user: Dict[str, Any] = Depends(verify_token)) -> Phase3TradingSignal:
+async def generate_phase3_signal(
+    request: Phase3SignalRequest, 
+    current_user: Dict[str, Any] = Depends(verify_token),
+    output_level: str = "full"
+) -> Phase3TradingSignal:
     """Generate a Phase 3 advanced trading signal with regime detection, advanced RSI variants, and enhanced risk management"""
     try:
-        logger.info(f"🚀 Phase 3 signal generation requested by {current_user['username']} for {request.symbol}")
+        logger.info(f"🚀 Phase 3 signal generation requested by {current_user['username']} for {request.symbol} (output_level: {output_level})")
         
-        # Use the Phase 3 signal generator
-        signal = await phase3_signal_generator.generate_phase3_signal(request, current_user['username'])
+        # Use the Phase 3 signal generator with performance optimization
+        signal = await phase3_signal_generator.generate_phase3_signal(request, current_user['username'], output_level)
         
         # Update global state
         try:
@@ -1887,6 +2042,31 @@ async def generate_phase3_signal(request: SignalRequest, current_user: Dict[str,
             agent_status["total_signals"] += 1
         
         agent_status["last_update"] = datetime.now().isoformat()
+        
+        # Log comprehensive API response details
+        logger.info("=" * 80)
+        logger.info("🌐 API RESPONSE - PHASE 3 SIGNAL")
+        logger.info("=" * 80)
+        logger.info(f"🎯 Signal Type: {signal.signal_type}")
+        logger.info(f"📈 Symbol: {signal.symbol}")
+        logger.info(f"⏰ Timeframe: {signal.timeframe}")
+        logger.info(f"👤 User: {current_user['username']}")
+        logger.info(f"🎲 Confidence: {signal.confidence:.4f} ({signal.confidence*100:.2f}%)")
+        logger.info(f"🔗 Fused Score: {signal.fused_score:.4f}")
+        logger.info(f"🔧 Technical Score: {signal.technical_score:.4f}")
+        logger.info(f"💭 Sentiment Score: {signal.sentiment_score:.4f}")
+        logger.info(f"🛡️ Stop Loss: {signal.stop_loss:.2f}")
+        logger.info(f"🎯 Take Profit: {signal.take_profit:.2f}")
+        # Log applied parameters from request
+        logger.info(f"🎛️ Buy Threshold: {request.buy_threshold if request.buy_threshold is not None else 'default'}")
+        logger.info(f"🎛️ Sell Threshold: {request.sell_threshold if request.sell_threshold is not None else 'default'}")
+        logger.info(f"🎛️ Technical Weight: {request.technical_weight if request.technical_weight is not None else 'default'}")
+        logger.info(f"🎛️ Sentiment Weight: {request.sentiment_weight if request.sentiment_weight is not None else 'default'}")
+        logger.info(f"📊 Output Level: {output_level}")
+        logger.info(f"📊 Response Size: {len(str(signal))} characters")
+        logger.info("=" * 80)
+        logger.info("🌐 END OF API RESPONSE")
+        logger.info("=" * 80)
         
         logger.info(f"✅ Phase 3 signal generated successfully: {signal.signal_type} for {signal.symbol}")
         return signal
@@ -2863,10 +3043,14 @@ async def startup_event():
     except Exception as e:
         logger.warning(f"Could not initialize default admin: {e}")
     
-    # Start the signal monitoring scheduler
+    # Start the signal monitoring scheduler (explicitly opt-in via ENABLE_MONITORING)
     try:
-        await start_signal_monitoring()
-        logger.info("Signal monitoring started")
+        enable_env = os.getenv("ENABLE_MONITORING", "0")
+        if enable_env == "1":
+            await start_signal_monitoring()
+            logger.info("Signal monitoring started (ENABLE_MONITORING=1)")
+        else:
+            logger.info("Monitoring disabled (set ENABLE_MONITORING=1 to enable)")
     except Exception as e:
         logger.warning(f"Could not start signal monitoring: {e}")
 

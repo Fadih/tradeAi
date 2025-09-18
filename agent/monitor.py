@@ -234,7 +234,98 @@ class SignalMonitor:
             return 0.0
     
     async def _update_signal_status(self, signal: Dict, ohlcv_data: Any, sentiment_score: float) -> bool:
-        """Update a single signal's status based on fresh data"""
+        """Update a single signal's status based on fresh data using Phase3 signal generation"""
+        try:
+            # Check if this is a Phase3 signal
+            is_phase3 = (signal.get('phase') == 'phase3_complete' or 
+                        'regime_detection' in signal or 
+                        'advanced_rsi' in signal or
+                        'position_sizing' in signal)
+            
+            if is_phase3:
+                # Use Phase3 signal generation for monitoring
+                return await self._update_phase3_signal_status(signal, ohlcv_data, sentiment_score)
+            else:
+                # Use legacy monitoring for Phase1/Phase2 signals
+                return await self._update_legacy_signal_status(signal, ohlcv_data, sentiment_score)
+                
+        except Exception as e:
+            logger.error(f"Error updating signal status: {e}")
+            return False
+    
+    async def _update_phase3_signal_status(self, signal: Dict, ohlcv_data: Any, sentiment_score: float) -> bool:
+        """Update Phase3 signal status using shared Phase3 signal generation"""
+        try:
+            from web.phase3_signal_generator import phase3_signal_generator
+            
+            symbol = signal.get('symbol')
+            timeframe = signal.get('timeframe', '1h')
+            username = signal.get('username', 'monitoring')
+            
+            # Generate fresh Phase3 signal
+            fresh_signal = await phase3_signal_generator.generate_phase3_signal_shared(
+                symbol=symbol,
+                timeframe=timeframe,
+                username=username,
+                output_level="monitoring"  # Use monitoring level for performance
+            )
+            
+            # Compare with original signal
+            original_signal_type = signal.get('signal_type', 'HOLD')
+            new_signal_type = fresh_signal.signal_type
+            
+            if new_signal_type != original_signal_type:
+                logger.info(f"Phase3 signal status changed: {symbol} {original_signal_type} → {new_signal_type}")
+                
+                # Update signal in Redis with fresh Phase3 data
+                signal['signal_type'] = new_signal_type
+                signal['fused_score'] = fresh_signal.fused_score
+                signal['technical_score'] = fresh_signal.technical_score
+                signal['sentiment_score'] = fresh_signal.sentiment_score
+                signal['confidence'] = fresh_signal.confidence
+                signal['stop_loss'] = fresh_signal.stop_loss
+                signal['take_profit'] = fresh_signal.take_profit
+                signal['last_updated'] = datetime.now(self.israel_tz).isoformat()
+                signal['status_change_reason'] = f"Phase3 monitoring: Technical={fresh_signal.technical_score:.3f}, Sentiment={fresh_signal.sentiment_score:.3f}, Fused={fresh_signal.fused_score:.3f}"
+                
+                # Update Phase3 specific fields
+                signal['regime_detection'] = fresh_signal.regime_detection
+                signal['advanced_rsi'] = fresh_signal.advanced_rsi
+                signal['position_sizing'] = fresh_signal.position_sizing
+                signal['risk_metrics'] = fresh_signal.risk_metrics
+                signal['technical_indicators'] = fresh_signal.technical_indicators
+                signal['market_microstructure'] = fresh_signal.market_microstructure
+                signal['multi_timeframe'] = fresh_signal.multi_timeframe
+                signal['btc_dominance'] = fresh_signal.btc_dominance
+                signal['market_wide_sentiment'] = fresh_signal.market_wide_sentiment
+                
+                # Store updated signal
+                await self.redis_client.store_signal(signal)
+                
+                # Log activity
+                await self.redis_client.log_activity(
+                    event_type="signal_status_changed",
+                    description=f"Phase3 signal {symbol} changed from {original_signal_type} to {new_signal_type}",
+                    user="monitoring",
+                    metadata={
+                        "symbol": symbol,
+                        "old_type": original_signal_type,
+                        "new_type": new_signal_type,
+                        "fused_score": fresh_signal.fused_score,
+                        "confidence": fresh_signal.confidence
+                    }
+                )
+                
+                return True
+            
+            return False
+            
+        except Exception as e:
+            logger.error(f"Error updating Phase3 signal status: {e}")
+            return False
+    
+    async def _update_legacy_signal_status(self, signal: Dict, ohlcv_data: Any, sentiment_score: float) -> bool:
+        """Update legacy Phase1/Phase2 signal status using original monitoring logic"""
         try:
             # Calculate fresh technical indicators
             from .indicators import compute_rsi, compute_macd, compute_atr
@@ -286,7 +377,7 @@ class SignalMonitor:
             
             # Check if signal status changed
             if new_signal_type != original_signal_type:
-                logger.info(f"Signal status changed: {signal.get('symbol')} {original_signal_type} → {new_signal_type}")
+                logger.info(f"Legacy signal status changed: {signal.get('symbol')} {original_signal_type} → {new_signal_type}")
                 
                 # Update signal in Redis
                 signal['signal_type'] = new_signal_type

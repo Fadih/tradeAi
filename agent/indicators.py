@@ -578,8 +578,8 @@ def compute_advanced_rsi_variants(close: pd.Series, periods: list = [7, 9, 14]) 
         # Calculate RSI signal line (EMA of RSI)
         rsi_signal = rsi.ewm(span=3).mean()
         
-        # Calculate Stochastic RSI
-        stoch_rsi_data = stoch_rsi(rsi, k_period=14, d_period=3)
+        # Calculate Stochastic RSI (use correct parameter names)
+        stoch_rsi_data = stoch_rsi(rsi, k=14, d=3)
         
         # Detect crossovers
         rsi_cross_up = (rsi > rsi_signal) & (rsi.shift(1) <= rsi_signal.shift(1))
@@ -588,14 +588,14 @@ def compute_advanced_rsi_variants(close: pd.Series, periods: list = [7, 9, 14]) 
         rsi_variants[f'rsi_{period}'] = {
             'rsi': rsi,
             'signal_line': rsi_signal,
-            'stoch_k': stoch_rsi_data['stoch_k'],
-            'stoch_d': stoch_rsi_data['stoch_d'],
+            'stoch_k': stoch_rsi_data['stoch_rsi_k'],
+            'stoch_d': stoch_rsi_data['stoch_rsi_d'],
             'cross_up': rsi_cross_up,
             'cross_down': rsi_cross_down,
             'current_rsi': rsi.iloc[-1] if len(rsi) > 0 else 50.0,
             'current_signal': rsi_signal.iloc[-1] if len(rsi_signal) > 0 else 50.0,
-            'current_stoch_k': stoch_rsi_data['stoch_k'].iloc[-1] if len(stoch_rsi_data['stoch_k']) > 0 else 50.0,
-            'current_stoch_d': stoch_rsi_data['stoch_d'].iloc[-1] if len(stoch_rsi_data['stoch_d']) > 0 else 50.0
+            'current_stoch_k': stoch_rsi_data['stoch_rsi_k'].iloc[-1] if len(stoch_rsi_data['stoch_rsi_k']) > 0 else 50.0,
+            'current_stoch_d': stoch_rsi_data['stoch_rsi_d'].iloc[-1] if len(stoch_rsi_data['stoch_rsi_d']) > 0 else 50.0
         }
     
     return rsi_variants
@@ -896,6 +896,36 @@ def compute_keltner_channels(high: pd.Series, low: pd.Series, close: pd.Series,
         'last_breakout_down': breakout_down.iloc[-1] if len(breakout_down) > 0 else False
     }
 
+
+# ==============================
+# Volume-based indicators (Phase 1)
+# ==============================
+def compute_obv(close: pd.Series, volume: pd.Series) -> pd.Series:
+    """On-Balance Volume (OBV) - cumulative volume adjusted by price direction."""
+    if len(close) == 0 or len(volume) == 0:
+        return pd.Series(dtype=float)
+    price_change = close.diff().fillna(0)
+    direction = price_change.apply(lambda x: 1 if x > 0 else (-1 if x < 0 else 0))
+    obv = (direction * volume.fillna(0)).cumsum()
+    return obv
+
+
+def compute_mfi(high: pd.Series, low: pd.Series, close: pd.Series, volume: pd.Series, period: int = 14) -> pd.Series:
+    """Money Flow Index (MFI) - volume-weighted RSI of typical price."""
+    if any(len(s) == 0 for s in [high, low, close, volume]):
+        return pd.Series(dtype=float)
+    typical_price = (high + low + close) / 3.0
+    raw_money_flow = typical_price * volume
+    tp_diff = typical_price.diff().fillna(0)
+    positive_flow = raw_money_flow.where(tp_diff > 0, 0.0)
+    negative_flow = raw_money_flow.where(tp_diff < 0, 0.0)
+    pos_sum = positive_flow.rolling(window=period, min_periods=period).sum()
+    neg_sum = negative_flow.rolling(window=period, min_periods=period).sum().abs()
+    # Avoid division by zero
+    neg_sum = neg_sum.replace(0, np.nan)
+    money_flow_ratio = pos_sum / neg_sum
+    mfi = 100 - (100 / (1 + money_flow_ratio))
+    return mfi.fillna(method='bfill').fillna(method='ffill')
 
 def compute_multi_timeframe_analysis(symbol: str, timeframes: list = ['5m', '15m', '1h', '4h']) -> Dict[str, Any]:
     """

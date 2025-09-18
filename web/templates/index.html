@@ -338,7 +338,7 @@
                         </div>
                         
                         <div class="d-flex gap-2">
-                            <button class="btn btn-primary" onclick="generateSignal()">
+                            <button class="btn btn-primary" onclick="generatePhase3Signal()">
                                 <i class="bi bi-play-circle"></i> Generate Trading Tip
                             </button>
                             <button class="btn btn-outline-secondary" onclick="resetThresholds()">
@@ -515,7 +515,7 @@
             initializeDashboard();
             startStatusUpdates();
             startMessageRefresh();
-            startSignalRefresh();
+            // startSignalRefresh(); // Disabled to prevent closing expanded signals
             
             // Load user messages for notification dropdown
             loadUserMessages();
@@ -1008,7 +1008,7 @@
                                             <div class="card border-0 bg-light">
                                                 <div class="card-body text-center">
                                                     <h6 class="card-title text-primary">Confidence</h6>
-                                                    <h3 class="mb-0 text-info">${(signal.confidence * 100).toFixed(1)}%</h3>
+                                                    <h3 class="mb-0 text-info">${(((signal.confidence ?? 0) * 100)).toFixed(1)}%</h3>
                                                 </div>
                                             </div>
                                         </div>
@@ -1019,7 +1019,7 @@
                                             <div class="card border-0 bg-light">
                                                 <div class="card-body text-center">
                                                     <h6 class="card-title text-primary">Technical Score</h6>
-                                                    <h4 class="mb-0 text-secondary">${signal.technical_score.toFixed(3)}</h4>
+                                                    <h4 class="mb-0 text-secondary">${(signal.technical_score ?? 0).toFixed(3)}</h4>
                                                 </div>
                                             </div>
                                         </div>
@@ -1027,7 +1027,7 @@
                                             <div class="card border-0 bg-light">
                                                 <div class="card-body text-center">
                                                     <h6 class="card-title text-primary">Sentiment Score</h6>
-                                                    <h4 class="mb-0 text-secondary">${(signal.sentiment_score || 0).toFixed(3)}</h4>
+                                                    <h4 class="mb-0 text-secondary">${(signal.sentiment_score ?? 0).toFixed(3)}</h4>
                                                 </div>
                                             </div>
                                         </div>
@@ -1199,8 +1199,10 @@
                 
                 console.log('Critical data loaded, starting secondary data');
                 
-                // Load signals first (most important for user experience)
-                await loadSignals();
+                // Load signals in background (non-blocking)
+                loadSignals().catch(error => {
+                    console.error('Error loading signals:', error);
+                });
                 
                 // Load other secondary data in parallel (can be slower)
                 const otherPromises = [
@@ -1435,7 +1437,7 @@
             if (appConfig.auto_refresh_enabled) {
                 startMarketDataUpdates();
                 startMessageRefresh();
-                startSignalRefresh();
+                // startSignalRefresh(); // Disabled to prevent closing expanded signals
                 console.log('🔄 Refresh intervals restarted with new configuration');
                 console.log('🔄 Market data interval:', appConfig.refresh_interval_seconds, 'seconds');
                 console.log('🔄 Message refresh interval:', appConfig.refresh_interval_seconds, 'seconds');
@@ -1739,6 +1741,11 @@
             try {
                 console.log('Starting loadSignals function');
                 
+                // Add timeout to prevent hanging
+                const timeoutPromise = new Promise((_, reject) => {
+                    setTimeout(() => reject(new Error('Signal loading timeout')), 30000); // 30 second timeout
+                });
+                
                 // Show loading state with progress bar (only for user-initiated refreshes)
                 if (!isAutoRefresh) {
                     const container = document.getElementById('signals-container');
@@ -1780,11 +1787,13 @@
                 }
                 console.log('Authentication token found, making API call');
                 
-                const response = await fetch('/api/signals', {
+                const fetchPromise = fetch('/api/signals?fields=summary', {
                     headers: {
                         'Authorization': `Bearer ${token}`
                     }
                 });
+                
+                const response = await Promise.race([fetchPromise, timeoutPromise]);
                 
                 console.log('API response status:', response.status);
                 
@@ -1804,6 +1813,9 @@
                 }
             } catch (error) {
                 console.error('Error loading signals:', error);
+                if (error.message === 'Signal loading timeout') {
+                    console.warn('Signal loading timed out after 30 seconds');
+                }
                 displaySignals([], isAutoRefresh); // Show empty state on any error
             } finally {
                 isLoadingSignals = false; // Reset loading flag
@@ -1876,7 +1888,7 @@
             `;
             
             container.innerHTML = headerRow + signals.map((signal, index) => `
-                <div class="card signal-card ${signal.signal_type.toLowerCase()} mb-2 border-${getSignalColor(signal.signal_type)} border-1 shadow-sm">
+                <div class="card signal-card ${(signal.signal_type ?? 'hold').toLowerCase()} mb-2 border-${getSignalColor(signal.signal_type)} border-1 shadow-sm">
 
                     <div class="card-body py-2">
                         <div class="row align-items-center text-center">
@@ -1893,14 +1905,14 @@
                                 <span class="badge bg-info">${signal.timeframe || appConfig.default_timeframe}</span>
                             </div>
                             <div class="col-2">
-                                <small class="text-muted">${formatTimestamp(signal.timestamp)}</small>
+                                <small class="text-muted">${signal.timestamp ? formatTimestamp(signal.timestamp) : '-'}</small>
                             </div>
                             <div class="col-1">
-                                <strong>${(signal.confidence * 100).toFixed(1)}%</strong>
+                                <strong>${(((signal.confidence ?? 0) * 100)).toFixed(1)}%</strong>
                             </div>
                             <div class="col-2">
-                                <span class="badge bg-${getScoreBadgeColor(signal.fused_score)} text-white small px-2 py-1">
-                                    ${signal.fused_score.toFixed(2)}
+                                <span class="badge bg-${getScoreBadgeColor(signal.fused_score ?? 0)} text-white small px-2 py-1">
+                                    ${(signal.fused_score ?? 0).toFixed(2)}
                                 </span>
                             </div>
                             <div class="col-2 text-center">
@@ -1926,7 +1938,7 @@
                                                data-bs-placement="top" 
                                                title="Combines RSI and MACD indicators. Range: -1 to +1. Positive = bullish momentum, Negative = bearish momentum. Calculated as: (RSI_score + MACD_score) / 2"></i>
                                         </small><br>
-                                        <strong>${signal.technical_score.toFixed(4)}</strong>
+                                        <strong>${(signal.technical_score ?? 0).toFixed(4)}</strong>
                                     </div>
                                     <div class="col-6">
                                         <small class="text-muted">
@@ -1950,7 +1962,7 @@
                                                data-bs-placement="top" 
                                                title="Final signal score combining technical and sentiment analysis. Formula: (Tech Weight × Technical Score) + (Sentiment Weight × Sentiment Score). Range: -1 to +1. Used to determine BUY/SELL/HOLD signals."></i>
                                         </small><br>
-                                        <strong>${signal.fused_score.toFixed(4)}</strong>
+                                        <strong>${(signal.fused_score ?? 0).toFixed(4)}</strong>
                                     </div>
                                     <div class="col-4">
                                         <small class="text-muted">
@@ -1960,7 +1972,7 @@
                                                data-bs-placement="top" 
                                                title="Signal strength indicator. Calculated as absolute value of fused score. Range: 0% to 100%. Higher values indicate stronger conviction in the signal direction."></i>
                                         </small><br>
-                                        <strong>${(signal.confidence * 100).toFixed(2)}%</strong>
+                                        <strong>${(((signal.confidence ?? 0) * 100)).toFixed(2)}%</strong>
                                     </div>
                                     <div class="col-4">
                                         <small class="text-muted">Timeframe</small><br>
@@ -1979,7 +1991,7 @@
                                                data-bs-placement="top" 
                                                title="Automatic exit price to limit losses. Calculated as: Current Price ± (2 × ATR). For BUY signals: Current Price - (2 × ATR). For SELL signals: Current Price + (2 × ATR). ATR = Average True Range (volatility measure)."></i>
                                         </small><br>
-                                        <strong>${signal.stop_loss ? '$' + signal.stop_loss.toFixed(2) : 'N/A'}</strong>
+                                        <strong>${signal.stop_loss != null ? '$' + Number(signal.stop_loss).toFixed(2) : 'N/A'}</strong>
                                     </div>
                                     <div class="col-6">
                                         <small class="text-muted">
@@ -1989,7 +2001,7 @@
                                                data-bs-placement="top" 
                                                title="Target profit exit price. Calculated as: Current Price ± (3 × ATR). For BUY signals: Current Price + (3 × ATR). For SELL signals: Current Price - (3 × ATR). Risk-reward ratio is 1:1.5 (2 ATR risk vs 3 ATR reward)."></i>
                                         </small><br>
-                                        <strong>${signal.take_profit ? '$' + signal.take_profit.toFixed(2) : 'N/A'}</strong>
+                                        <strong>${signal.take_profit != null ? '$' + Number(signal.take_profit).toFixed(2) : 'N/A'}</strong>
                                     </div>
                                 </div>
                                 <div class="row mt-2">
@@ -2010,7 +2022,7 @@
                                     </div>
                                     <div class="col-md-6">
                                         <small class="text-muted">Signal ID</small><br>
-                                        <strong class="text-muted">${signal.timestamp.split('T')[1].split('.')[0]}</strong>
+                                        <strong class="text-muted">${signal.timestamp ? signal.timestamp.split('T')[1].split('.')[0] : 'N/A'}</strong>
                                     </div>
                                 </div>
                             </div>
@@ -2021,19 +2033,19 @@
                                 <div class="row">
                                     <div class="col-md-3">
                                         <small class="text-muted">Buy Threshold</small><br>
-                                        <strong class="text-success">≥ ${signal.applied_buy_threshold !== null ? signal.applied_buy_threshold.toFixed(2) : appConfig.thresholds.buy_threshold.toFixed(2)}</strong>
+                                        <strong class="text-success">≥ ${(signal.applied_buy_threshold ?? appConfig.thresholds.buy_threshold).toFixed(2)}</strong>
                                     </div>
                                     <div class="col-md-3">
                                         <small class="text-muted">Sell Threshold</small><br>
-                                        <strong class="text-danger">≤ ${signal.applied_sell_threshold !== null ? signal.applied_sell_threshold.toFixed(2) : appConfig.thresholds.sell_threshold.toFixed(2)}</strong>
+                                        <strong class="text-danger">≤ ${(signal.applied_sell_threshold ?? appConfig.thresholds.sell_threshold).toFixed(2)}</strong>
                                     </div>
                                     <div class="col-md-3">
                                         <small class="text-muted">Tech Weight</small><br>
-                                        <strong class="text-primary">${signal.applied_tech_weight !== null ? (signal.applied_tech_weight * 100).toFixed(0) : (appConfig.thresholds.technical_weight * 100).toFixed(0)}%</strong>
+                                        <strong class="text-primary">${(((signal.applied_tech_weight ?? appConfig.thresholds.technical_weight) * 100)).toFixed(0)}%</strong>
                                     </div>
                                     <div class="col-md-3">
                                         <small class="text-muted">Sentiment Weight</small><br>
-                                        <strong class="text-info">${signal.applied_sentiment_weight !== null ? (signal.applied_sentiment_weight * 100).toFixed(0) : (appConfig.thresholds.sentiment_weight * 100).toFixed(0)}%</strong>
+                                        <strong class="text-info">${(((signal.applied_sentiment_weight ?? appConfig.thresholds.sentiment_weight) * 100)).toFixed(0)}%</strong>
                                     </div>
                                 </div>
                                 <div class="row mt-2">
@@ -2041,10 +2053,10 @@
                                         <small class="text-muted">Signal Logic</small><br>
                                         <strong class="text-secondary">
                                             ${signal.signal_type === 'BUY' ? 
-                                                `Fused Score (${signal.fused_score.toFixed(4)}) ≥ Buy Threshold (${signal.applied_buy_threshold !== null ? signal.applied_buy_threshold.toFixed(2) : appConfig.thresholds.buy_threshold.toFixed(2)})` :
+                                                `Fused Score (${(signal.fused_score ?? 0).toFixed(4)}) ≥ Buy Threshold (${(signal.applied_buy_threshold ?? appConfig.thresholds.buy_threshold).toFixed(2)})` :
                                                 signal.signal_type === 'SELL' ? 
-                                                `Fused Score (${signal.fused_score.toFixed(4)}) ≤ Sell Threshold (${signal.applied_sell_threshold !== null ? signal.applied_sell_threshold.toFixed(2) : appConfig.thresholds.sell_threshold.toFixed(2)})` :
-                                                `Fused Score (${signal.fused_score.toFixed(4)}) between thresholds (${signal.applied_sell_threshold !== null ? signal.applied_sell_threshold.toFixed(2) : appConfig.thresholds.sell_threshold.toFixed(2)} to ${signal.applied_buy_threshold !== null ? signal.applied_buy_threshold.toFixed(2) : appConfig.thresholds.buy_threshold.toFixed(2)})`
+                                                `Fused Score (${(signal.fused_score ?? 0).toFixed(4)}) ≤ Sell Threshold (${(signal.applied_sell_threshold ?? appConfig.thresholds.sell_threshold).toFixed(2)})` :
+                                                `Fused Score (${(signal.fused_score ?? 0).toFixed(4)}) between thresholds (${(signal.applied_sell_threshold ?? appConfig.thresholds.sell_threshold).toFixed(2)} to ${(signal.applied_buy_threshold ?? appConfig.thresholds.buy_threshold).toFixed(2)})`
                                             }
                                             <br><small class="text-muted">Debug: buy=${signal.applied_buy_threshold}, sell=${signal.applied_sell_threshold}</small>
                                         </strong>
@@ -2053,6 +2065,260 @@
 
                             </div>
                         </div>
+                        <!-- NEW: Phase 3 Ultra-Short-Term Parameters -->
+                        <div class="row mt-3">
+                            <div class="col-12">
+                                <h6 class="text-primary mb-2 border-bottom pb-1 small">⚡ Phase 3: Ultra-Short-Term Analysis</h6>
+                                <div class="row">
+                                    <div class="col-md-3">
+                                        <small class="text-muted">
+                                            Current Price 
+                                            <i class="bi bi-info-circle text-primary" 
+                                               data-bs-toggle="tooltip" 
+                                               data-bs-placement="top" 
+                                               title="Real-time price at signal generation. Critical for entry timing in ultra-short-term scalping."></i>
+                                        </small><br>
+                                        <strong class="text-success">$${signal.technical_indicators?.current_price ? Number(signal.technical_indicators.current_price).toFixed(2) : 'N/A'}</strong>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <small class="text-muted">
+                                            RSI (5-period) 
+                                            <i class="bi bi-info-circle text-primary" 
+                                               data-bs-toggle="tooltip" 
+                                               data-bs-placement="top" 
+                                               title="Ultra-fast RSI for 1-minute scalping. Values: <30 oversold (bullish), >70 overbought (bearish), 40-60 neutral."></i>
+                                        </small><br>
+                                        <span class="badge ${signal.technical_indicators?.rsi_14 ? (signal.technical_indicators.rsi_14 < 30 ? 'bg-success' : signal.technical_indicators.rsi_14 > 70 ? 'bg-danger' : 'bg-secondary') : 'bg-secondary'}">
+                                            ${signal.technical_indicators?.rsi_14 ? Number(signal.technical_indicators.rsi_14).toFixed(1) : 'N/A'}
+                                        </span>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <small class="text-muted">
+                                            MACD (3,7,2) 
+                                            <i class="bi bi-info-circle text-primary" 
+                                               data-bs-toggle="tooltip" 
+                                               data-bs-placement="top" 
+                                               title="Ultra-fast MACD for scalping. Positive = bullish momentum, Negative = bearish momentum."></i>
+                                        </small><br>
+                                        <strong class="${signal.technical_indicators?.macd ? (signal.technical_indicators.macd > 0 ? 'text-success' : 'text-danger') : 'text-muted'}">
+                                            ${signal.technical_indicators?.macd ? Number(signal.technical_indicators.macd).toFixed(2) : 'N/A'}
+                                        </strong>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <small class="text-muted">
+                                            ATR (5-period) 
+                                            <i class="bi bi-info-circle text-primary" 
+                                               data-bs-toggle="tooltip" 
+                                               data-bs-placement="top" 
+                                               title="Ultra-fast volatility measure. Used for dynamic stop loss and take profit calculations."></i>
+                                        </small><br>
+                                        <strong>${signal.technical_indicators?.atr ? Number(signal.technical_indicators.atr).toFixed(2) : 'N/A'}</strong>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        ${signal.regime_detection ? `
+                        <div class="row mt-3">
+                            <div class="col-12">
+                                <h6 class="text-primary mb-2 border-bottom pb-1 small">🎯 Phase 3: Regime Detection</h6>
+                                <div class="row">
+                                    <div class="col-md-4">
+                                        <small class="text-muted">Market Regime</small><br>
+                                        <span class="badge bg-${signal.regime_detection?.regime === 'trending' ? 'success' : signal.regime_detection?.regime === 'ranging' ? 'warning' : 'secondary'}">
+                                            ${(signal.regime_detection?.regime ?? 'unknown').toUpperCase()}
+                                        </span>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <small class="text-muted">Regime Confidence</small><br>
+                                        <strong>${(((signal.regime_detection?.confidence ?? 0) * 100)).toFixed(1)}%</strong>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <small class="text-muted">Trend Strength</small><br>
+                                        <strong>${(signal.regime_detection?.trend_strength ?? 0).toFixed(3)}</strong>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        ` : ''}
+                        ${signal.advanced_rsi ? `
+                        <div class="row mt-3">
+                            <div class="col-12">
+                                <h6 class="text-primary mb-2 border-bottom pb-1 small">📊 Phase 3: Advanced RSI Analysis</h6>
+                                <div class="row">
+                                    <div class="col-md-3">
+                                        <small class="text-muted">Stochastic RSI K</small><br>
+                                        <strong>${(signal.advanced_rsi?.stoch_rsi_k ?? 0).toFixed(3)}</strong>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <small class="text-muted">Stochastic RSI D</small><br>
+                                        <strong>${(signal.advanced_rsi?.stoch_rsi_d ?? 0).toFixed(3)}</strong>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <small class="text-muted">RSI Divergence</small><br>
+                                        <span class="badge bg-${signal.advanced_rsi?.divergence === 'bullish' ? 'success' : signal.advanced_rsi?.divergence === 'bearish' ? 'danger' : 'secondary'}">
+                                            ${(signal.advanced_rsi?.divergence ?? 'none').toUpperCase()}
+                                        </span>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <small class="text-muted">RSI Momentum</small><br>
+                                        <strong>${(signal.advanced_rsi?.momentum ?? 0).toFixed(3)}</strong>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        ` : ''}
+                        <!-- NEW: Phase 3 Position Sizing & Risk -->
+                        <div class="row mt-3">
+                            <div class="col-12">
+                                <h6 class="text-primary mb-2 border-bottom pb-1 small">💰 Phase 3: Position Sizing & Risk</h6>
+                                <div class="row">
+                                    <div class="col-md-3">
+                                        <small class="text-muted">
+                                            Position Size 
+                                            <i class="bi bi-info-circle text-primary" 
+                                               data-bs-toggle="tooltip" 
+                                               data-bs-placement="top" 
+                                               title="Dynamic position sizing based on confidence and volatility. Optimized for scalping with higher frequency trading."></i>
+                                        </small><br>
+                                        <strong class="text-primary">${signal.position_sizing?.recommended_size ? (Number(signal.position_sizing.recommended_size) * 100).toFixed(1) + '%' : 'N/A'}</strong>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <small class="text-muted">
+                                            Risk Level 
+                                            <i class="bi bi-info-circle text-primary" 
+                                               data-bs-toggle="tooltip" 
+                                               data-bs-placement="top" 
+                                               title="Calculated risk assessment based on volatility and market conditions. Lower values = safer for scalping."></i>
+                                        </small><br>
+                                        <span class="badge ${signal.risk_metrics?.risk_level === 'low' ? 'bg-success' : signal.risk_metrics?.risk_level === 'medium' ? 'bg-warning' : signal.risk_metrics?.risk_level === 'high' ? 'bg-danger' : 'bg-secondary'}">
+                                            ${signal.risk_metrics?.risk_level?.toUpperCase() || 'N/A'}
+                                        </span>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <small class="text-muted">
+                                            Volatility 
+                                            <i class="bi bi-info-circle text-primary" 
+                                               data-bs-toggle="tooltip" 
+                                               data-bs-placement="top" 
+                                               title="Current market volatility. Higher volatility = wider stops, lower volatility = tighter stops."></i>
+                                        </small><br>
+                                        <strong>${signal.risk_metrics?.volatility ? (Number(signal.risk_metrics.volatility) * 100).toFixed(2) + '%' : 'N/A'}</strong>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <small class="text-muted">
+                                            VaR (95%) 
+                                            <i class="bi bi-info-circle text-primary" 
+                                               data-bs-toggle="tooltip" 
+                                               data-bs-placement="top" 
+                                               title="Value at Risk at 95% confidence level. Maximum expected loss in worst 5% of scenarios."></i>
+                                        </small><br>
+                                        <strong>${signal.risk_metrics?.var_95 ? (Number(signal.risk_metrics.var_95) * 100).toFixed(2) + '%' : 'N/A'}</strong>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        ${signal.position_sizing ? `
+                        <div class="row mt-3">
+                            <div class="col-12">
+                                <h6 class="text-primary mb-2 border-bottom pb-1 small">💰 Phase 3: Position Sizing</h6>
+                                <div class="row">
+                                    <div class="col-md-4">
+                                        <small class="text-muted">Recommended Size</small><br>
+                                        <strong>${(((signal.position_sizing?.recommended_size ?? 0) * 100)).toFixed(1)}%</strong>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <small class="text-muted">Risk Per Trade</small><br>
+                                        <strong>${(((signal.position_sizing?.risk_per_trade ?? 0) * 100)).toFixed(1)}%</strong>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <small class="text-muted">Max Position</small><br>
+                                        <strong>${(((signal.position_sizing?.max_position ?? 0) * 100)).toFixed(1)}%</strong>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        ` : ''}
+                        ${signal.risk_metrics ? `
+                        <div class="row mt-3">
+                            <div class="col-12">
+                                <h6 class="text-primary mb-2 border-bottom pb-1 small">⚠️ Phase 3: Risk Metrics</h6>
+                                <div class="row">
+                                    <div class="col-md-3">
+                                        <small class="text-muted">Volatility</small><br>
+                                        <strong>${(((signal.risk_metrics?.volatility ?? 0) * 100)).toFixed(2)}%</strong>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <small class="text-muted">VaR (95%)</small><br>
+                                        <strong>${(((signal.risk_metrics?.var_95 ?? 0) * 100)).toFixed(2)}%</strong>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <small class="text-muted">Sharpe Ratio</small><br>
+                                        <strong>${(signal.risk_metrics?.sharpe_ratio ?? 0).toFixed(3)}</strong>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <small class="text-muted">Max Drawdown</small><br>
+                                        <strong>${(((signal.risk_metrics?.max_drawdown ?? 0) * 100)).toFixed(2)}%</strong>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        ` : ''}
+                        ${signal.multi_timeframe ? `
+                        <div class="row mt-3">
+                            <div class="col-12">
+                                <h6 class="text-primary mb-2 border-bottom pb-1 small">⚡ Ultra-Short-Term Multi-Timeframe (Scalping Optimized)</h6>
+                                <div class="row">
+                                    <div class="col-md-4">
+                                        <small class="text-muted">1m Trend (50% weight)</small><br>
+                                        <span class="badge bg-${signal.multi_timeframe?.overall_trend === 'bullish' ? 'success' : signal.multi_timeframe?.overall_trend === 'bearish' ? 'danger' : 'secondary'}">
+                                            ${signal.multi_timeframe?.overall_trend?.toUpperCase() || 'N/A'}
+                                        </span>
+                                        <br><small class="text-muted">Primary scalping timeframe</small>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <small class="text-muted">5m Trend (30% weight)</small><br>
+                                        <span class="badge bg-${signal.multi_timeframe?.overall_trend === 'bullish' ? 'success' : signal.multi_timeframe?.overall_trend === 'bearish' ? 'danger' : 'secondary'}">
+                                            ${signal.multi_timeframe?.overall_trend?.toUpperCase() || 'N/A'}
+                                        </span>
+                                        <br><small class="text-muted">Trend confirmation</small>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <small class="text-muted">15m Trend (20% weight)</small><br>
+                                        <span class="badge bg-${signal.multi_timeframe?.overall_trend === 'bullish' ? 'success' : signal.multi_timeframe?.overall_trend === 'bearish' ? 'danger' : 'secondary'}">
+                                            ${signal.multi_timeframe?.overall_trend?.toUpperCase() || 'N/A'}
+                                        </span>
+                                        <br><small class="text-muted">Overall direction</small>
+                                    </div>
+                                </div>
+                                <div class="row mt-2">
+                                    <div class="col-12">
+                                        <small class="text-muted">Trend Consensus</small><br>
+                                        <strong class="text-primary">${signal.multi_timeframe?.trend_consensus ? (Number(signal.multi_timeframe?.trend_consensus) * 100).toFixed(1) + '%' : 'N/A'}</strong>
+                                        <br><small class="text-muted">Weighted consensus across all timeframes</small>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        ` : ''}
+                        ${signal.btc_dominance ? `
+                        <div class="row mt-3">
+                            <div class="col-12">
+                                <h6 class="text-primary mb-2 border-bottom pb-1 small">₿ Phase 3: Market Context</h6>
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <small class="text-muted">BTC Dominance</small><br>
+                                        <strong>${(signal.btc_dominance?.btc_dominance ?? 0).toFixed(2)}%</strong>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <small class="text-muted">Dominance Change</small><br>
+                                        <strong class="${(signal.btc_dominance?.dominance_change ?? 0) >= 0 ? 'text-success' : 'text-danger'}">
+                                            ${((signal.btc_dominance?.dominance_change ?? 0) >= 0 ? '+' : '')}${(signal.btc_dominance?.dominance_change ?? 0).toFixed(2)}%
+                                        </strong>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        ` : ''}
                         <div class="row mt-3">
                             <div class="col-12">
                                 <div class="d-flex justify-content-between align-items-center mb-2">
@@ -2670,6 +2936,126 @@
             }
         }
 
+        async function generatePhase3Signal() {
+            const symbol = document.getElementById('symbol-input').value;
+            const timeframe = document.getElementById('timeframe-input').value;
+            
+            // Get custom threshold parameters
+            const buyThreshold = document.getElementById('buy-threshold-input').value;
+            const sellThreshold = document.getElementById('sell-threshold-input').value;
+            const technicalWeight = document.getElementById('tech-weight-input').value;
+            const sentimentWeight = document.getElementById('sentiment-weight-input').value;
+            
+            if (!symbol) {
+                alert('Please select a market from the dropdown');
+                return;
+            }
+            
+            if (!timeframe) {
+                alert('Please select a timeframe from the dropdown');
+                return;
+            }
+            
+            // Log the parameters being sent
+            console.log('🎛️ Sending custom parameters:', {
+                symbol, timeframe,
+                buy_threshold: buyThreshold || 'default',
+                sell_threshold: sellThreshold || 'default', 
+                technical_weight: technicalWeight || 'default',
+                sentiment_weight: sentimentWeight || 'default'
+            });
+            
+            // Show impressive AI-powered loading animation
+            const generateBtn = document.querySelector('button[onclick="generatePhase3Signal()"]');
+            const originalText = generateBtn.innerHTML;
+            generateBtn.innerHTML = '<i class="bi bi-cpu"></i> AI Analyzing...';
+            generateBtn.disabled = true;
+            
+            // Create and show AI analysis modal
+            const aiModalPromise = showAIAnalysisModal(symbol, timeframe);
+            
+            try {
+                const token = localStorage.getItem('auth_token');
+                if (!token) {
+                    showNotification('Please log in to generate trading signals', 'error');
+                    window.location.href = '/login';
+                    return;
+                }
+                
+                // Start the API call immediately (don't wait for animation)
+                const apiPromise = fetch('/api/signals/generate-phase3', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify({
+                        symbol: symbol,
+                        timeframe: timeframe,
+                        buy_threshold: buyThreshold ? parseFloat(buyThreshold) : null,
+                        sell_threshold: sellThreshold ? parseFloat(sellThreshold) : null,
+                        technical_weight: technicalWeight ? parseFloat(technicalWeight) : null,
+                        sentiment_weight: sentimentWeight ? parseFloat(sentimentWeight) : null
+                    })
+                });
+                
+                // Wait for both animation and API call to complete
+                const [animationResult, response] = await Promise.all([aiModalPromise, apiPromise]);
+                
+                if (response.ok) {
+                    const signal = await response.json();
+                    
+                    // Hide AI analysis modal first
+                    hideAIAnalysisModal();
+                    
+                    // Show completion popup
+                    showSignalCompletionModal(signal);
+                    
+                    // Show success message
+                    showNotification('Phase 3 trading tip generated successfully!', 'success');
+                    
+                    // Automatically refresh signals list to show the new signal
+                    setTimeout(() => {
+                        loadSignals();
+                    }, 1000);
+                } else {
+                    const error = await response.json();
+                    let errorMessage = 'Unknown error occurred';
+                    let errorTitle = 'Error';
+                    
+                    // Handle different types of errors
+                    if (typeof error.detail === 'object' && error.detail.error) {
+                        // New structured error format
+                        errorTitle = error.detail.error;
+                        errorMessage = error.detail.message;
+                        
+                        // Show detailed popup for data availability issues
+                        if (error.detail.error === 'Data Unavailable') {
+                            showDataUnavailableModal(error.detail);
+                            hideAIAnalysisModal();
+                            return;
+                        }
+                    } else if (typeof error.detail === 'string') {
+                        // Legacy string error format
+                        errorMessage = error.detail;
+                    }
+                    
+                    showNotification(`${errorTitle}: ${errorMessage}`, 'error');
+                    // Hide modal on API error
+                    hideAIAnalysisModal();
+                }
+            } catch (error) {
+                console.error('Error generating Phase 3 signal:', error);
+                showNotification('Network error. Please check your connection and try again.', 'error');
+                // Hide modal on error
+                hideAIAnalysisModal();
+            } finally {
+                // Reset button state (modal is already hidden by animation)
+                generateBtn.innerHTML = originalText;
+                generateBtn.disabled = false;
+            }
+        }
+
         function showDataUnavailableModal(errorDetail) {
             // Create data unavailable modal HTML
             const modalHTML = `
@@ -2764,7 +3150,7 @@
                     </div>
                     <div class="col-md-6">
                         <h6>Scores</h6>
-                        <p><strong>Technical:</strong> ${signal.technical_score.toFixed(2)} 
+                        <p><strong>Technical:</strong> ${(signal.technical_score ?? 0).toFixed(2)} 
                             <i class="bi bi-info-circle text-primary" 
                                data-bs-toggle="tooltip" 
                                data-bs-placement="top" 
@@ -2779,7 +3165,7 @@
                                data-bs-placement="top" 
                                title="News sentiment analysis using FinBERT model. Range: -1 to +1. Positive = bullish news, Negative = bearish news. Based on recent market headlines from Google News RSS feeds."></i>
                         </p>
-                        <p><strong>Fused:</strong> ${signal.fused_score.toFixed(2)} 
+                        <p><strong>Fused:</strong> ${(signal.fused_score ?? 0).toFixed(2)} 
                             <i class="bi bi-info-circle text-primary" 
                                data-bs-toggle="tooltip" 
                                data-bs-placement="top" 
@@ -2790,13 +3176,13 @@
                 <div class="row mt-3">
                     <div class="col-12">
                         <h6>Risk Management</h6>
-                        ${signal.stop_loss ? `<p><strong>Stop Loss:</strong> $${signal.stop_loss.toFixed(2)} 
+                        ${signal.stop_loss ? `<p><strong>Stop Loss:</strong> $${(signal.stop_loss ?? 0).toFixed(2)} 
                             <i class="bi bi-info-circle text-primary" 
                                data-bs-toggle="tooltip" 
                                data-bs-placement="top" 
                                title="Automatic exit price to limit losses. Calculated as: Current Price ± (2 × ATR). For BUY signals: Current Price - (2 × ATR). For SELL signals: Current Price + (2 × ATR). ATR = Average True Range (volatility measure)."></i>
                         </p>` : ''}
-                        ${signal.take_profit ? `<p><strong>Take Profit:</strong> $${signal.take_profit.toFixed(2)} 
+                        ${signal.take_profit ? `<p><strong>Take Profit:</strong> $${(signal.take_profit ?? 0).toFixed(2)} 
                             <i class="bi bi-info-circle text-primary" 
                                data-bs-toggle="tooltip" 
                                data-bs-placement="top" 
@@ -2809,12 +3195,12 @@
                         <h6>Applied Thresholds</h6>
                         <div class="row">
                             <div class="col-md-6">
-                                <p><strong>Buy Threshold:</strong> ${signal.applied_buy_threshold !== null ? signal.applied_buy_threshold.toFixed(2) : `Default (${appConfig.thresholds.buy_threshold})`}</p>
-                                <p><strong>Sell Threshold:</strong> ${signal.applied_sell_threshold !== null ? signal.applied_sell_threshold.toFixed(2) : `Default (${appConfig.thresholds.sell_threshold})`}</p>
+                                <p><strong>Buy Threshold:</strong> ${signal.applied_buy_threshold !== null ? (signal.applied_buy_threshold ?? 0).toFixed(2) : `Default (${appConfig.thresholds.buy_threshold})`}</p>
+                                <p><strong>Sell Threshold:</strong> ${signal.applied_sell_threshold !== null ? (signal.applied_sell_threshold ?? 0).toFixed(2) : `Default (${appConfig.thresholds.sell_threshold})`}</p>
                             </div>
                             <div class="col-md-6">
-                                <p><strong>Tech Weight:</strong> ${signal.applied_tech_weight !== null ? signal.applied_tech_weight.toFixed(2) : `Default (${appConfig.thresholds.technical_weight})`}</p>
-                                <p><strong>Sentiment Weight:</strong> ${signal.applied_sentiment_weight !== null ? signal.applied_sentiment_weight.toFixed(2) : `Default (${appConfig.thresholds.sentiment_weight})`}</p>
+                                <p><strong>Tech Weight:</strong> ${signal.applied_tech_weight !== null ? (signal.applied_tech_weight ?? 0).toFixed(2) : `Default (${appConfig.thresholds.technical_weight})`}</p>
+                                <p><strong>Sentiment Weight:</strong> ${signal.applied_sentiment_weight !== null ? (signal.applied_sentiment_weight ?? 0).toFixed(2) : `Default (${appConfig.thresholds.sentiment_weight})`}</p>
                             </div>
                         </div>
                     </div>
@@ -3871,7 +4257,9 @@
         }
         
         // Character count for contact message
-        document.getElementById('contact-message').addEventListener('input', function() {
+        const contactMessage = document.getElementById('contact-message');
+        if (contactMessage) {
+            contactMessage.addEventListener('input', function() {
             const count = this.value.length;
             document.getElementById('contact-char-count').textContent = count;
             
@@ -3880,6 +4268,7 @@
                 document.getElementById('contact-char-count').textContent = '1000';
             }
         });
+        }
         
         async function sendMessageToAdmin() {
             try {

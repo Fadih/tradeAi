@@ -12,10 +12,16 @@ This module provides the most advanced signal generation capabilities with:
 
 import asyncio
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Dict, Any, List, Tuple, Optional
 import pandas as pd
 import numpy as np
+from pydantic import BaseModel
+import aiohttp
+import hashlib
+import json
+from functools import lru_cache
+import time
 
 from agent.config import load_config_from_env
 from agent.indicators import (
@@ -23,96 +29,195 @@ from agent.indicators import (
     compute_adx, compute_volatility_regime, compute_market_regime,
     compute_advanced_rsi_variants, compute_dynamic_position_sizing,
     compute_volatility_adjusted_stops, compute_bollinger_bands,
-    compute_vwap, compute_obv, compute_mfi, compute_vwap_anchored,
+    compute_obv, compute_mfi, compute_vwap_anchored,
     compute_accumulation_distribution, compute_ma_crossovers_and_slopes,
     compute_keltner_channels, compute_multi_timeframe_analysis,
     compute_cross_asset_correlation, compute_btc_dominance,
     compute_market_wide_sentiment
 )
-from agent.sentiment import SentimentAnalyzer
-from agent.data import fetch_ohlcv, fetch_alpaca_ohlcv
+from agent.models.sentiment import SentimentAnalyzer
+from agent.news.rss import fetch_headlines
+from agent.news.reddit import fetch_reddit_posts
+from agent.data.ccxt_client import fetch_ohlcv
+from agent.data.alpaca_client import fetch_ohlcv as fetch_alpaca_ohlcv
 from agent.cache.redis_client import get_redis_client
-from web.main import get_israel_time
+
+# Local time helper to avoid circular import with web.main
+try:
+    import pytz  # type: ignore
+    def get_israel_time() -> datetime:
+        return datetime.now(pytz.timezone("Asia/Jerusalem"))
+except Exception:
+    # Fallback without pytz
+    def get_israel_time() -> datetime:
+        return datetime.now()
 
 logger = logging.getLogger(__name__)
 
-class Phase3TradingSignal:
+def timing_decorator(phase_name: str):
+    """Decorator to time function execution"""
+    def decorator(func):
+        async def async_wrapper(*args, **kwargs):
+            start_time = time.time()
+            result = await func(*args, **kwargs)
+            end_time = time.time()
+            duration = end_time - start_time
+            logger.info(f"⏱️  {phase_name}: {duration:.3f}s")
+            return result
+        
+        def sync_wrapper(*args, **kwargs):
+            start_time = time.time()
+            result = func(*args, **kwargs)
+            end_time = time.time()
+            duration = end_time - start_time
+            logger.info(f"⏱️  {phase_name}: {duration:.3f}s")
+            return result
+        
+        if asyncio.iscoroutinefunction(func):
+            return async_wrapper
+        else:
+            return sync_wrapper
+    return decorator
+
+def to_serializable(obj: Any) -> Any:
+    """Recursively convert pandas and numpy types to JSON-serializable Python types."""
+    try:
+        import numpy as _np  # local alias to avoid shadowing
+        import pandas as _pd
+    except Exception:
+        _np = None
+        _pd = None
+
+    # Handle scalar values first
+    if _np is not None and isinstance(obj, (_np.bool_,)):
+        return bool(obj)
+    if _np is not None and isinstance(obj, (_np.integer,)):
+        return int(obj)
+    if _np is not None and isinstance(obj, (_np.floating,)):
+        val = float(obj)
+        # Handle NaN, inf, -inf
+        if _np.isnan(val) or _np.isinf(val):
+            return 0.0
+        return val
+    
+    # Handle Python built-in types
+    if isinstance(obj, (int, float)):
+        if _np is not None and (_np.isnan(obj) or _np.isinf(obj)):
+            return 0.0
+        return obj
+    if isinstance(obj, bool):
+        return obj
+    if obj is None:
+        return None
+
+    if _pd is not None and isinstance(obj, _pd.Series):
+        # Convert element-wise with best-effort numeric casting
+        result_list = []
+        for v in obj.tolist():
+            try:
+                if v is None:
+                    result_list.append(None)
+                elif _np is not None and isinstance(v, (_np.bool_,)):
+                    result_list.append(bool(v))
+                elif _np is not None and isinstance(v, (_np.integer, _np.floating)):
+                    val = float(v)
+                    if _np.isnan(val) or _np.isinf(val):
+                        result_list.append(0.0)
+                    else:
+                        result_list.append(val)
+                else:
+                    # Try numeric conversion first
+                    val = float(v)
+                    if _np is not None and (_np.isnan(val) or _np.isinf(val)):
+                        result_list.append(0.0)
+                    else:
+                        result_list.append(val)
+            except Exception:
+                # Fallback to string representation
+                result_list.append(str(v))
+        return result_list
+    if _pd is not None and isinstance(obj, _pd.DataFrame):
+        out: Dict[str, Any] = {}
+        for col in obj.columns:
+            try:
+                series = obj[col]
+                out[col] = to_serializable(series)
+            except Exception:
+                out[str(col)] = [str(v) for v in obj[col].tolist()]
+        return out
+    if _np is not None and isinstance(obj, _np.ndarray):
+        return obj.tolist()
+    if isinstance(obj, dict):
+        return {k: to_serializable(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple, set)):
+        return [to_serializable(v) for v in obj]
+    return obj
+
+class Phase3SignalRequest(BaseModel):
+    """Phase 3 signal generation request with custom parameters"""
+    symbol: str
+    timeframe: str
+    buy_threshold: Optional[float] = None
+    sell_threshold: Optional[float] = None
+    technical_weight: Optional[float] = None
+    sentiment_weight: Optional[float] = None
+
+class Phase3TradingSignal(BaseModel):
     """Phase 3 complete trading signal model with all Phase 1, 2, and 3 features"""
     
-    def __init__(
-        self,
-        symbol: str,
-        timeframe: str,
-        timestamp: datetime,
-        signal_type: str,
-        technical_score: float,
-        sentiment_score: float,
-        fused_score: float,
-        confidence: float,
-        stop_loss: float,
-        take_profit: float,
-        # Phase 3 Advanced Features
-        regime_detection: Dict[str, Any],
-        advanced_rsi: Dict[str, Any],
-        position_sizing: Dict[str, Any],
-        volatility_adjusted_stops: Dict[str, Any],
-        risk_metrics: Dict[str, Any],
-        technical_indicators: Dict[str, Any],
-        market_microstructure: Dict[str, Any],
-        # Phase 1 Enhanced Technical Analysis
-        bollinger_bands: Dict[str, Any],
-        vwap_analysis: Dict[str, Any],
-        volume_indicators: Dict[str, Any],
-        moving_averages: Dict[str, Any],
-        keltner_channels: Dict[str, Any],
-        # Phase 2 Multi-Timeframe Analysis
-        multi_timeframe: Dict[str, Any],
-        cross_asset_correlation: Dict[str, Any],
-        btc_dominance: Dict[str, Any],
-        market_wide_sentiment: Dict[str, Any],
-        username: str
-    ):
-        self.symbol = symbol
-        self.timeframe = timeframe
-        self.timestamp = timestamp
-        self.signal_type = signal_type
-        self.technical_score = technical_score
-        self.sentiment_score = sentiment_score
-        self.fused_score = fused_score
-        self.confidence = confidence
-        self.stop_loss = stop_loss
-        self.take_profit = take_profit
+    # Core fields
+    symbol: str
+    timeframe: str
+    timestamp: datetime
+    signal_type: str
+    technical_score: float
+    sentiment_score: float
+    fused_score: float
+    confidence: float
+    stop_loss: float
+    take_profit: float
+    output_level: str = "full"  # Performance optimization: "minimal", "standard", "full"
         
         # Phase 3 Advanced Features
-        self.regime_detection = regime_detection
-        self.advanced_rsi = advanced_rsi
-        self.position_sizing = position_sizing
-        self.volatility_adjusted_stops = volatility_adjusted_stops
-        self.risk_metrics = risk_metrics
-        self.technical_indicators = technical_indicators
-        self.market_microstructure = market_microstructure
+    regime_detection: Dict[str, Any]
+    advanced_rsi: Dict[str, Any]
+    position_sizing: Dict[str, Any]
+    volatility_adjusted_stops: Dict[str, Any]
+    risk_metrics: Dict[str, Any]
+    technical_indicators: Dict[str, Any]
+    market_microstructure: Dict[str, Any]
         
         # Phase 1 Enhanced Technical Analysis
-        self.bollinger_bands = bollinger_bands
-        self.vwap_analysis = vwap_analysis
-        self.volume_indicators = volume_indicators
-        self.moving_averages = moving_averages
-        self.keltner_channels = keltner_channels
+    bollinger_bands: Dict[str, Any]
+    vwap_analysis: Dict[str, Any]
+    volume_indicators: Dict[str, Any]
+    moving_averages: Dict[str, Any]
+    keltner_channels: Dict[str, Any]
         
         # Phase 2 Multi-Timeframe Analysis
-        self.multi_timeframe = multi_timeframe
-        self.cross_asset_correlation = cross_asset_correlation
-        self.btc_dominance = btc_dominance
-        self.market_wide_sentiment = market_wide_sentiment
-        
-        self.username = username
+    multi_timeframe: Dict[str, Any]
+    cross_asset_correlation: Dict[str, Any]
+    btc_dominance: Dict[str, Any]
+    market_wide_sentiment: Dict[str, Any]
+
+    # Applied Parameters (for UI display)
+    applied_buy_threshold: Optional[float] = None
+    applied_sell_threshold: Optional[float] = None
+    applied_tech_weight: Optional[float] = None
+    applied_sentiment_weight: Optional[float] = None
+
+    # Metadata
+    username: str
 
 class Phase3SignalGenerator:
-    """Phase 3 Advanced Signal Generator - Completely Independent"""
+    """Phase 3 Advanced Signal Generator with Performance Optimizations"""
     
     def __init__(self):
         self.sentiment_analyzer = None
-        logger.info("🚀 Phase 3 Signal Generator initialized - Independent mode")
+        self.session = None  # aiohttp session for async requests
+        self.cache_ttl = 300  # 5 minutes cache TTL
+        logger.info("🚀 Phase 3 Signal Generator initialized - Performance Optimized mode")
+    
     
     def fetch_market_data(self, symbol: str, timeframe: str) -> pd.DataFrame:
         """Fetch market data for Phase 3 analysis"""
@@ -121,7 +226,7 @@ class Phase3SignalGenerator:
         try:
             # Try crypto first
             if "/" in symbol and any(crypto in symbol.upper() for crypto in ["BTC", "ETH", "ADA", "DOT", "LINK", "UNI", "AAVE", "SOL", "MATIC", "AVAX"]):
-                ohlcv = fetch_ohlcv(symbol, timeframe, limit=200)
+                ohlcv = fetch_ohlcv(symbol, timeframe)
                 logger.info(f"✅ Crypto data fetched: {len(ohlcv)} candles")
                 return ohlcv
             else:
@@ -134,8 +239,21 @@ class Phase3SignalGenerator:
             logger.error(f"❌ Failed to fetch market data: {e}")
             raise
     
+    def _get_last_valid_value(self, series: pd.Series) -> float:
+        """Get the last valid (non-NaN) value from a pandas Series"""
+        try:
+            # Drop NaN values and get the last value
+            valid_values = series.dropna()
+            if len(valid_values) > 0:
+                return float(valid_values.iloc[-1])
+            else:
+                return 0.0
+        except Exception:
+            return 0.0
+
     def calculate_phase3_technical_indicators(self, ohlcv: pd.DataFrame) -> Dict[str, Any]:
         """Calculate comprehensive technical indicators for Phase 3 with all Phase 1, 2, and 3 features"""
+        start_time = time.time()
         logger.info("🔧 Calculating Phase 3 complete technical indicators")
         
         try:
@@ -147,34 +265,64 @@ class Phase3SignalGenerator:
             indicators = {}
             
             # Basic indicators
-            indicators['rsi_14'] = compute_rsi(close, period=14)
-            indicators['rsi_21'] = compute_rsi(close, period=21)
+            logger.info("📊 Computing RSI indicators (14, 21 periods)")
+            rsi_14_series = compute_rsi(close, period=14)
+            rsi_21_series = compute_rsi(close, period=21)
+            indicators['rsi_14'] = rsi_14_series
+            indicators['rsi_21'] = rsi_21_series
+            # Add simple 'rsi' field for UI compatibility (scalar value)
+            rsi_value = self._get_last_valid_value(rsi_14_series)
+            indicators['rsi'] = rsi_value
+            logger.info(f"📊 RSI: {rsi_value}")
             
             # Enhanced Moving Averages (Phase 1) - All periods
-            indicators['ema_5'] = compute_ema(close, period=5)
-            indicators['ema_9'] = compute_ema(close, period=9)
-            indicators['ema_12'] = compute_ema(close, period=12)
-            indicators['ema_21'] = compute_ema(close, period=21)
-            indicators['ema_26'] = compute_ema(close, period=26)
-            indicators['ema_50'] = compute_ema(close, period=50)
-            indicators['ema_200'] = compute_ema(close, period=200)
+            logger.info("📊 Computing EMAs (5, 9, 12, 21, 26, 50, 200 periods)")
+            indicators['ema_5'] = compute_ema(close, span=5)
+            indicators['ema_9'] = compute_ema(close, span=9)
+            indicators['ema_12'] = compute_ema(close, span=12)
+            indicators['ema_21'] = compute_ema(close, span=21)
+            indicators['ema_26'] = compute_ema(close, span=26)
+            indicators['ema_50'] = compute_ema(close, span=50)
+            indicators['ema_200'] = compute_ema(close, span=200)
             
             # MACD
+            logger.info("📊 Computing MACD (12, 26, 9)")
             macd_data = compute_macd(close)
-            indicators['macd'] = macd_data['macd']
+            macd_value = self._get_last_valid_value(macd_data['macd'])
+            indicators['macd'] = macd_value
             indicators['macd_signal'] = macd_data['signal']
-            indicators['macd_histogram'] = macd_data['histogram']
+            # Indicators DataFrame uses 'hist' column name
+            indicators['macd_histogram'] = macd_data['hist']
+            logger.info(f"📈 MACD: {macd_value}")
             
             # ATR
-            indicators['atr'] = compute_atr(high, low, close, period=14)
+            logger.info("📊 Computing ATR (14 period)")
+            atr_series = compute_atr(high, low, close, period=14)
+            atr_value = self._get_last_valid_value(atr_series)
+            indicators['atr'] = atr_value
+            logger.info(f"📉 ATR: {atr_value}")
             
             # ADX for trend strength
+            logger.info("📊 Computing ADX and DI indicators (14 period)")
             adx_data = compute_adx(high, low, close, period=14)
             indicators['adx'] = adx_data['adx']
             indicators['di_plus'] = adx_data['di_plus']
             indicators['di_minus'] = adx_data['di_minus']
             
-            logger.info("✅ Phase 3 technical indicators calculated")
+            duration = time.time() - start_time
+            logger.info(f"✅ Phase 3 technical indicators calculated in {duration:.3f}s")
+            
+            # Log key values
+            try:
+                rsi_14_val = float(indicators['rsi_14'].iloc[-1]) if not indicators['rsi_14'].empty else None
+                ema_21_val = float(indicators['ema_21'].iloc[-1]) if not indicators['ema_21'].empty else None
+                ema_50_val = float(indicators['ema_50'].iloc[-1]) if not indicators['ema_50'].empty else None
+                atr_val = float(indicators['atr'].iloc[-1]) if not indicators['atr'].empty else None
+                adx_val = float(indicators['adx'].iloc[-1]) if not indicators['adx'].empty else None
+                logger.info(f"📊 Key values: RSI14={rsi_14_val:.2f}, EMA21={ema_21_val:.2f}, EMA50={ema_50_val:.2f}, ATR={atr_val:.2f}, ADX={adx_val:.2f}")
+            except Exception:
+                pass
+                
             return indicators
             
         except Exception as e:
@@ -183,6 +331,7 @@ class Phase3SignalGenerator:
     
     def analyze_advanced_regime_detection(self, ohlcv: pd.DataFrame) -> Dict[str, Any]:
         """Advanced market regime detection for Phase 3"""
+        start_time = time.time()
         logger.info("🔍 Analyzing advanced regime detection")
         
         try:
@@ -191,7 +340,7 @@ class Phase3SignalGenerator:
             close = ohlcv['close']
             
             # Get ADX-based regime detection
-            adx_data = compute_adx(high, low, close, adx_period=14)
+            adx_data = compute_adx(high, low, close, period=14)
             
             # Get volatility regime
             vol_data = compute_volatility_regime(close, period=20)
@@ -209,7 +358,9 @@ class Phase3SignalGenerator:
                 'regime_classification': regime_data.get('regime', 'trending')
             }
             
-            logger.info(f"✅ Advanced regime detection completed: {combined_regime['regime_classification']}")
+            duration = time.time() - start_time
+            logger.info(f"✅ Advanced regime detection completed in {duration:.3f}s: {combined_regime['regime_classification']}")
+            logger.info(f"🔍 Regime details: trend_strength={combined_regime['trend_strength']:.3f}, volatility_state={combined_regime['volatility_state']}")
             return combined_regime
             
         except Exception as e:
@@ -226,25 +377,33 @@ class Phase3SignalGenerator:
     
     def analyze_advanced_rsi_variants(self, ohlcv: pd.DataFrame) -> Dict[str, Any]:
         """Advanced RSI variants analysis for Phase 3"""
+        start_time = time.time()
         logger.info("📊 Analyzing advanced RSI variants")
         
         try:
             close = ohlcv['close']
             
-            # Get advanced RSI variants
+            # Get advanced RSI variants from indicators helper
             rsi_data = compute_advanced_rsi_variants(close, periods=[7, 9, 14, 21])
             
-            # Calculate RSI crossovers and signals
+            # Normalize keys defensively (some helpers may not return all keys)
             rsi_7 = rsi_data.get('rsi_7', pd.Series([50]))
             rsi_14 = rsi_data.get('rsi_14', pd.Series([50]))
             rsi_21 = rsi_data.get('rsi_21', pd.Series([50]))
             
-            # RSI alignment analysis
-            current_rsi_7 = rsi_7.iloc[-1] if len(rsi_7) > 0 else 50
-            current_rsi_14 = rsi_14.iloc[-1] if len(rsi_14) > 0 else 50
-            current_rsi_21 = rsi_21.iloc[-1] if len(rsi_21) > 0 else 50
+            # RSI alignment analysis - handle both Series and scalar values
+            def get_rsi_value(rsi_data):
+                if hasattr(rsi_data, 'iloc') and len(rsi_data) > 0:
+                    return float(rsi_data.iloc[-1])
+                elif isinstance(rsi_data, (int, float)):
+                    return float(rsi_data)
+                else:
+                    return 50.0
             
-            # Determine RSI alignment
+            current_rsi_7 = get_rsi_value(rsi_7)
+            current_rsi_14 = get_rsi_value(rsi_14)
+            current_rsi_21 = get_rsi_value(rsi_21)
+            
             if current_rsi_7 > current_rsi_14 > current_rsi_21:
                 rsi_alignment = "bullish"
             elif current_rsi_7 < current_rsi_14 < current_rsi_21:
@@ -252,7 +411,6 @@ class Phase3SignalGenerator:
             else:
                 rsi_alignment = "mixed"
             
-            # Add alignment to RSI data
             rsi_data['alignment'] = rsi_alignment
             rsi_data['current_values'] = {
                 'rsi_7': current_rsi_7,
@@ -260,7 +418,9 @@ class Phase3SignalGenerator:
                 'rsi_21': current_rsi_21
             }
             
-            logger.info(f"✅ Advanced RSI variants analysis completed: {rsi_alignment}")
+            duration = time.time() - start_time
+            logger.info(f"✅ Advanced RSI variants analysis completed in {duration:.3f}s: {rsi_alignment}")
+            logger.info(f"📊 RSI values: RSI7={current_rsi_7:.2f}, RSI14={current_rsi_14:.2f}, RSI21={current_rsi_21:.2f}")
             return rsi_data
             
         except Exception as e:
@@ -286,14 +446,26 @@ class Phase3SignalGenerator:
             # Get configuration
             config = load_config_from_env()
             
-            # Fetch sentiment data
-            sentiment_score = await self.sentiment_analyzer.analyze_sentiment(
-                symbol, 
+            # Collect texts from RSS and Reddit (recent, symbol-filtered)
+            rss_texts = fetch_headlines(
                 config.sentiment_analysis.rss_feeds,
-                config.sentiment_analysis.reddit_subreddits,
-                config.sentiment_analysis.rss_max_headlines_per_feed,
-                config.sentiment_analysis.reddit_max_posts_per_subreddit
+                limit_per_feed=config.sentiment_analysis.rss_max_headlines_per_feed,
+                symbol=symbol,
+                hours_back=6,
             )
+            reddit_texts = fetch_reddit_posts(
+                config.sentiment_analysis.reddit_subreddits,
+                limit_per_subreddit=config.sentiment_analysis.reddit_max_posts_per_subreddit,
+                symbol=symbol,
+                hours_back=6,
+            )
+            texts = (rss_texts or []) + (reddit_texts or [])
+            if not texts:
+                logger.info("No sentiment texts collected; returning neutral sentiment 0.0")
+                return 0.0
+
+            # Score sentiment using analyzer
+            sentiment_score = self.sentiment_analyzer.score(texts)
             
             logger.info(f"✅ Phase 3 sentiment analysis completed: {sentiment_score:.4f}")
             return sentiment_score
@@ -304,6 +476,7 @@ class Phase3SignalGenerator:
     
     def calculate_phase3_technical_score(self, indicators: Dict[str, Any], regime_data: Dict[str, Any], rsi_data: Dict[str, Any]) -> float:
         """Calculate Phase 3 technical score"""
+        start_time = time.time()
         logger.info("🧮 Calculating Phase 3 technical score")
         
         try:
@@ -313,75 +486,315 @@ class Phase3SignalGenerator:
             rsi_14 = indicators.get('rsi_14', pd.Series([50]))
             current_rsi = rsi_14.iloc[-1] if len(rsi_14) > 0 else 50
             
+            logger.info(f"🔍 RSI Analysis: current_rsi={current_rsi:.2f}, type={type(current_rsi)}")
+            
             if current_rsi < 30:
                 rsi_score = 0.8  # Oversold - bullish
+                logger.info(f"📉 RSI Oversold: {current_rsi:.2f} < 30 → score=0.8")
             elif current_rsi > 70:
                 rsi_score = -0.8  # Overbought - bearish
+                logger.info(f"📈 RSI Overbought: {current_rsi:.2f} > 70 → score=-0.8")
             elif 40 <= current_rsi <= 60:
                 rsi_score = 0.0  # Neutral
+                logger.info(f"⚖️ RSI Neutral: 40 <= {current_rsi:.2f} <= 60 → score=0.0")
             else:
                 rsi_score = (50 - current_rsi) / 50  # Linear interpolation
+                logger.info(f"📊 RSI Linear: (50 - {current_rsi:.2f}) / 50 = {rsi_score:.4f}")
             
             # RSI alignment bonus
             rsi_alignment = rsi_data.get('alignment', 'mixed')
+            logger.info(f"🔄 RSI Alignment: {rsi_alignment}")
             if rsi_alignment == 'bullish':
                 rsi_score += 0.2
+                logger.info(f"📈 RSI Bullish alignment bonus: +0.2 → {rsi_score:.4f}")
             elif rsi_alignment == 'bearish':
                 rsi_score -= 0.2
+                logger.info(f"📉 RSI Bearish alignment penalty: -0.2 → {rsi_score:.4f}")
             
-            score += rsi_score * 0.4
+            rsi_contribution = rsi_score * 0.4
+            score += rsi_contribution
+            logger.info(f"🎯 RSI Final: score={rsi_score:.4f} * 0.4 = {rsi_contribution:.4f}")
             
             # MACD analysis (25% weight)
             macd = indicators.get('macd', pd.Series([0]))
             macd_signal = indicators.get('macd_signal', pd.Series([0]))
             
+            logger.info(f"📊 MACD Analysis: macd_series_length={len(macd)}, signal_series_length={len(macd_signal)}")
+            
             if len(macd) > 0 and len(macd_signal) > 0:
                 current_macd = macd.iloc[-1]
                 current_signal = macd_signal.iloc[-1]
                 
+                logger.info(f"📊 MACD Values: MACD={current_macd:.4f}, Signal={current_signal:.4f}")
+                
                 if current_macd > current_signal:
                     macd_score = 0.5
+                    logger.info(f"📈 MACD Bullish: {current_macd:.4f} > {current_signal:.4f} → score=0.5")
                 else:
                     macd_score = -0.5
+                    logger.info(f"📉 MACD Bearish: {current_macd:.4f} <= {current_signal:.4f} → score=-0.5")
                 
-                score += macd_score * 0.25
+                macd_contribution = macd_score * 0.25
+                score += macd_contribution
+                logger.info(f"🎯 MACD Final: score={macd_score:.4f} * 0.25 = {macd_contribution:.4f}")
+            else:
+                logger.warning("⚠️ MACD data missing or empty")
             
             # Bollinger Bands analysis (20% weight)
             bb_percent = indicators.get('bb_percent', pd.Series([0.5]))
+            logger.info(f"📊 Bollinger Bands Analysis: bb_percent_length={len(bb_percent)}")
+            
             if len(bb_percent) > 0:
                 current_bb = bb_percent.iloc[-1]
+                logger.info(f"📊 BB Percent: {current_bb:.4f}")
                 
                 if current_bb < 0.2:
                     bb_score = 0.6  # Near lower band - bullish
+                    logger.info(f"📈 BB Near Lower Band: {current_bb:.4f} < 0.2 → score=0.6")
                 elif current_bb > 0.8:
                     bb_score = -0.6  # Near upper band - bearish
+                    logger.info(f"📉 BB Near Upper Band: {current_bb:.4f} > 0.8 → score=-0.6")
                 else:
                     bb_score = (0.5 - current_bb) * 2  # Linear interpolation
+                    logger.info(f"📊 BB Linear: (0.5 - {current_bb:.4f}) * 2 = {bb_score:.4f}")
                 
-                score += bb_score * 0.2
+                bb_contribution = bb_score * 0.2
+                score += bb_contribution
+                logger.info(f"🎯 BB Final: score={bb_score:.4f} * 0.2 = {bb_contribution:.4f}")
+            else:
+                logger.warning("⚠️ Bollinger Bands data missing or empty")
             
             # ADX trend strength (15% weight)
             trend_strength = regime_data.get('trend_strength', 0.5)
             regime_classification = regime_data.get('regime_classification', 'trending')
             
+            logger.info(f"📊 ADX Analysis: trend_strength={trend_strength:.2f}, regime={regime_classification}")
+            
             if regime_classification == 'trending' and trend_strength > 25:
                 adx_score = 0.3
+                logger.info(f"📈 ADX Strong Trend: regime='trending' and strength={trend_strength:.2f} > 25 → score=0.3")
             elif regime_classification == 'consolidation':
                 adx_score = -0.1
+                logger.info(f"📉 ADX Consolidation: regime='consolidation' → score=-0.1")
             else:
                 adx_score = 0.0
+                logger.info(f"⚖️ ADX Neutral: regime='{regime_classification}', strength={trend_strength:.2f} → score=0.0")
             
-            score += adx_score * 0.15
+            adx_contribution = adx_score * 0.15
+            score += adx_contribution
+            logger.info(f"🎯 ADX Final: score={adx_score:.4f} * 0.15 = {adx_contribution:.4f}")
             
             # Normalize score to [-1, 1]
+            # Optional Phase 4 extensions: derivatives & microstructure (opt-in)
+            try:
+                config = load_config_from_env()
+                phase4_enabled = getattr(config, 'phase4', {}).get('enabled', False)
+            except Exception:
+                phase4_enabled = False
+            
+            if phase4_enabled:
+                logger.info("🧩 Phase 4 enabled: blending derivatives and microstructure scores")
+                derivatives_score = getattr(self, '_last_derivatives_score', 0.0)
+                microstructure_score = getattr(self, '_last_microstructure_score', 0.0)
+                try:
+                    derivatives_weight = config.phase4['weights']['derivatives_weight']
+                    microstructure_weight = config.phase4['weights']['microstructure_weight']
+                except Exception:
+                    derivatives_weight = 0.15
+                    microstructure_weight = 0.10
+                # Blend with conservative weights
+                score += derivatives_score * derivatives_weight
+                score += microstructure_score * microstructure_weight
+                logger.info(f"🧩 Phase 4 blend -> derivatives: {derivatives_score:.3f} (w={derivatives_weight}), micro: {microstructure_score:.3f} (w={microstructure_weight})")
+            
+            # Log total score before normalization
+            logger.info(f"📊 Total Technical Score (before normalization): {score:.4f}")
+            
             final_score = max(-1.0, min(1.0, score))
             
-            logger.info(f"✅ Phase 3 technical score calculated: {final_score:.4f}")
+            duration = time.time() - start_time
+            logger.info(f"✅ Phase 3 technical score calculated in {duration:.3f}s: {final_score:.4f}")
+            logger.info(f"🧮 Score breakdown: RSI={rsi_score:.3f}*0.4, MACD={macd_score:.3f}*0.25, BB={bb_score:.3f}*0.2, ADX={adx_score:.3f}*0.15")
+            logger.info(f"🎯 Final normalized score: {final_score:.4f} (clamped to [-1, 1])")
             return final_score
             
         except Exception as e:
             logger.error(f"❌ Error calculating Phase 3 technical score: {e}")
             return 0.0
+    
+    def calculate_phase3_fused_score(self, technical_score: float, sentiment_score: float, 
+                                   technical_weight: Optional[float] = None, sentiment_weight: Optional[float] = None) -> float:
+        """Calculate Phase 3 fused score"""
+        start_time = time.time()
+        logger.info("🔗 Calculating Phase 3 fused score")
+        
+        try:
+            from agent.config import load_config_from_env
+            config = load_config_from_env()
+            
+            # Use custom weights if provided, otherwise use config defaults
+            tech_weight = technical_weight if technical_weight is not None else config.thresholds.technical_weight
+            sent_weight = sentiment_weight if sentiment_weight is not None else config.thresholds.sentiment_weight
+            
+            fused_score = tech_weight * technical_score + sent_weight * sentiment_score
+            
+            duration = time.time() - start_time
+            logger.info(f"✅ Phase 3 fused score calculated in {duration:.3f}s: {fused_score:.4f}")
+            logger.info(f"🔗 Fused breakdown: tech={technical_score:.4f}*{tech_weight:.2f} + sent={sentiment_score:.4f}*{sent_weight:.2f}")
+            return fused_score
+            
+        except Exception as e:
+            logger.error(f"❌ Error calculating Phase 3 fused score: {e}")
+            return 0.0
+    
+    def determine_signal_type_and_confidence(self, fused_score: float, buy_threshold: Optional[float] = None, sell_threshold: Optional[float] = None) -> tuple:
+        """Determine signal type and confidence from fused score"""
+        start_time = time.time()
+        logger.info("🎯 Determining signal type and confidence")
+        
+        try:
+            from agent.config import load_config_from_env
+            config = load_config_from_env()
+            
+            # Use custom thresholds if provided, otherwise use config defaults
+            buy_thresh = buy_threshold if buy_threshold is not None else config.thresholds.buy_threshold
+            sell_thresh = sell_threshold if sell_threshold is not None else -buy_thresh
+            
+            logger.info(f"🎯 Thresholds: BUY>={buy_thresh:.3f}, SELL<={sell_thresh:.3f}, current={fused_score:.4f}")
+            
+            # Determine signal type
+            if fused_score >= buy_thresh:
+                signal_type = "BUY"
+            elif fused_score <= sell_thresh:
+                signal_type = "SELL"
+            else:
+                signal_type = "HOLD"
+            
+            # Calculate confidence based on how far from neutral
+            confidence = min(abs(fused_score) * 2, 1.0)  # Scale to 0-1
+            
+            duration = time.time() - start_time
+            logger.info(f"✅ Signal type and confidence determined in {duration:.3f}s: {signal_type} ({confidence:.2%})")
+            return signal_type, confidence
+            
+        except Exception as e:
+            logger.error(f"❌ Error determining signal type and confidence: {e}")
+            return "HOLD", 0.5
+    
+    def calculate_enhanced_risk_management(self, ohlcv: pd.DataFrame, technical_indicators: Dict[str, Any], regime_data: Dict[str, Any] = None) -> Dict[str, Any]:
+        """Calculate enhanced risk management metrics"""
+        start_time = time.time()
+        logger.info("🛡️ Calculating enhanced risk management")
+        
+        try:
+            current_price = ohlcv['close'].iloc[-1]
+            volatility = technical_indicators.get('atr', pd.Series([current_price * 0.02])).iloc[-1]
+            
+            risk_metrics = {
+                'volatility': float(volatility / current_price),
+                'var_95': float(volatility * 1.645 / current_price),  # 95% VaR
+                'sharpe_ratio': 1.0,  # Placeholder
+                'max_drawdown': 0.05  # Placeholder
+            }
+            
+            duration = time.time() - start_time
+            logger.info(f"✅ Enhanced risk management calculated in {duration:.3f}s")
+            logger.info(f"🛡️ Risk metrics: vol={risk_metrics['volatility']:.4f}, VaR95={risk_metrics['var_95']:.4f}, Sharpe={risk_metrics['sharpe_ratio']:.2f}")
+            return risk_metrics
+            
+        except Exception as e:
+            logger.error(f"❌ Error calculating enhanced risk management: {e}")
+            current_price = ohlcv['close'].iloc[-1]
+            return {
+                'volatility': 0.02,
+                'var_95': 0.03,
+                'sharpe_ratio': 1.0,
+                'max_drawdown': 0.05
+            }
+    
+    def calculate_volatility_adjusted_stops(self, ohlcv: pd.DataFrame, signal_type: str, risk_metrics: Dict[str, Any]) -> tuple:
+        """Calculate volatility-adjusted stop loss and take profit"""
+        try:
+            current_price = ohlcv['close'].iloc[-1]
+            volatility = risk_metrics.get('volatility', 0.02)
+            
+            if signal_type == "BUY":
+                stop_loss = current_price * (1 - volatility * 2)
+                take_profit = current_price * (1 + volatility * 3)
+            elif signal_type == "SELL":
+                stop_loss = current_price * (1 + volatility * 2)
+                take_profit = current_price * (1 - volatility * 3)
+            else:
+                stop_loss = current_price * 0.98
+                take_profit = current_price * 1.02
+            
+            return float(stop_loss), float(take_profit)
+            
+        except Exception as e:
+            logger.error(f"❌ Error calculating volatility-adjusted stops: {e}")
+            current_price = ohlcv['close'].iloc[-1]
+            return float(current_price * 0.98), float(current_price * 1.02)
+    
+    def compute_dynamic_position_sizing(self, risk_metrics: Dict[str, Any], confidence: float, signal_type: str) -> Dict[str, Any]:
+        """Compute dynamic position sizing based on risk and confidence"""
+        start_time = time.time()
+        logger.info("📏 Computing dynamic position sizing")
+        
+        try:
+            volatility = risk_metrics.get('volatility', 0.02)
+            
+            # Base position size
+            base_size = 0.1  # 10%
+            
+            # Adjust for confidence
+            confidence_multiplier = confidence
+            
+            # Adjust for volatility (lower volatility = larger position)
+            volatility_multiplier = max(0.5, 1.0 - volatility * 10)
+            
+            # Adjust for signal type
+            signal_multiplier = 1.0 if signal_type != "HOLD" else 0.5
+            
+            recommended_size = base_size * confidence_multiplier * volatility_multiplier * signal_multiplier
+            recommended_size = min(recommended_size, 0.2)  # Cap at 20%
+            
+            result = {
+                'recommended_size': recommended_size,
+                'risk_per_trade': recommended_size * 0.1,  # 10% of position as risk
+                'max_position': 0.2  # 20% max position
+            }
+            
+            duration = time.time() - start_time
+            logger.info(f"✅ Dynamic position sizing computed in {duration:.3f}s")
+            logger.info(f"📏 Position sizing: base={base_size:.1%}, conf_mult={confidence_multiplier:.2f}, vol_mult={volatility_multiplier:.2f}, signal_mult={signal_multiplier:.1f}")
+            logger.info(f"📏 Final sizing: recommended={recommended_size:.1%}, risk_per_trade={result['risk_per_trade']:.1%}, max={result['max_position']:.1%}")
+            return result
+            
+        except Exception as e:
+            logger.error(f"❌ Error computing dynamic position sizing: {e}")
+            return {
+                'recommended_size': 0.1,
+                'risk_per_trade': 0.01,
+                'max_position': 0.2
+            }
+    
+    def generate_phase3_reasoning(self, signal_type: str, technical_score: float, sentiment_score: float, fused_score: float, regime_data: Dict[str, Any], rsi_data: Dict[str, Any]) -> str:
+        """Generate Phase 3 reasoning for the signal"""
+        try:
+            regime = regime_data.get('regime_classification', 'unknown')
+            rsi_alignment = rsi_data.get('alignment', 'neutral')
+            
+            reasoning = f"Phase 3 Analysis: {signal_type} signal based on "
+            reasoning += f"Technical Score: {technical_score:.3f}, "
+            reasoning += f"Sentiment Score: {sentiment_score:.3f}, "
+            reasoning += f"Fused Score: {fused_score:.3f}. "
+            reasoning += f"Market Regime: {regime}, RSI Alignment: {rsi_alignment}."
+            
+            return reasoning
+            
+        except Exception as e:
+            logger.error(f"❌ Error generating Phase 3 reasoning: {e}")
+            return f"Phase 3 Analysis: {signal_type} signal based on technical and sentiment analysis."
     
     def determine_phase3_signal_type(self, technical_score: float, sentiment_score: float, regime_data: Dict[str, Any]) -> str:
         """Determine Phase 3 signal type"""
@@ -420,73 +833,56 @@ class Phase3SignalGenerator:
         except Exception as e:
             logger.error(f"❌ Error determining Phase 3 signal type: {e}")
             return "HOLD"
-    
-    def calculate_enhanced_risk_management(self, ohlcv: pd.DataFrame, signal_type: str, regime_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Calculate enhanced risk management for Phase 3"""
-        logger.info("🛡️ Calculating enhanced risk management")
-        
+
+    # ==============================
+    # Phase 4 (Optional) Stub Scorers
+    # ==============================
+    def analyze_derivatives_stub(self, symbol: str) -> Dict[str, Any]:
+        """Stub for derivatives analysis (funding, open interest, basis).
+        Returns a dict and stores a normalized score in self._last_derivatives_score [-1,1]."""
+        logger.info("📈 [Phase4] Derivatives stub analysis")
         try:
-            high = ohlcv['high']
-            low = ohlcv['low']
-            close = ohlcv['close']
-            
-            current_price = close.iloc[-1]
-            
-            # Calculate ATR for volatility-based stops
-            atr = compute_atr(high, low, close, period=14)
-            current_atr = atr.iloc[-1] if len(atr) > 0 else current_price * 0.02
-            
-            # Dynamic position sizing
-            volatility = regime_data.get('volatility', {}).get('volatility', 0.02)
-            position_data = compute_dynamic_position_sizing(
-                close, 
-                pd.Series([volatility] * len(close)), 
-                account_balance=10000.0, 
-                risk_per_trade=0.02
-            )
-            
-            # Volatility-adjusted stops
-            stops_data = compute_volatility_adjusted_stops(
-                close, high, low, atr, volatility_multiplier=2.0
-            )
-            
-            # Calculate stop loss and take profit based on signal type
-            if signal_type == "BUY":
-                stop_loss = current_price - (current_atr * 2.0)
-                take_profit = current_price + (current_atr * 3.0)
-            elif signal_type == "SELL":
-                stop_loss = current_price + (current_atr * 2.0)
-                take_profit = current_price - (current_atr * 3.0)
-            else:  # HOLD
-                stop_loss = current_price - (current_atr * 1.5)
-                take_profit = current_price + (current_atr * 1.5)
-            
-            risk_data = {
-                'stop_loss': stop_loss,
-                'take_profit': take_profit,
-                'position_sizing': position_data,
-                'volatility_adjusted_stops': stops_data,
-                'risk_metrics': {
-                    'atr': current_atr,
-                    'volatility': volatility,
-                    'risk_reward_ratio': abs(take_profit - current_price) / abs(stop_loss - current_price) if stop_loss != current_price else 1.0,
-                    'max_loss_percent': abs(stop_loss - current_price) / current_price * 100
-                }
-            }
-            
-            logger.info(f"✅ Enhanced risk management calculated")
-            return risk_data
-            
-        except Exception as e:
-            logger.error(f"❌ Error calculating enhanced risk management: {e}")
-            current_price = ohlcv['close'].iloc[-1]
+            config = load_config_from_env()
+            if not getattr(config, 'phase4', {}).get('derivatives', {}).get('enabled', False):
+                self._last_derivatives_score = 0.0
+                return {"enabled": False, "score": 0.0}
+            # Placeholder heuristic: neutral score
+            self._last_derivatives_score = 0.0
             return {
-                'stop_loss': current_price * 0.98,
-                'take_profit': current_price * 1.02,
-                'position_sizing': {'position_size': 1000, 'risk_amount': 200, 'leverage': 1.0},
-                'volatility_adjusted_stops': {'atr_stop': current_price * 0.02, 'percentage_stop': 0.02},
-                'risk_metrics': {'atr': current_price * 0.02, 'volatility': 0.02, 'risk_reward_ratio': 1.0, 'max_loss_percent': 2.0}
+                "enabled": True,
+                "funding_rate_extreme": config.phase4['derivatives']['funding_rate_extreme'],
+                "open_interest_lookback_hours": config.phase4['derivatives']['open_interest_lookback_hours'],
+                "basis_lookback_hours": config.phase4['derivatives']['basis_lookback_hours'],
+                "score": self._last_derivatives_score
             }
+        except Exception as e:
+            logger.warning(f"[Phase4] Derivatives stub failed: {e}")
+            self._last_derivatives_score = 0.0
+            return {"enabled": False, "score": 0.0}
+
+    def analyze_microstructure_stub(self, symbol: str) -> Dict[str, Any]:
+        """Stub for microstructure analysis (order book imbalance, spread, flow).
+        Returns a dict and stores a normalized score in self._last_microstructure_score [-1,1]."""
+        logger.info("📊 [Phase4] Microstructure stub analysis")
+        try:
+            config = load_config_from_env()
+            if not getattr(config, 'phase4', {}).get('microstructure', {}).get('enabled', False):
+                self._last_microstructure_score = 0.0
+                return {"enabled": False, "score": 0.0}
+            # Placeholder heuristic: neutral score
+            self._last_microstructure_score = 0.0
+            return {
+                "enabled": True,
+                "order_book_levels": config.phase4['microstructure']['order_book_levels'],
+                "imbalance_threshold": config.phase4['microstructure']['imbalance_threshold'],
+                "spread_widen_threshold_bps": config.phase4['microstructure']['spread_widen_threshold_bps'],
+                "score": self._last_microstructure_score
+            }
+        except Exception as e:
+            logger.warning(f"[Phase4] Microstructure stub failed: {e}")
+            self._last_microstructure_score = 0.0
+            return {"enabled": False, "score": 0.0}
+    
     
     def analyze_market_microstructure(self, ohlcv: pd.DataFrame) -> Dict[str, Any]:
         """Analyze market microstructure for Phase 3"""
@@ -574,7 +970,7 @@ class Phase3SignalGenerator:
         
         try:
             # Standard VWAP
-            vwap_data = compute_vwap(ohlcv)
+            vwap_data = compute_vwap_anchored(ohlcv)
             
             # Anchored VWAP
             vwap_anchored_data = compute_vwap_anchored(ohlcv)
@@ -692,64 +1088,147 @@ class Phase3SignalGenerator:
     # ===== PHASE 2 MULTI-TIMEFRAME ANALYSIS METHODS =====
     
     def analyze_multi_timeframe(self, symbol: str) -> Dict[str, Any]:
-        """Analyze multi-timeframe data (Phase 2)"""
-        logger.info("📊 Analyzing multi-timeframe data")
+        """Analyze multi-timeframe data (Phase 2) - OPTIMIZED: Only for requested symbol"""
+        logger.info("📊 Analyzing multi-timeframe data (optimized for single symbol)")
         
         try:
-            mtf_data = compute_multi_timeframe_analysis(symbol, timeframes=['5m', '15m', '1h', '4h'])
+            # OPTIMIZATION: Only fetch data for the requested symbol across multiple timeframes
+            # This is much more efficient than fetching multiple symbols
+            logger.info(f"🚀 OPTIMIZATION: Multi-timeframe analysis for {symbol} only (no cross-symbol fetching)")
             
-            logger.info(f"✅ Multi-timeframe analysis completed - Overall trend: {mtf_data.get('overall_trend', 'neutral')}")
-            return mtf_data
+            # Use a simplified multi-timeframe analysis for the single symbol
+            # We'll analyze the current timeframe and derive trend consensus
+            from agent.data import fetch_ohlcv
+            
+            timeframes = ['1m', '5m']  # Optimized for ultra-short-term scalping
+            trend_scores = []
+            
+            for tf in timeframes:
+                try:
+                    logger.info(f"📊 Fetching {symbol} data for {tf} timeframe")
+                    ohlcv = fetch_ohlcv(symbol, tf, limit=50)  # Reduced limit for faster fetching
+                    
+                    if len(ohlcv) > 0:
+                        close = ohlcv['close']
+                        # Simple trend analysis using EMA
+                        ema_20 = compute_ema(close, 20)
+                        ema_50 = compute_ema(close, 50)
+                        
+                        if len(ema_20) > 0 and len(ema_50) > 0:
+                            current_ema20 = ema_20.iloc[-1]
+                            current_ema50 = ema_50.iloc[-1]
+                            
+                            if current_ema20 > current_ema50:
+                                trend_scores.append(1.0)  # Bullish
+                                logger.info(f"📈 {tf}: Bullish trend (EMA20 > EMA50)")
+                            else:
+                                trend_scores.append(-1.0)  # Bearish
+                                logger.info(f"📉 {tf}: Bearish trend (EMA20 < EMA50)")
+                        else:
+                            trend_scores.append(0.0)  # Neutral
+                    else:
+                        trend_scores.append(0.0)  # Neutral
+                        
+                except Exception as e:
+                    logger.warning(f"⚠️ Error fetching {tf} data for {symbol}: {e}")
+                    trend_scores.append(0.0)  # Neutral on error
+            
+            # Calculate overall trend consensus
+            if trend_scores:
+                avg_trend = sum(trend_scores) / len(trend_scores)
+                if avg_trend > 0.3:
+                    overall_trend = 'bullish'
+                elif avg_trend < -0.3:
+                    overall_trend = 'bearish'
+                else:
+                    overall_trend = 'neutral'
+                
+                trend_consensus = (avg_trend + 1) / 2  # Convert to 0-1 scale
+            else:
+                overall_trend = 'neutral'
+                trend_consensus = 0.5
+            
+            logger.info(f"✅ Multi-timeframe analysis completed - Overall trend: {overall_trend} (consensus: {trend_consensus:.2f})")
+            
+            return {
+                'overall_trend': overall_trend,
+                'trend_consensus': trend_consensus,
+                'timeframes_analyzed': timeframes,
+                'trend_scores': trend_scores,
+                'optimization_note': 'Multi-timeframe analysis optimized for single symbol only'
+            }
             
         except Exception as e:
             logger.error(f"❌ Error analyzing multi-timeframe: {e}")
             return {'overall_trend': 'neutral', 'trend_consensus': 0.5}
     
     def analyze_cross_asset_correlation(self, symbol: str) -> Dict[str, Any]:
-        """Analyze cross-asset correlation (Phase 2)"""
-        logger.info("📊 Analyzing cross-asset correlation")
+        """Analyze cross-asset correlation (Phase 2) - OPTIMIZED: Skip cross-asset analysis"""
+        logger.info("📊 Analyzing cross-asset correlation (optimized - disabled for performance)")
         
         try:
-            # Determine symbols to correlate based on input
-            if 'BTC' in symbol.upper():
-                symbols = ['BTC/USDT', 'ETH/USDT', 'ADA/USDT']
-            elif 'ETH' in symbol.upper():
-                symbols = ['ETH/USDT', 'BTC/USDT', 'ADA/USDT']
-            else:
-                symbols = ['BTC/USDT', 'ETH/USDT', symbol]
+            # OPTIMIZATION: Skip cross-asset correlation to avoid fetching multiple symbols
+            # Cross-asset correlation shows how your symbol moves with other cryptocurrencies
+            # Example: Most altcoins have 70-90% correlation with Bitcoin
+            logger.info(f"🚀 OPTIMIZATION: Skipping cross-asset correlation for {symbol} to improve performance")
+            logger.info("💡 Cross-asset correlation disabled - focusing on single symbol analysis")
+            logger.info("📊 Cross-asset correlation would show how {symbol} moves with BTC/ETH")
             
-            correlation_data = compute_cross_asset_correlation(symbols, timeframe='1h', period=24)
-            
-            logger.info("✅ Cross-asset correlation analysis completed")
-            return correlation_data
+            # Return a simplified result
+            return {
+                'avg_correlation': 0.5,  # Neutral correlation
+                'btc_correlations': {},
+                'optimization_note': 'Cross-asset correlation disabled for performance',
+                'explanation': 'Cross-asset correlation shows how your symbol moves with other cryptocurrencies (e.g., BTC, ETH)'
+            }
             
         except Exception as e:
             logger.error(f"❌ Error analyzing cross-asset correlation: {e}")
             return {'avg_correlation': 0, 'btc_correlations': {}}
     
     def analyze_btc_dominance(self) -> Dict[str, Any]:
-        """Analyze BTC dominance (Phase 2)"""
-        logger.info("📊 Analyzing BTC dominance")
+        """Analyze BTC dominance (Phase 2) - OPTIMIZED: Skip BTC dominance analysis"""
+        logger.info("📊 Analyzing BTC dominance (optimized - disabled for performance)")
         
         try:
-            dominance_data = compute_btc_dominance()
+            # OPTIMIZATION: Skip BTC dominance analysis to avoid additional API calls
+            # BTC dominance shows Bitcoin's market share vs all other cryptocurrencies
+            # When BTC dominance rises, altcoins usually fall (and vice versa)
+            logger.info("🚀 OPTIMIZATION: Skipping BTC dominance analysis to improve performance")
+            logger.info("💡 BTC dominance analysis disabled - focusing on single symbol analysis")
+            logger.info("📊 BTC dominance shows Bitcoin's market share vs all other cryptocurrencies")
             
-            logger.info(f"✅ BTC dominance analysis completed - Dominance: {dominance_data.get('btc_dominance', 50):.1f}%")
-            return dominance_data
+            # Return a neutral default value
+            return {
+                'btc_dominance': 50.0,  # Neutral dominance
+                'dominance_change': 0.0,
+                'optimization_note': 'BTC dominance analysis disabled for performance',
+                'explanation': 'BTC dominance shows Bitcoin market share vs all other cryptocurrencies'
+            }
             
         except Exception as e:
             logger.error(f"❌ Error analyzing BTC dominance: {e}")
             return {'btc_dominance': 50, 'dominance_change': 0}
     
     def analyze_market_wide_sentiment(self) -> Dict[str, Any]:
-        """Analyze market-wide sentiment (Phase 2)"""
-        logger.info("📊 Analyzing market-wide sentiment")
+        """Analyze market-wide sentiment (Phase 2) - OPTIMIZED: Use existing sentiment analysis"""
+        logger.info("📊 Analyzing market-wide sentiment (optimized - using existing sentiment)")
         
         try:
-            sentiment_data = compute_market_wide_sentiment()
+            # OPTIMIZATION: Skip additional market-wide sentiment analysis since we already have sentiment
+            # Market-wide sentiment analyzes sentiment across the entire crypto market (not just your symbol)
+            # When whole market is bearish, even good technicals might fail
+            logger.info("🚀 OPTIMIZATION: Skipping market-wide sentiment analysis to improve performance")
+            logger.info("💡 Market-wide sentiment analysis disabled - using existing sentiment analysis")
+            logger.info("📊 Market-wide sentiment analyzes sentiment across entire crypto market")
             
-            logger.info(f"✅ Market-wide sentiment analysis completed - Sentiment: {sentiment_data.get('overall_sentiment', 'neutral')}")
-            return sentiment_data
+            # Return a neutral default value (the main sentiment analysis already provides this)
+            return {
+                'market_sentiment_score': 0.0,  # Neutral sentiment
+                'overall_sentiment': 'neutral',
+                'optimization_note': 'Market-wide sentiment analysis disabled for performance',
+                'explanation': 'Market-wide sentiment analyzes sentiment across entire crypto market'
+            }
             
         except Exception as e:
             logger.error(f"❌ Error analyzing market-wide sentiment: {e}")
@@ -773,6 +1252,11 @@ class Phase3SignalGenerator:
                     'confidence': signal.confidence,
                     'stop_loss': signal.stop_loss,
                     'take_profit': signal.take_profit,
+                    # Applied Parameters (for UI display)
+                    'applied_buy_threshold': signal.applied_buy_threshold,
+                    'applied_sell_threshold': signal.applied_sell_threshold,
+                    'applied_tech_weight': signal.applied_tech_weight,
+                    'applied_sentiment_weight': signal.applied_sentiment_weight,
                     # Phase 3 Advanced Features
                     'regime_detection': signal.regime_detection,
                     'advanced_rsi': signal.advanced_rsi,
@@ -795,6 +1279,9 @@ class Phase3SignalGenerator:
                     'username': username,
                     'phase': 'phase3_complete'
                 }
+                
+                # Log the applied threshold values before storage
+                logger.info(f"🔍 Storing applied thresholds: buy={signal.applied_buy_threshold}, sell={signal.applied_sell_threshold}, tech={signal.applied_tech_weight}, sent={signal.applied_sentiment_weight}")
                 
                 await redis_client.store_signal(signal_data)
                 logger.info("✅ Phase 3 signal stored successfully")
@@ -882,219 +1369,635 @@ class Phase3SignalGenerator:
         except Exception as e:
             logger.error(f"❌ Error sending Phase 3 Telegram notification: {e}")
     
-    async def generate_phase3_signal(self, request, username: str) -> Phase3TradingSignal:
+    # Performance optimization methods
+    def _get_cache_key(self, prefix: str, *args) -> str:
+        """Generate cache key from arguments"""
+        key_data = f"{prefix}:{':'.join(str(arg) for arg in args)}"
+        return hashlib.md5(key_data.encode()).hexdigest()
+    
+    async def _get_cached_data(self, cache_key: str) -> Optional[Any]:
+        """Get data from Redis cache"""
+        try:
+            from agent.cache.redis_client import get_redis_client
+            redis_client = await get_redis_client()
+            cached = await redis_client.get(cache_key)
+            if cached:
+                return json.loads(cached)
+        except Exception as e:
+            logger.warning(f"Cache get error: {e}")
+        return None
+    
+    async def _set_cached_data(self, cache_key: str, data: Any) -> None:
+        """Set data in Redis cache"""
+        try:
+            from agent.cache.redis_client import get_redis_client
+            redis_client = await get_redis_client()
+            await redis_client.setex(cache_key, self.cache_ttl, json.dumps(data, default=str))
+        except Exception as e:
+            logger.warning(f"Cache set error: {e}")
+    
+    async def fetch_ohlcv_data_cached(self, symbol: str, timeframe: str) -> pd.DataFrame:
+        """Fetch OHLCV data with caching"""
+        start_time = time.time()
+        cache_key = self._get_cache_key("ohlcv", symbol, timeframe)
+        cached_data = await self._get_cached_data(cache_key)
+        
+        if cached_data:
+            duration = time.time() - start_time
+            logger.info(f"📦 Using cached OHLCV data for {symbol} @ {timeframe} ({duration:.3f}s)")
+            return pd.DataFrame(cached_data)
+        
+        # Fetch fresh data
+        ohlcv = self.fetch_market_data(symbol, timeframe)
+        if not ohlcv.empty:
+            await self._set_cached_data(cache_key, ohlcv.to_dict('records'))
+        duration = time.time() - start_time
+        logger.info(f"🔄 Fresh OHLCV data fetched for {symbol} @ {timeframe} ({duration:.3f}s)")
+        return ohlcv
+    
+    async def calculate_phase3_technical_indicators_cached(self, ohlcv: pd.DataFrame, symbol: str) -> Dict[str, Any]:
+        """Calculate technical indicators with caching"""
+        cache_key = self._get_cache_key("tech_indicators", symbol, str(ohlcv.index[-1]))
+        cached_data = await self._get_cached_data(cache_key)
+        
+        if cached_data:
+            logger.info(f"📦 Using cached technical indicators for {symbol}")
+            return cached_data
+        
+        # Calculate fresh indicators
+        indicators = self.calculate_phase3_technical_indicators(ohlcv)
+        await self._set_cached_data(cache_key, indicators)
+        return indicators
+    
+    async def analyze_advanced_regime_detection_cached(self, ohlcv: pd.DataFrame, symbol: str) -> Dict[str, Any]:
+        """Analyze regime detection with caching"""
+        cache_key = self._get_cache_key("regime", symbol, str(ohlcv.index[-1]))
+        cached_data = await self._get_cached_data(cache_key)
+        
+        if cached_data:
+            logger.info(f"📦 Using cached regime detection for {symbol}")
+            return cached_data
+        
+        # Calculate fresh regime data
+        regime_data = self.analyze_advanced_regime_detection(ohlcv)
+        await self._set_cached_data(cache_key, regime_data)
+        return regime_data
+    
+    async def analyze_advanced_rsi_variants_cached(self, ohlcv: pd.DataFrame, symbol: str) -> Dict[str, Any]:
+        """Analyze RSI variants with caching"""
+        cache_key = self._get_cache_key("rsi_variants", symbol, str(ohlcv.index[-1]))
+        cached_data = await self._get_cached_data(cache_key)
+        
+        if cached_data:
+            logger.info(f"📦 Using cached RSI variants for {symbol}")
+            return cached_data
+        
+        # Calculate fresh RSI data
+        rsi_data = self.analyze_advanced_rsi_variants(ohlcv)
+        await self._set_cached_data(cache_key, rsi_data)
+        return rsi_data
+    
+    async def analyze_phase3_sentiment_async(self, symbol: str) -> float:
+        """Optimized async sentiment analysis with parallel data fetching and caching"""
+        start_time = time.time()
+        logger.info(f"🚀 Starting optimized sentiment analysis for {symbol}")
+        
+        try:
+            # Initialize sentiment analyzer if needed
+            if self.sentiment_analyzer is None:
+                self.sentiment_analyzer = SentimentAnalyzer("ProsusAI/finbert")
+            
+            # Get configuration
+            config = load_config_from_env()
+            
+            # Use the new optimized async sentiment analysis
+            sentiment_score = await self.sentiment_analyzer.analyze_sentiment_async(
+                symbol=symbol,
+                rss_feeds=config.sentiment_analysis.rss_feeds,
+                reddit_subreddits=config.sentiment_analysis.reddit_subreddits,
+                rss_max_headlines=config.sentiment_analysis.rss_max_headlines_per_feed,
+                reddit_max_posts=config.sentiment_analysis.reddit_max_posts_per_subreddit,
+                rss_hours_back=6,
+                reddit_hours_back=6
+            )
+            
+            duration = time.time() - start_time
+            logger.info(f"✅ Optimized sentiment analysis completed for {symbol} in {duration:.3f}s (score: {sentiment_score:.4f})")
+            return sentiment_score
+            
+        except Exception as e:
+            duration = time.time() - start_time
+            logger.error(f"❌ Error in optimized sentiment analysis for {symbol} after {duration:.3f}s: {e}")
+            return 0.0
+    
+    # Add cached versions for all other analysis methods
+    async def analyze_market_microstructure_cached(self, ohlcv: pd.DataFrame, symbol: str) -> Dict[str, Any]:
+        cache_key = self._get_cache_key("microstructure", symbol, str(ohlcv.index[-1]))
+        cached_data = await self._get_cached_data(cache_key)
+        if cached_data:
+            return cached_data
+        data = self.analyze_market_microstructure(ohlcv)
+        await self._set_cached_data(cache_key, data)
+        return data
+    
+    async def analyze_bollinger_bands_cached(self, ohlcv: pd.DataFrame, symbol: str) -> Dict[str, Any]:
+        cache_key = self._get_cache_key("bollinger", symbol, str(ohlcv.index[-1]))
+        cached_data = await self._get_cached_data(cache_key)
+        if cached_data:
+            return cached_data
+        data = self.analyze_bollinger_bands(ohlcv)
+        await self._set_cached_data(cache_key, data)
+        return data
+    
+    async def analyze_vwap_enhanced_cached(self, ohlcv: pd.DataFrame, symbol: str) -> Dict[str, Any]:
+        cache_key = self._get_cache_key("vwap", symbol, str(ohlcv.index[-1]))
+        cached_data = await self._get_cached_data(cache_key)
+        if cached_data:
+            return cached_data
+        data = self.analyze_vwap_enhanced(ohlcv)
+        await self._set_cached_data(cache_key, data)
+        return data
+    
+    async def analyze_volume_indicators_cached(self, ohlcv: pd.DataFrame, symbol: str) -> Dict[str, Any]:
+        cache_key = self._get_cache_key("volume", symbol, str(ohlcv.index[-1]))
+        cached_data = await self._get_cached_data(cache_key)
+        if cached_data:
+            return cached_data
+        data = self.analyze_volume_indicators(ohlcv)
+        await self._set_cached_data(cache_key, data)
+        return data
+    
+    async def analyze_moving_averages_enhanced_cached(self, ohlcv: pd.DataFrame, symbol: str) -> Dict[str, Any]:
+        cache_key = self._get_cache_key("ma", symbol, str(ohlcv.index[-1]))
+        cached_data = await self._get_cached_data(cache_key)
+        if cached_data:
+            return cached_data
+        data = self.analyze_moving_averages_enhanced(ohlcv)
+        await self._set_cached_data(cache_key, data)
+        return data
+    
+    async def analyze_keltner_channels_cached(self, ohlcv: pd.DataFrame, symbol: str) -> Dict[str, Any]:
+        cache_key = self._get_cache_key("keltner", symbol, str(ohlcv.index[-1]))
+        cached_data = await self._get_cached_data(cache_key)
+        if cached_data:
+            return cached_data
+        data = self.analyze_keltner_channels(ohlcv)
+        await self._set_cached_data(cache_key, data)
+        return data
+    
+    async def analyze_multi_timeframe_cached(self, symbol: str) -> Dict[str, Any]:
+        cache_key = self._get_cache_key("multi_timeframe", symbol)
+        cached_data = await self._get_cached_data(cache_key)
+        if cached_data:
+            return cached_data
+        data = self.analyze_multi_timeframe(symbol)
+        await self._set_cached_data(cache_key, data)
+        return data
+    
+    async def analyze_cross_asset_correlation_cached(self, symbol: str) -> Dict[str, Any]:
+        cache_key = self._get_cache_key("correlation", symbol)
+        cached_data = await self._get_cached_data(cache_key)
+        if cached_data:
+            return cached_data
+        data = self.analyze_cross_asset_correlation(symbol)
+        await self._set_cached_data(cache_key, data)
+        return data
+    
+    async def analyze_btc_dominance_cached(self) -> Dict[str, Any]:
+        cache_key = self._get_cache_key("btc_dominance")
+        cached_data = await self._get_cached_data(cache_key)
+        if cached_data:
+            return cached_data
+        data = self.analyze_btc_dominance()
+        await self._set_cached_data(cache_key, data)
+        return data
+    
+    async def analyze_market_wide_sentiment_cached(self) -> Dict[str, Any]:
+        cache_key = self._get_cache_key("market_sentiment")
+        cached_data = await self._get_cached_data(cache_key)
+        if cached_data:
+            return cached_data
+        data = self.analyze_market_wide_sentiment()
+        await self._set_cached_data(cache_key, data)
+        return data
+
+    async def generate_phase3_signal_shared(self, symbol: str, timeframe: str, username: str, output_level: str = "full", 
+                                           buy_threshold: Optional[float] = None, sell_threshold: Optional[float] = None,
+                                           technical_weight: Optional[float] = None, sentiment_weight: Optional[float] = None) -> Phase3TradingSignal:
+        """Shared Phase3 signal generation function that can be used by both manual generation and monitoring"""
+        total_start_time = time.time()
+        logger.info(f"🚀 Starting Phase 3 signal generation for {symbol} @ {timeframe} (user: {username}, output: {output_level})")
+        
+        # Log custom parameters if provided
+        if any([buy_threshold, sell_threshold, technical_weight, sentiment_weight]):
+            logger.info("🎛️ Custom parameters provided:")
+            if buy_threshold is not None:
+                logger.info(f"   📈 Buy Threshold: {buy_threshold:.4f}")
+            if sell_threshold is not None:
+                logger.info(f"   📉 Sell Threshold: {sell_threshold:.4f}")
+            if technical_weight is not None:
+                logger.info(f"   🔧 Technical Weight: {technical_weight:.4f}")
+            if sentiment_weight is not None:
+                logger.info(f"   💭 Sentiment Weight: {sentiment_weight:.4f}")
+        else:
+            logger.info("🎛️ Using default configuration parameters")
+        
+        try:
+            # Step 1: Fetch OHLCV data (cached)
+            step1_start = time.time()
+            ohlcv = await self.fetch_ohlcv_data_cached(symbol, timeframe)
+            step1_duration = time.time() - step1_start
+            candles_count = len(ohlcv) if ohlcv is not None else 0
+            first_ts = str(ohlcv.index[0]) if candles_count else 'n/a'
+            last_ts = str(ohlcv.index[-1]) if candles_count else 'n/a'
+            last_close = float(ohlcv['close'].iloc[-1]) if candles_count else float('nan')
+            try:
+                logger.info(
+                    "⏱️  STEP 1 (Data Fetch): %.3fs | candles=%s, timeframe=%s, first=%s, last=%s, last_close=%.2f",
+                    step1_duration, candles_count, timeframe, first_ts, last_ts, last_close
+                )
+            except Exception:
+                logger.info(f"⏱️  STEP 1 (Data Fetch): {step1_duration:.3f}s")
+
+            # Step 2-5: Parallel analysis (cached)
+            step2_start = time.time()
+            try:
+                (
+                    technical_indicators,
+                    regime_data,
+                    rsi_data,
+                    sentiment_score,
+                ) = await asyncio.gather(
+                    self.calculate_phase3_technical_indicators_cached(ohlcv, symbol),
+                    self.analyze_advanced_regime_detection_cached(ohlcv, symbol),
+                    self.analyze_advanced_rsi_variants_cached(ohlcv, symbol),
+                    self.analyze_phase3_sentiment_async(symbol),
+                )
+                try:
+                    # Log sentiment score
+                    logger.info("🔎 SENTIMENT_SCORE: %s", sentiment_score)
+                    
+                    # Log complete technical_indicators content
+                    logger.info("🔧 TECHNICAL_INDICATORS COMPLETE CONTENT:")
+                    if isinstance(technical_indicators, dict):
+                        for key, value in technical_indicators.items():
+                            if hasattr(value, 'iloc') and len(value) > 0:
+                                # Handle pandas Series
+                                logger.info("   %s: %s (last value: %s)", key, type(value).__name__, value.iloc[-1])
+                            else:
+                                logger.info("   %s: %s", key, value)
+                    else:
+                        logger.info("   Type: %s, Value: %s", type(technical_indicators), technical_indicators)
+                    
+                    # Log complete regime_data content
+                    logger.info("🏳️ REGIME_DATA COMPLETE CONTENT:")
+                    if isinstance(regime_data, dict):
+                        for key, value in regime_data.items():
+                            if hasattr(value, 'iloc') and len(value) > 0:
+                                # Handle pandas Series
+                                logger.info("   %s: %s (last value: %s)", key, type(value).__name__, value.iloc[-1])
+                            else:
+                                logger.info("   %s: %s", key, value)
+                    else:
+                        logger.info("   Type: %s, Value: %s", type(regime_data), regime_data)
+                    
+                    # Log complete rsi_data content
+                    logger.info("📐 RSI_DATA COMPLETE CONTENT:")
+                    if isinstance(rsi_data, dict):
+                        for key, value in rsi_data.items():
+                            if hasattr(value, 'iloc') and len(value) > 0:
+                                # Handle pandas Series
+                                logger.info("   %s: %s (last value: %s)", key, type(value).__name__, value.iloc[-1])
+                            else:
+                                logger.info("   %s: %s", key, value)
+                    else:
+                        logger.info("   Type: %s, Value: %s", type(rsi_data), rsi_data)
+                        
+                except Exception as e:
+                    logger.error("❌ Error logging parameter content: %s", e)
+            except Exception as e:
+                logger.error(f"❌ Error in parallel analysis: {e}")
+                # Fallback to default values
+                technical_indicators = {}
+                regime_data = {'regime_classification': 'unknown', 'confidence': 0.5, 'trend_strength': 0.0}
+                rsi_data = {'alignment': 'neutral', 'momentum': 0.0}
+                sentiment_score = 0.0
+            step2_duration = time.time() - step2_start
+            logger.info(f"⏱️  STEP 2-5 (Parallel Analysis): {step2_duration:.3f}s")
+
+            # Add current price to technical indicators for better analysis
+            if 'close' in ohlcv.columns and len(ohlcv) > 0:
+                current_price = ohlcv['close'].iloc[-1]
+                technical_indicators['current_price'] = current_price
+                logger.info(f"💰 Current Price: {current_price:.2f}")
+            
+            # Add current values for UI compatibility (scalar values instead of arrays)
+            try:
+                if 'rsi_14' in technical_indicators and not technical_indicators['rsi_14'].empty:
+                    # Store the current RSI value for UI display (overwrite the array with current value)
+                    current_rsi = float(technical_indicators['rsi_14'].iloc[-1])
+                    technical_indicators['rsi_14_series'] = technical_indicators['rsi_14']  # Keep original series
+                    technical_indicators['rsi_14'] = current_rsi  # Overwrite with current value
+                if 'macd' in technical_indicators and not technical_indicators['macd'].empty:
+                    # Store the current MACD value for UI display (overwrite the array with current value)
+                    current_macd = float(technical_indicators['macd'].iloc[-1])
+                    technical_indicators['macd_series'] = technical_indicators['macd']  # Keep original series
+                    technical_indicators['macd'] = current_macd  # Overwrite with current value
+                if 'atr' in technical_indicators and not technical_indicators['atr'].empty:
+                    # Store the current ATR value for UI display (overwrite the array with current value)
+                    current_atr = float(technical_indicators['atr'].iloc[-1])
+                    technical_indicators['atr_series'] = technical_indicators['atr']  # Keep original series
+                    technical_indicators['atr'] = current_atr  # Overwrite with current value
+                logger.info(f"📊 Current values: RSI14={technical_indicators.get('rsi_14', 'N/A')}, MACD={technical_indicators.get('macd', 'N/A')}, ATR={technical_indicators.get('atr', 'N/A')}")
+            except Exception as e:
+                logger.warning(f"⚠️ Error extracting current indicator values: {e}")
+
+            # Step 6: Calculate technical score
+            step6_start = time.time()
+            technical_score = self.calculate_phase3_technical_score(technical_indicators, regime_data, rsi_data)
+            step6_duration = time.time() - step6_start
+            try:
+                logger.info(
+                    "⏱️  STEP 6 (Technical Score): %.3fs | score=%.4f, rsi=%s, ema20=%s, ema50=%s, atr=%s, regime=%s, rsi_align=%s",
+                    step6_duration,
+                    float(technical_score),
+                    technical_indicators.get('rsi') if isinstance(technical_indicators, dict) else None,
+                    technical_indicators.get('ema_20') if isinstance(technical_indicators, dict) else None,
+                    technical_indicators.get('ema_50') if isinstance(technical_indicators, dict) else None,
+                    technical_indicators.get('atr') if isinstance(technical_indicators, dict) else None,
+                    regime_data.get('regime_classification') if isinstance(regime_data, dict) else None,
+                    rsi_data.get('alignment') if isinstance(rsi_data, dict) else None,
+                )
+            except Exception:
+                logger.info(f"⏱️  STEP 6 (Technical Score): {step6_duration:.3f}s")
+
+            # Step 7-8: Phase 1 & 2 analysis (cached)
+            step7_start = time.time()
+            (
+                microstructure,
+                bollinger_bands,
+                vwap_analysis,
+                volume_indicators,
+                moving_averages,
+                keltner_channels,
+                multi_timeframe,
+                cross_asset_correlation,
+                btc_dominance,
+                market_wide_sentiment,
+            ) = await asyncio.gather(
+                self.analyze_market_microstructure_cached(ohlcv, symbol),
+                self.analyze_bollinger_bands_cached(ohlcv, symbol),
+                self.analyze_vwap_enhanced_cached(ohlcv, symbol),
+                self.analyze_volume_indicators_cached(ohlcv, symbol),
+                self.analyze_moving_averages_enhanced_cached(ohlcv, symbol),
+                self.analyze_keltner_channels_cached(ohlcv, symbol),
+                self.analyze_multi_timeframe_cached(symbol),
+                self.analyze_cross_asset_correlation_cached(symbol),
+                self.analyze_btc_dominance_cached(),
+                self.analyze_market_wide_sentiment_cached(),
+            )
+            step7_duration = time.time() - step7_start
+            try:
+                logger.info(
+                    "⏱️  STEP 7-8 (Phase 1/2): %.3fs | micro:last_tick=%s, boll:squeeze=%s, vwap:dev=%s, vol:obv=%s, ma:last_cross=%s, kelt:last_break=%s, mtf:trend=%s/cons=%.2f, btc_dom=%.2f, mkt_sent=%.3f",
+                    step7_duration,
+                    microstructure.get('last_tick') if isinstance(microstructure, dict) else None,
+                    bollinger_bands.get('squeeze') if isinstance(bollinger_bands, dict) else None,
+                    vwap_analysis.get('deviation') if isinstance(vwap_analysis, dict) else None,
+                    (volume_indicators.get('obv_trend') if isinstance(volume_indicators, dict) else None),
+                    (moving_averages.get('crossovers', {}).get('last') if isinstance(moving_averages, dict) else None),
+                    (keltner_channels.get('last_breakout_up') if isinstance(keltner_channels, dict) else None),
+                    (multi_timeframe.get('overall_trend') if isinstance(multi_timeframe, dict) else None),
+                    float(multi_timeframe.get('trend_consensus', 0.0)) if isinstance(multi_timeframe, dict) else 0.0,
+                    float(btc_dominance.get('btc_dominance', 0.0)) if isinstance(btc_dominance, dict) else 0.0,
+                    float(market_wide_sentiment.get('market_sentiment_score', 0.0)) if isinstance(market_wide_sentiment, dict) else 0.0,
+                )
+            except Exception:
+                logger.info(f"⏱️  STEP 7-8 (Phase 1/2 Analysis): {step7_duration:.3f}s")
+
+            # Step 9: Calculate fused score
+            step9_start = time.time()
+            fused_score = self.calculate_phase3_fused_score(technical_score, sentiment_score, technical_weight, sentiment_weight)
+            try:
+                from agent.config import load_config_from_env as _load_cfg
+                _cfg = _load_cfg()
+                logger.info(
+                    "🧮 Fused score details → tech_weight=%.2f, sentiment_weight=%.2f, technical=%.4f, sentiment=%.4f, fused=%.4f",
+                    float(_cfg.thresholds.technical_weight),
+                    float(_cfg.thresholds.sentiment_weight),
+                    float(technical_score),
+                    float(sentiment_score),
+                    float(fused_score)
+                )
+            except Exception:
+                pass
+            step9_duration = time.time() - step9_start
+            logger.info(f"⏱️  STEP 9 (Fused Score): {step9_duration:.3f}s")
+
+            # Step 10: Determine signal type and confidence
+            signal_type, confidence = self.determine_signal_type_and_confidence(fused_score, buy_threshold, sell_threshold)
+            try:
+                conf_components = []
+                if regime_data.get('regime_classification') == 'trending':
+                    conf_components.append('regime(+trend)')
+                if rsi_data.get('alignment') in ['bullish', 'bearish']:
+                    conf_components.append('rsi(alignment)')
+                if abs(technical_score) > 0.5:
+                    conf_components.append('technical(>0.5)')
+                logger.info("🎛️ Confidence factors → %s | final=%.2f%%", ','.join(conf_components) if conf_components else 'none', float(confidence) * 100.0)
+            except Exception:
+                pass
+            
+            # Step 11: Calculate risk management
+            risk_metrics = self.calculate_enhanced_risk_management(ohlcv, technical_indicators, regime_data)
+            stop_loss, take_profit = self.calculate_volatility_adjusted_stops(ohlcv, signal_type, risk_metrics)
+            try:
+                logger.info(
+                    "🛡️ Risk metrics → vol=%.4f, var95=%.4f, sharpe=%.3f, mdd=%.4f | SL=%.2f, TP=%.2f",
+                    float(risk_metrics.get('volatility', 0.0)),
+                    float(risk_metrics.get('var_95', 0.0)),
+                    float(risk_metrics.get('sharpe_ratio', 0.0)),
+                    float(risk_metrics.get('max_drawdown', 0.0)),
+                    float(stop_loss),
+                    float(take_profit)
+                )
+            except Exception:
+                pass
+            
+            # Step 12: Calculate position sizing
+            position_sizing = self.compute_dynamic_position_sizing(risk_metrics, confidence, signal_type)
+            try:
+                logger.info(
+                    "📏 Position sizing → recommended=%.2f%%, risk_per_trade=%.2f%%, max=%.2f%%",
+                    float(position_sizing.get('recommended_size', 0.0)) * 100.0,
+                    float(position_sizing.get('risk_per_trade', 0.0)) * 100.0,
+                    float(position_sizing.get('max_position', 0.0)) * 100.0,
+                )
+            except Exception:
+                pass 
+
+            # Final summary block
+            try:
+                total_duration = time.time() - total_start_time
+                logger.info("=" * 80)
+                logger.info(
+                    "✅ Phase 3 summary → %s %s @ %s | fused=%.4f, tech=%.4f, sent=%.4f, conf=%.2f%% | SL=%.2f TP=%.2f | total=%.3fs",
+                    signal_type,
+                    symbol,
+                    timeframe,
+                    float(fused_score),
+                    float(technical_score),
+                    float(sentiment_score),
+                    float(confidence) * 100.0,
+                    float(stop_loss),
+                    float(take_profit),
+                    total_duration,
+                )
+                logger.info("=" * 80)
+            except Exception:
+                pass
+            
+            # Step 13: Create Phase3 signal (ensure all data is serializable)
+            phase3_signal = Phase3TradingSignal(
+                symbol=symbol,
+                timeframe=timeframe,
+                timestamp=datetime.now(pytz.timezone('Asia/Jerusalem')),
+                signal_type=signal_type,
+                technical_score=float(technical_score),
+                sentiment_score=float(sentiment_score),
+                fused_score=float(fused_score),
+                confidence=float(confidence),
+                stop_loss=float(stop_loss),
+                take_profit=float(take_profit),
+                reasoning=self.generate_phase3_reasoning(signal_type, technical_score, sentiment_score, fused_score, regime_data, rsi_data),
+                # Phase 3 Advanced Features
+                regime_detection=to_serializable(regime_data),
+                advanced_rsi=to_serializable(rsi_data),
+                position_sizing=to_serializable(position_sizing),
+                volatility_adjusted_stops={'stop_loss': float(stop_loss), 'take_profit': float(take_profit)},
+                risk_metrics=to_serializable(risk_metrics),
+                technical_indicators=to_serializable(technical_indicators),
+                market_microstructure=to_serializable(microstructure),
+                # Phase 1 Enhanced Technical Analysis
+                bollinger_bands=to_serializable(bollinger_bands),
+                vwap_analysis=to_serializable(vwap_analysis),
+                volume_indicators=to_serializable(volume_indicators),
+                moving_averages=to_serializable(moving_averages),
+                keltner_channels=to_serializable(keltner_channels),
+                # Phase 2 Multi-Timeframe Analysis
+                multi_timeframe=to_serializable(multi_timeframe),
+                cross_asset_correlation=to_serializable(cross_asset_correlation),
+                btc_dominance=to_serializable(btc_dominance),
+                market_wide_sentiment=to_serializable(market_wide_sentiment),
+                # Applied Parameters (for UI display)
+                applied_buy_threshold=buy_threshold,
+                applied_sell_threshold=sell_threshold,
+                applied_tech_weight=technical_weight,
+                applied_sentiment_weight=sentiment_weight,
+                # Configuration
+                output_level=output_level,
+                username=username
+            )
+            
+            # Step 14: Store signal (await to ensure it's visible in recent tips immediately)
+            logger.info("💾 Storing signal (await)")
+            await self.store_signal(phase3_signal, username)
+            # Step 15: Send notification in background (non-blocking)
+            asyncio.create_task(self.send_telegram_notification(phase3_signal, username))
+
+            total_duration = time.time() - total_start_time
+            logger.info(f"⏱️  TOTAL EXECUTION TIME: {total_duration:.3f}s")
+            logger.info(f"✅ Phase 3 signal generated successfully: {signal_type} (confidence: {confidence:.3f})")
+            
+            # Log comprehensive response details
+            logger.info("=" * 80)
+            logger.info("📊 PHASE 3 SIGNAL RESPONSE DETAILS")
+            logger.info("=" * 80)
+            logger.info(f"🎯 Signal Type: {signal_type}")
+            logger.info(f"📈 Symbol: {phase3_signal.symbol}")
+            logger.info(f"⏰ Timeframe: {phase3_signal.timeframe}")
+            logger.info(f"📅 Timestamp: {phase3_signal.timestamp}")
+            logger.info(f"👤 Username: {phase3_signal.username}")
+            logger.info(f"🎲 Confidence: {phase3_signal.confidence:.4f} ({phase3_signal.confidence*100:.2f}%)")
+            logger.info(f"🔗 Fused Score: {phase3_signal.fused_score:.4f}")
+            logger.info(f"🔧 Technical Score: {phase3_signal.technical_score:.4f}")
+            logger.info(f"💭 Sentiment Score: {phase3_signal.sentiment_score:.4f}")
+            logger.info(f"🛡️ Stop Loss: {phase3_signal.stop_loss:.2f}")
+            logger.info(f"🎯 Take Profit: {phase3_signal.take_profit:.2f}")
+            logger.info(f"💰 Current Price: {phase3_signal.technical_indicators.get('current_price', 'N/A')}")
+            # Safely extract technical indicator values
+            try:
+                rsi_data = phase3_signal.technical_indicators.get('rsi_14', pd.Series([50]))
+                rsi_value = rsi_data.iloc[-1] if hasattr(rsi_data, 'iloc') and len(rsi_data) > 0 else (rsi_data[-1] if isinstance(rsi_data, list) and len(rsi_data) > 0 else 'N/A')
+                logger.info(f"📊 RSI: {rsi_value}")
+            except Exception:
+                logger.info(f"📊 RSI: N/A")
+            
+            try:
+                macd_data = phase3_signal.technical_indicators.get('macd', pd.Series([0]))
+                macd_value = macd_data.iloc[-1] if hasattr(macd_data, 'iloc') and len(macd_data) > 0 else (macd_data[-1] if isinstance(macd_data, list) and len(macd_data) > 0 else 'N/A')
+                logger.info(f"📈 MACD: {macd_value}")
+            except Exception:
+                logger.info(f"📈 MACD: N/A")
+            
+            try:
+                atr_data = phase3_signal.technical_indicators.get('atr', pd.Series([0]))
+                atr_value = atr_data.iloc[-1] if hasattr(atr_data, 'iloc') and len(atr_data) > 0 else (atr_data[-1] if isinstance(atr_data, list) and len(atr_data) > 0 else 'N/A')
+                logger.info(f"📉 ATR: {atr_value}")
+            except Exception:
+                logger.info(f"📉 ATR: N/A")
+            # Log applied parameters (these are stored in the signal generation process)
+            logger.info(f"🎛️ Applied Buy Threshold: {buy_threshold if buy_threshold is not None else 'default'}")
+            logger.info(f"🎛️ Applied Sell Threshold: {sell_threshold if sell_threshold is not None else 'default'}")
+            logger.info(f"🎛️ Applied Technical Weight: {technical_weight if technical_weight is not None else 'default'}")
+            logger.info(f"🎛️ Applied Sentiment Weight: {sentiment_weight if sentiment_weight is not None else 'default'}")
+            logger.info(f"📊 Regime Classification: {phase3_signal.regime_detection.get('regime_classification', 'N/A')}")
+            logger.info(f"📊 Trend Strength: {phase3_signal.regime_detection.get('trend_strength', 'N/A')}")
+            logger.info(f"📊 RSI Alignment: {phase3_signal.advanced_rsi.get('alignment', 'N/A')}")
+            logger.info(f"📊 Position Size: {phase3_signal.position_sizing.get('recommended_size', 'N/A')}")
+            logger.info(f"📊 Risk Level: {phase3_signal.risk_metrics.get('risk_level', 'N/A')}")
+            logger.info(f"📊 Volatility: {phase3_signal.risk_metrics.get('volatility', 'N/A')}")
+            logger.info(f"📊 VaR 95%: {phase3_signal.risk_metrics.get('var_95', 'N/A')}")
+            logger.info(f"📊 Sharpe Ratio: {phase3_signal.risk_metrics.get('sharpe_ratio', 'N/A')}")
+            logger.info(f"📊 Multi-timeframe Trend: {phase3_signal.multi_timeframe.get('overall_trend', 'N/A')}")
+            logger.info(f"📊 Trend Consensus: {phase3_signal.multi_timeframe.get('trend_consensus', 'N/A')}")
+            # Log sentiment information from available fields
+            logger.info(f"💭 Sentiment Score: {phase3_signal.sentiment_score:.4f}")
+            logger.info(f"💭 Market-wide Sentiment: {phase3_signal.market_wide_sentiment.get('overall_sentiment', 'N/A')}")
+            logger.info(f"💭 Market Sentiment Score: {phase3_signal.market_wide_sentiment.get('market_sentiment_score', 'N/A')}")
+            # Note: Detailed sentiment analysis and reasoning are not stored in the model
+            logger.info("=" * 80)
+            logger.info("📊 END OF PHASE 3 SIGNAL RESPONSE")
+            logger.info("=" * 80)
+            
+            return phase3_signal
+            
+        except Exception as e:
+            logger.error(f"❌ Error generating Phase 3 signal: {e}")
+            raise
+
+    async def generate_phase3_signal(self, request: Phase3SignalRequest, username: str, output_level: str = "full") -> Phase3TradingSignal:
         """
         Generate a Phase 3 advanced trading signal - Completely Independent
         
         Args:
             request: Signal generation request
             username: Username of the user requesting the signal
-            
+            output_level: Level of detail in output ("full", "summary", "minimal")
+        
         Returns:
-            Phase 3 advanced trading signal
+            Phase3TradingSignal: Complete Phase 3 signal with all advanced features
         """
-        try:
-            logger.info("=" * 80)
-            logger.info(f"🚀 STARTING PHASE 3 ADVANCED SIGNAL GENERATION (INDEPENDENT)")
-            logger.info(f"📊 Symbol: {request.symbol}")
-            logger.info(f"⏰ Timeframe: {request.timeframe}")
-            logger.info(f"👤 Username: {username}")
-            logger.info(f"🕐 Timestamp: {get_israel_time().isoformat()}")
-            logger.info("=" * 80)
-            
-            # Step 1: Fetch market data
-            logger.info("📊 STEP 1: FETCHING MARKET DATA")
-            ohlcv = self.fetch_market_data(request.symbol, request.timeframe)
-            logger.info(f"✅ Market data fetched: {len(ohlcv)} candles")
-            
-            # Step 2: Calculate Phase 3 technical indicators
-            logger.info("🔧 STEP 2: CALCULATING PHASE 3 TECHNICAL INDICATORS")
-            technical_indicators = self.calculate_phase3_technical_indicators(ohlcv)
-            logger.info(f"✅ Phase 3 technical indicators calculated")
-            
-            # Step 3: Advanced regime detection
-            logger.info("🔍 STEP 3: ADVANCED REGIME DETECTION")
-            regime_data = self.analyze_advanced_regime_detection(ohlcv)
-            logger.info(f"✅ Advanced regime detection completed")
-            
-            # Step 4: Advanced RSI variants analysis
-            logger.info("📊 STEP 4: ADVANCED RSI VARIANTS ANALYSIS")
-            rsi_data = self.analyze_advanced_rsi_variants(ohlcv)
-            logger.info(f"✅ Advanced RSI variants analysis completed")
-            
-            # Step 5: Phase 3 sentiment analysis
-            logger.info("💭 STEP 5: PHASE 3 SENTIMENT ANALYSIS")
-            sentiment_score = await self.analyze_phase3_sentiment(request.symbol)
-            logger.info(f"✅ Phase 3 sentiment analysis completed: {sentiment_score:.4f}")
-            
-            # Step 6: Calculate Phase 3 technical score
-            logger.info("🧮 STEP 6: PHASE 3 TECHNICAL SCORE CALCULATION")
-            phase3_tech_score = self.calculate_phase3_technical_score(
-                technical_indicators, regime_data, rsi_data
-            )
-            logger.info(f"✅ Phase 3 technical score calculated: {phase3_tech_score:.4f}")
-            
-            # Step 7: Determine signal type
-            logger.info("🎯 STEP 7: DETERMINING SIGNAL TYPE")
-            signal_type = self.determine_phase3_signal_type(
-                phase3_tech_score, sentiment_score, regime_data
-            )
-            logger.info(f"✅ Signal type determined: {signal_type}")
-            
-            # Step 8: Enhanced risk management
-            logger.info("🛡️ STEP 8: ENHANCED RISK MANAGEMENT")
-            risk_data = self.calculate_enhanced_risk_management(ohlcv, signal_type, regime_data)
-            stop_loss = risk_data.get('stop_loss')
-            take_profit = risk_data.get('take_profit')
-            logger.info(f"✅ Enhanced risk management calculated")
-            
-            # Step 9: Market microstructure analysis
-            logger.info("🔬 STEP 9: MARKET MICROSTRUCTURE ANALYSIS")
-            microstructure = self.analyze_market_microstructure(ohlcv)
-            logger.info(f"✅ Market microstructure analysis completed")
-            
-            # Step 10: Phase 1 Enhanced Technical Analysis
-            logger.info("📊 STEP 10: PHASE 1 ENHANCED TECHNICAL ANALYSIS")
-            bollinger_bands = self.analyze_bollinger_bands(ohlcv)
-            vwap_analysis = self.analyze_vwap_enhanced(ohlcv)
-            volume_indicators = self.analyze_volume_indicators(ohlcv)
-            moving_averages = self.analyze_moving_averages_enhanced(ohlcv)
-            keltner_channels = self.analyze_keltner_channels(ohlcv)
-            logger.info(f"✅ Phase 1 enhanced technical analysis completed")
-            
-            # Step 11: Phase 2 Multi-Timeframe Analysis
-            logger.info("📊 STEP 11: PHASE 2 MULTI-TIMEFRAME ANALYSIS")
-            multi_timeframe = self.analyze_multi_timeframe(request.symbol)
-            cross_asset_correlation = self.analyze_cross_asset_correlation(request.symbol)
-            btc_dominance = self.analyze_btc_dominance()
-            market_wide_sentiment = self.analyze_market_wide_sentiment()
-            logger.info(f"✅ Phase 2 multi-timeframe analysis completed")
-            
-            # Step 12: Calculate fused score and confidence
-            logger.info("🧮 STEP 12: CALCULATING FUSED SCORE AND CONFIDENCE")
-            config = load_config_from_env()
-            tech_weight = config.thresholds.technical_weight
-            sentiment_weight = config.thresholds.sentiment_weight
-            fused_score = tech_weight * phase3_tech_score + sentiment_weight * sentiment_score
-            
-            # Calculate confidence based on multiple factors
-            confidence = 0.5  # Base confidence
-            
-            # Regime confidence
-            if regime_data.get('regime_classification') == 'trending':
-                confidence += 0.15
-            
-            # RSI alignment confidence
-            if rsi_data.get('alignment') in ['bullish', 'bearish']:
-                confidence += 0.15
-            
-            # Technical score confidence
-            if abs(phase3_tech_score) > 0.5:
-                confidence += 0.1
-            
-            # Multi-timeframe consensus confidence
-            trend_consensus = multi_timeframe.get('trend_consensus', 0.5)
-            if trend_consensus > 0.7 or trend_consensus < 0.3:
-                confidence += 0.1
-            
-            # Market-wide sentiment confidence
-            market_sentiment = market_wide_sentiment.get('market_sentiment_score', 0)
-            if abs(market_sentiment) > 0.3:
-                confidence += 0.05
-            
-            # Bollinger squeeze confidence
-            if bollinger_bands.get('squeeze', False):
-                confidence += 0.05
-            
-            confidence = min(1.0, confidence)
-            logger.info(f"✅ Fused score: {fused_score:.4f}, Confidence: {confidence:.2%}")
-            
-            # Step 13: Create Complete Phase 3 Signal
-            logger.info("🎯 STEP 13: CREATING COMPLETE PHASE 3 SIGNAL")
-            phase3_signal = Phase3TradingSignal(
-                symbol=request.symbol,
-                timeframe=request.timeframe,
-                timestamp=get_israel_time(),
-                signal_type=signal_type,
-                technical_score=phase3_tech_score,
-                sentiment_score=sentiment_score,
-                fused_score=fused_score,
-                confidence=confidence,
-                stop_loss=stop_loss,
-                take_profit=take_profit,
-                # Phase 3 Advanced Features
-                regime_detection=regime_data,
-                advanced_rsi=rsi_data,
-                position_sizing=risk_data.get('position_sizing', {}),
-                volatility_adjusted_stops=risk_data.get('volatility_adjusted_stops', {}),
-                risk_metrics=risk_data.get('risk_metrics', {}),
-                technical_indicators=technical_indicators,
-                market_microstructure=microstructure,
-                # Phase 1 Enhanced Technical Analysis
-                bollinger_bands=bollinger_bands,
-                vwap_analysis=vwap_analysis,
-                volume_indicators=volume_indicators,
-                moving_averages=moving_averages,
-                keltner_channels=keltner_channels,
-                # Phase 2 Multi-Timeframe Analysis
-                multi_timeframe=multi_timeframe,
-                cross_asset_correlation=cross_asset_correlation,
-                btc_dominance=btc_dominance,
-                market_wide_sentiment=market_wide_sentiment,
-                username=username
-            )
-            logger.info(f"✅ Complete Phase 3 signal created successfully")
-            
-            # Step 14: Store signal
-            logger.info("💾 STEP 14: STORING SIGNAL")
-            await self.store_signal(phase3_signal, username)
-            logger.info(f"✅ Signal stored successfully")
-            
-            # Step 15: Send Telegram notification
-            logger.info("📱 STEP 15: SENDING TELEGRAM NOTIFICATION")
-            await self.send_telegram_notification(phase3_signal, username)
-            logger.info(f"✅ Telegram notification sent")
-            
-            logger.info("=" * 80)
-            logger.info(f"🎉 COMPLETE PHASE 3 SIGNAL GENERATION COMPLETED SUCCESSFULLY")
-            logger.info(f"📊 Symbol: {request.symbol}")
-            logger.info(f"🎯 Signal: {signal_type}")
-            logger.info(f"📈 Technical Score: {phase3_tech_score:.4f}")
-            logger.info(f"💭 Sentiment Score: {sentiment_score:.4f}")
-            logger.info(f"🧮 Fused Score: {fused_score:.4f}")
-            logger.info(f"🎲 Confidence: {confidence:.2%}")
-            logger.info(f"🛡️ Stop Loss: ${stop_loss:.2f}")
-            logger.info(f"🛡️ Take Profit: ${take_profit:.2f}")
-            logger.info("=" * 50)
-            logger.info("📊 PHASE 1 FEATURES:")
-            logger.info(f"   • Bollinger Squeeze: {bollinger_bands.get('squeeze', False)}")
-            logger.info(f"   • VWAP Deviation: {vwap_analysis.get('deviation', 0):.2f} bps")
-            logger.info(f"   • Volume Trend: {volume_indicators.get('obv_trend', 'neutral')}")
-            logger.info(f"   • MA Crossovers: {moving_averages.get('crossovers', {}).get('last_bullish', False)}")
-            logger.info(f"   • Keltner Breakout: {keltner_channels.get('last_breakout_up', False)}")
-            logger.info("=" * 50)
-            logger.info("📊 PHASE 2 FEATURES:")
-            logger.info(f"   • Multi-TF Trend: {multi_timeframe.get('overall_trend', 'neutral')}")
-            logger.info(f"   • Trend Consensus: {multi_timeframe.get('trend_consensus', 0.5):.2%}")
-            logger.info(f"   • BTC Dominance: {btc_dominance.get('btc_dominance', 50):.1f}%")
-            logger.info(f"   • Market Sentiment: {market_wide_sentiment.get('overall_sentiment', 'neutral')}")
-            logger.info("=" * 50)
-            logger.info("📊 PHASE 3 FEATURES:")
-            logger.info(f"   • Regime: {regime_data.get('regime_classification', 'unknown')}")
-            logger.info(f"   • RSI Alignment: {rsi_data.get('alignment', 'mixed')}")
-            logger.info(f"   • Risk/Reward: {risk_data.get('risk_metrics', {}).get('risk_reward_ratio', 1.0):.2f}")
-            logger.info("=" * 80)
-            
-            return phase3_signal
-            
-        except Exception as e:
-            logger.error("=" * 80)
-            logger.error(f"❌ PHASE 3 SIGNAL GENERATION FAILED")
-            logger.error(f"📊 Symbol: {request.symbol}")
-            logger.error(f"👤 Username: {username}")
-            logger.error(f"🚨 Error: {str(e)}")
-            logger.error("=" * 80)
-            raise
+        return await self.generate_phase3_signal_shared(
+            request.symbol, 
+            request.timeframe, 
+            username, 
+            output_level,
+            request.buy_threshold,
+            request.sell_threshold,
+            request.technical_weight,
+            request.sentiment_weight
+        )
 
 # Create global instance
 phase3_signal_generator = Phase3SignalGenerator()

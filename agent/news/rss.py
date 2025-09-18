@@ -5,6 +5,8 @@ import feedparser
 import re
 from datetime import datetime, timedelta, timezone
 import time
+import aiohttp
+import asyncio
 
 from ..logging_config import get_logger
 
@@ -82,6 +84,101 @@ def fetch_headlines(feeds: List[str], limit_per_feed: int = 5, symbol: Optional[
 	logger.info(f"Total headlines collected: {len(texts)}")
 	if texts:
 		logger.debug(f"Sample headlines: {texts[:2]}")
+	
+	return texts
+
+async def fetch_headlines_async(feeds: List[str], limit_per_feed: int = 5, symbol: Optional[str] = None, hours_back: int = 6) -> List[str]:
+	"""Async version of fetch_headlines for better performance"""
+	logger.info(f"Fetching headlines from {len(feeds)} RSS feeds (async), limit per feed: {limit_per_feed}")
+	if symbol:
+		logger.info(f"Filtering headlines for symbol: {symbol}")
+	logger.info(f"Time filter: Only headlines from last {hours_back} hours")
+	
+	# Calculate cutoff time for recent headlines (using UTC)
+	cutoff_time = datetime.now(timezone.utc) - timedelta(hours=hours_back)
+	cutoff_timestamp = cutoff_time.timestamp()
+	logger.info(f"Cutoff time (UTC): {cutoff_time.strftime('%Y-%m-%d %H:%M:%S UTC')}")
+	
+	async def fetch_single_feed(session: aiohttp.ClientSession, url: str) -> List[str]:
+		"""Fetch headlines from a single RSS feed"""
+		try:
+			logger.debug(f"Fetching RSS feed: {url}")
+			async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as response:
+				if response.status == 200:
+					content = await response.text()
+					feed = feedparser.parse(content)
+					
+					if not feed.entries:
+						logger.warning(f"No entries found in feed: {url}")
+						return []
+					
+					logger.debug(f"Found {len(feed.entries)} entries in feed: {url}")
+					
+					feed_texts = []
+					for j, entry in enumerate(feed.entries[:limit_per_feed]):
+						headline = entry.get("title") or ""
+						desc = entry.get("summary") or ""
+						text = (headline + " - " + desc).strip()
+						
+						if text:
+							# Filter by time (only recent headlines)
+							entry_time = entry.get("published_parsed")
+							if entry_time:
+								try:
+									# Convert RSS time tuple to UTC timestamp
+									entry_timestamp = time.mktime(entry_time)
+									# Convert to UTC datetime for comparison
+									entry_datetime = datetime.fromtimestamp(entry_timestamp, tz=timezone.utc)
+									
+									if entry_datetime < cutoff_time:
+										logger.debug(f"Entry {j+1}: filtered out (too old, {entry_datetime.strftime('%Y-%m-%d %H:%M:%S UTC')}): {headline[:50]}...")
+										continue
+									else:
+										logger.debug(f"Entry {j+1}: time OK ({entry_datetime.strftime('%Y-%m-%d %H:%M:%S UTC')}): {headline[:50]}...")
+								except (ValueError, TypeError) as e:
+									logger.debug(f"Entry {j+1}: time parsing error, including anyway: {e}")
+									# If we can't parse the time, include the entry to be safe
+							else:
+								logger.debug(f"Entry {j+1}: no time info, including anyway: {headline[:50]}...")
+							
+							# Filter by symbol if provided
+							if symbol and not _is_relevant_to_symbol(text, symbol):
+								logger.debug(f"Entry {j+1}: filtered out (not relevant to {symbol}): {headline[:50]}...")
+								continue
+							
+							feed_texts.append(text.strip())
+							logger.debug(f"Entry {j+1}: {headline[:50]}...")
+						else:
+							logger.debug(f"Entry {j+1}: skipped (empty text)")
+					
+					logger.info(f"Feed {url}: processed {len(feed_texts)} valid headlines")
+					return feed_texts
+				else:
+					logger.warning(f"Failed to fetch feed {url}: HTTP {response.status}")
+					return []
+		except asyncio.TimeoutError:
+			logger.error(f"Timeout fetching feed: {url}")
+			return []
+		except Exception as e:
+			logger.error(f"Error fetching feed {url}: {e}")
+			return []
+	
+	# Fetch all feeds concurrently
+	async with aiohttp.ClientSession() as session:
+		tasks = [fetch_single_feed(session, url) for url in feeds]
+		results = await asyncio.gather(*tasks, return_exceptions=True)
+	
+	# Flatten results and filter out exceptions
+	texts = []
+	for i, result in enumerate(results):
+		if isinstance(result, Exception):
+			logger.error(f"Error processing feed {feeds[i]}: {result}")
+		else:
+			texts.extend(result)
+	
+	logger.info(f"Total RSS headlines collected (async): {len(texts)}")
+	if texts:
+		logger.debug(f"Sample RSS headlines: {texts[:2]}")
 	
 	return texts
 

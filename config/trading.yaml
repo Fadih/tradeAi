@@ -63,12 +63,12 @@ universe:
   
   # Default timeframe for technical analysis and signal generation
   # Optimized for short-term crypto trading - ultra-fast for scalping
-  default_timeframe: "5m"
+  default_timeframe: "1m"
   
   # Available timeframes for analysis (optimized for short-term crypto trading)
   timeframes:
-    - "1m"     # Ultra short-term scalping (0-5 minute trades)
-    - "5m"     # Short-term scalping (5-30 minute trades) - DEFAULT
+    - "1m"     # Ultra short-term scalping (0-5 minute trades) - DEFAULT
+    - "5m"     # Short-term scalping (5-30 minute trades)
     - "15m"    # Quick swing trades (30 minutes - 2 hours)
     - "1h"     # Short swing trades (2-8 hours)
     
@@ -77,26 +77,26 @@ universe:
 # =============================================================================
 signals:
   # Default thresholds for signal generation (fused score ranges)
-  # Optimized for crypto markets - more sensitive to generate actionable signals
+  # Optimized for ultra-short-term crypto scalping - very sensitive to small moves
   thresholds:
     # Minimum fused score to generate BUY signal (0.0 to 1.0)
-    # Optimized for short-term crypto trading - more sensitive to small moves
-    buy_threshold: 0.15
+    # Ultra-sensitive for 1-minute scalping - captures small moves quickly
+    buy_threshold: 0.08
     
     # Maximum fused score to generate SELL signal (-1.0 to 0.0)
-    # Optimized for short-term crypto trading - more sensitive to small moves
-    sell_threshold: -0.10
+    # Ultra-sensitive for 1-minute scalping - captures small moves quickly
+    sell_threshold: -0.08
     
   # Weight configuration for signal fusion (must sum to 1.0)
-  # Optimized for short-term crypto trading - technical analysis is more reliable short-term
+  # Optimized for ultra-short-term crypto scalping - technical analysis is most reliable
   weights:
     # Weight of technical analysis in final signal (0.0 to 1.0)
-    # Increased for short-term crypto trading - technicals are more reliable
-    technical_weight: 0.6
+    # Maximized for ultra-short-term scalping - technicals are most reliable for 1-minute trades
+    technical_weight: 0.75
     
     # Weight of sentiment analysis in final signal (0.0 to 1.0)
-    # Reduced for short-term trading - sentiment is more useful for longer-term
-    sentiment_weight: 0.4
+    # Reduced for ultra-short-term scalping - sentiment is less relevant for 1-minute trades
+    sentiment_weight: 0.25
     
   
   # Sentiment enhancement by asset type
@@ -167,18 +167,18 @@ signals:
     # Enable multi-timeframe analysis by default
     enabled: true
     
-    # Timeframes to analyze (optimized for short-term crypto trading)
+    # Timeframes to analyze (optimized for ultra-short-term crypto scalping)
     timeframes:
-      - "5m"     # Ultra short-term (30% weight) - for precise entries
-      - "15m"    # Short-term (40% weight) - for trend confirmation
-      - "1h"     # Primary (30% weight) - for overall direction
+      - "1m"     # Ultra short-term (50% weight) - for precise scalping entries
+      - "5m"     # Short-term (30% weight) - for trend confirmation
+      - "15m"    # Quick swing (20% weight) - for overall direction
     
     # Weights for each timeframe (must sum to 1.0)
-    # Optimized for short-term crypto trading - more weight on faster timeframes
+    # Optimized for ultra-short-term crypto scalping - maximum weight on 1-minute
     weights:
-      "5m": 0.3    # Ultra short-term weight (increased)
-      "15m": 0.4   # Short-term weight (increased)
-      "1h": 0.3    # Primary weight (reduced)
+      "1m": 0.5    # Ultra short-term weight (maximized for scalping)
+      "5m": 0.3    # Short-term weight (reduced)
+      "15m": 0.2   # Quick swing weight (reduced)
     
     # Number of data points to fetch for each timeframe
     data_points: 50
@@ -187,24 +187,24 @@ signals:
     
   # Risk management parameters
   risk_management:
-    # Stop loss as percentage of entry price (0.02 = 2%)
-    stop_loss_percentage: 0.02
+    # Stop loss as percentage of entry price (0.01 = 1%) - ultra-tight for scalping
+    stop_loss_percentage: 0.01
     
-    # Take profit as percentage of entry price (0.04 = 4%)
-    take_profit_percentage: 0.04
+    # Take profit as percentage of entry price (0.02 = 2%) - quick profits for scalping
+    take_profit_percentage: 0.02
     
-    # Maximum position size as percentage of portfolio (0.1 = 10%)
-    max_position_size: 0.1
+    # Maximum position size as percentage of portfolio (0.15 = 15%) - slightly higher for scalping
+    max_position_size: 0.15
     
-    # Maximum number of signals per day per user
-    max_daily_signals: 10
+    # Maximum number of signals per day per user - increased for scalping
+    max_daily_signals: 50
     
-    # ATR-based risk management multipliers - optimized for short-term crypto scalping
-    # ATR stop loss multiplier (1.2 = 1.2x ATR for ultra-tight stop loss)
-    atr_stop_multiplier: 1.2
+    # ATR-based risk management multipliers - optimized for ultra-short-term crypto scalping
+    # ATR stop loss multiplier (0.8 = 0.8x ATR for ultra-tight stop loss)
+    atr_stop_multiplier: 0.8
     
-    # ATR take profit multiplier (2.0 = 2.0x ATR for better risk/reward ratio)
-    atr_take_profit_multiplier: 2.0
+    # ATR take profit multiplier (1.5 = 1.5x ATR for quick profits)
+    atr_take_profit_multiplier: 1.5
     
 # =============================================================================
 # TECHNICAL ANALYSIS CONFIGURATION
@@ -222,64 +222,64 @@ technical_analysis:
     min_limit: 50
     
   # RSI (Relative Strength Index) Configuration
-  # Enhanced for short-term crypto trading with multiple variants
+  # Enhanced for ultra-short-term crypto scalping with multiple variants
   rsi:
-    # Period for RSI calculation - optimized for short-term crypto trading
-    # 7-9 recommended for scalping, 5 for ultra-fast signals
-    period: 7   
+    # Period for RSI calculation - optimized for ultra-short-term crypto scalping
+    # 5 recommended for 1-minute scalping - ultra-fast signals
+    period: 5   
     
     # RSI calculation method
     # "wilder" = Wilder's RMA (original, more responsive)
     # "cutler" = Simple rolling means (steadier for short periods)
     method: "wilder"
     
-    # Signal line smoothing (EMA of RSI to reduce whipsaws)
-    signal_period: 4
+    # Signal line smoothing (EMA of RSI to reduce whipsaws) - reduced for faster response
+    signal_period: 3
     
-    # Stochastic RSI settings
+    # Stochastic RSI settings - optimized for ultra-short-term scalping
     stoch_rsi:
-      k_period: 14  # Period for %K calculation
-      d_period: 3   # Period for %D smoothing
+      k_period: 8   # Period for %K calculation - reduced for faster response
+      d_period: 2   # Period for %D smoothing - reduced for faster response
     
-    # Dynamic thresholds based on market regime
+    # Dynamic thresholds based on market regime - optimized for ultra-short-term scalping
     thresholds:
-      # Standard thresholds (for ranging markets)
-      overbought: 70
-      oversold: 30
+      # Standard thresholds (for ranging markets) - tighter for scalping
+      overbought: 65
+      oversold: 35
       
-      # Tight thresholds (for trending markets)
-      overbought_tight: 55
-      oversold_tight: 45
+      # Tight thresholds (for trending markets) - very tight for scalping
+      overbought_tight: 50
+      oversold_tight: 50
       
-      # Extreme thresholds (for mean reversion)
-      overbought_extreme: 80
-      oversold_extreme: 20
+      # Extreme thresholds (for mean reversion) - tighter for scalping
+      overbought_extreme: 75
+      oversold_extreme: 25
     
-    # Cross signal thresholds (for RSI signal line crosses)
+    # Cross signal thresholds (for RSI signal line crosses) - optimized for scalping
     cross_thresholds:
-      buy_cross: 45   # Buy when RSI crosses above signal below this level
-      sell_cross: 55  # Sell when RSI crosses below signal above this level
+      buy_cross: 40   # Buy when RSI crosses above signal below this level - more sensitive
+      sell_cross: 60  # Sell when RSI crosses below signal above this level - more sensitive
     
   # MACD stands for Moving Average Convergence Divergence - it's one of the most popular technical indicators in trading.
   macd:
-    # Fast EMA period - ultra-fast for short-term crypto scalping
+    # Fast EMA period - ultra-fast for 1-minute crypto scalping
     # Ultra-responsive to crypto volatility
-    fast_period: 4
+    fast_period: 3
     
-    # Slow EMA period - ultra-fast for short-term crypto scalping
+    # Slow EMA period - ultra-fast for 1-minute crypto scalping
     # Ultra-responsive to crypto volatility
-    slow_period: 9
+    slow_period: 7
     
-    # Signal line EMA period - ultra-fast for short-term crypto scalping
+    # Signal line EMA period - ultra-fast for 1-minute crypto scalping
     # Ultra-responsive for quick signal generation
-    signal_period: 3
+    signal_period: 2
     
   # ATR stands for Average True Range - it's a technical indicator that measures market volatility.
 
   atr:
-    # Period for ATR calculation - ultra-fast for short-term crypto scalping
+    # Period for ATR calculation - ultra-fast for 1-minute crypto scalping
     # Ultra-responsive to crypto volatility changes
-    period: 7
+    period: 5
     
     # Note: ATR multipliers are configured in risk_management section
     # - atr_stop_multiplier: 1.2 (for tighter stop loss)
@@ -287,12 +287,12 @@ technical_analysis:
     
   # Moving Averages Configuration
   moving_averages:
-    # Simple Moving Average periods to calculate
-    sma_periods: [20, 50, 200]
+    # Simple Moving Average periods to calculate - optimized for 1-minute scalping
+    sma_periods: [10, 20, 50]
     
     # Exponential Moving Average periods to calculate
-    # Optimized for short-term crypto trading: 8 (fast), 12 (MACD), 21 (trend filter)
-    ema_periods: [8, 12, 21]
+    # Optimized for 1-minute crypto scalping: 5 (ultra-fast), 8 (fast), 13 (trend filter)
+    ema_periods: [5, 8, 13]
     
 # =============================================================================
 # SENTIMENT ANALYSIS CONFIGURATION
@@ -377,10 +377,10 @@ sentiment_analysis:
   # Increased to handle more diverse Reddit content
   reddit_sample_size: 50
   
-  # Time filtering for short-term trading sentiment
+  # Time filtering for ultra-short-term trading sentiment
   # Only fetch content from last N hours for more relevant sentiment
   # Options: 1 (very recent), 3 (short-term), 6 (medium-term), 12 (longer-term)
-  hours_back: 3
+  hours_back: 1
       
   # Sentiment scoring thresholds
   scoring:
@@ -448,8 +448,8 @@ positions:
     # Maximum number of days to hold a position
     max_holding_days: 30
     
-    # Minimum number of minutes to hold a position (prevents rapid trading)
-    min_holding_minutes: 15
+    # Minimum number of minutes to hold a position (prevents rapid trading) - reduced for scalping
+    min_holding_minutes: 5
     
 # =============================================================================
 # BACKTESTING CONFIGURATION
@@ -476,3 +476,28 @@ backtesting:
     - "win_rate"          # Percentage of profitable trades
     - "total_return"      # Total return over backtest period
     - "volatility"        # Standard deviation of returns
+
+# =============================================================================
+# PHASE 4 (OPTIONAL) - DERIVATIVES & MICROSTRUCTURE CONFIGURATION
+# =============================================================================
+phase4:
+  enabled: true  # Opt-in. When true, Phase 4 signals will blend into technical score
+
+  # Weights for blending into the technical score (sum <= 0.4 recommended)
+  weights:
+    derivatives_weight: 0.15   # Contribution of derivatives score to technical score
+    microstructure_weight: 0.10 # Contribution of microstructure score to technical score
+
+  # Derivatives data integration (funding, open interest, basis)
+  derivatives:
+    enabled: true
+    funding_rate_extreme: 0.02        # Absolute funding rate considered extreme (2%)
+    open_interest_lookback_hours: 24  # Lookback window for OI change/divergence
+    basis_lookback_hours: 24          # Lookback window for perp basis percentile
+
+  # Microstructure data (order book & order flow)
+  microstructure:
+    enabled: true
+    order_book_levels: 10             # Top N levels to compute imbalance
+    imbalance_threshold: 0.60         # |bid - ask| / (bid + ask) to consider biased
+    spread_widen_threshold_bps: 5     # Spread widening threshold (basis points)

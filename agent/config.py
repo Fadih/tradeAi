@@ -433,6 +433,9 @@ class AgentConfig:
 	position_tracking: PositionTrackingConfig = field(default_factory=PositionTrackingConfig)
 	backtesting: BacktestingConfig = field(default_factory=BacktestingConfig)
 
+	# Optional Phase 4 (derivatives & microstructure) - stored as dict for flexible access
+	phase4: Dict[str, Any] = field(default_factory=dict)
+
 
 def load_yaml_config(config_path: str) -> Dict[str, Any]:
 	"""Load configuration from YAML file"""
@@ -572,6 +575,9 @@ def load_config_from_files() -> AgentConfig:
 	# Load trading configuration
 	trading_config = load_yaml_config(config_dir / "trading.yaml")
 	if trading_config:
+		# Phase 4 (optional) - store raw dict for flexible access patterns
+		if "phase4" in trading_config and isinstance(trading_config["phase4"], dict):
+			config.phase4 = trading_config["phase4"]
 		# Update universe config
 		if "universe" in trading_config:
 			universe_data = trading_config["universe"]
