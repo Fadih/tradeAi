@@ -325,37 +325,98 @@ class SignalMonitor:
                 # Store updated signal (this updates the existing signal, doesn't create a new one)
                 await self.redis_client.store_signal(signal)
                 
-                # Add history event for status change
+                # Add comprehensive history event for status change
                 await self.redis_client.add_signal_history_event(
                     signal_timestamp=signal.get('timestamp'),
                     event_type="status_changed",
                     description=f"Phase3 status changed: {original_signal_type} → {new_signal_type}",
                     metadata={
+                        # Status change info
                         "old_status": original_signal_type,
                         "new_status": new_signal_type,
+                        "reason": "Phase3 monitoring - market conditions changed",
+                        
+                        # Core scores
                         "fused_score": fresh_signal.fused_score,
                         "technical_score": fresh_signal.technical_score,
                         "sentiment_score": fresh_signal.sentiment_score,
                         "confidence": fresh_signal.confidence,
+                        
+                        # Applied thresholds
                         "applied_buy_threshold": fresh_signal.applied_buy_threshold,
                         "applied_sell_threshold": fresh_signal.applied_sell_threshold,
                         "applied_tech_weight": fresh_signal.applied_tech_weight,
                         "applied_sentiment_weight": fresh_signal.applied_sentiment_weight,
-                        "reason": "Phase3 monitoring - market conditions changed"
+                        
+                        # Price and risk management
+                        "current_price": fresh_signal.technical_indicators.get('current_price', 0),
+                        "stop_loss": fresh_signal.stop_loss,
+                        "take_profit": fresh_signal.take_profit,
+                        "risk_reward_ratio": fresh_signal.meta.get('risk_reward_ratio', 1.0),
+                        
+                        # Technical indicators
+                        "rsi_14": fresh_signal.technical_indicators.get('rsi_14', 'N/A'),
+                        "macd": fresh_signal.technical_indicators.get('macd', 'N/A'),
+                        "atr": fresh_signal.technical_indicators.get('atr', 'N/A'),
+                        "adx": fresh_signal.technical_indicators.get('adx', 'N/A'),
+                        "bb_percent": fresh_signal.technical_indicators.get('bb_percent', 'N/A'),
+                        "ema_20": fresh_signal.technical_indicators.get('ema_20', 'N/A'),
+                        "ema_50": fresh_signal.technical_indicators.get('ema_50', 'N/A'),
+                        
+                        # Market analysis
+                        "regime_classification": fresh_signal.regime_detection.get('regime_classification', 'unknown'),
+                        "trend_strength": fresh_signal.regime_detection.get('trend_strength', 0),
+                        "volatility_state": fresh_signal.regime_detection.get('volatility_state', 'medium'),
+                        "rsi_alignment": fresh_signal.advanced_rsi.get('alignment', 'mixed'),
+                        
+                        # Multi-timeframe analysis
+                        "overall_trend": fresh_signal.multi_timeframe.get('overall_trend', 'neutral'),
+                        "trend_consensus": fresh_signal.multi_timeframe.get('trend_consensus', 0.5),
+                        
+                        # Market-wide sentiment
+                        "btc_dominance": fresh_signal.btc_dominance.get('btc_dominance', 50),
+                        "market_sentiment": fresh_signal.market_wide_sentiment.get('overall_sentiment', 'neutral'),
+                        
+                        # Position sizing and risk
+                        "position_size": fresh_signal.position_sizing.get('recommended', 0),
+                        "risk_level": fresh_signal.risk_metrics.get('risk_level', 'medium'),
+                        "volatility": fresh_signal.risk_metrics.get('volatility', 0),
+                        "var_95": fresh_signal.risk_metrics.get('var_95', 0),
+                        "sharpe_ratio": fresh_signal.risk_metrics.get('sharpe_ratio', 1.0),
+                        
+                        # Market microstructure
+                        "bollinger_squeeze": fresh_signal.bollinger_bands.get('squeeze', False),
+                        "vwap_deviation": fresh_signal.vwap_analysis.get('deviation', 0),
+                        "volume_trend": fresh_signal.volume_indicators.get('obv_trend', 'neutral'),
+                        "ma_crossovers": fresh_signal.moving_averages.get('crossovers', {}).get('last_bullish', False),
+                        
+                        # Timestamp for comparison
+                        "monitoring_timestamp": datetime.now(self.israel_tz).isoformat()
                     }
                 )
                 
-                # Log activity
+                # Log comprehensive activity
                 await self.redis_client.log_activity(
                     event_type="signal_status_changed",
-                    description=f"Phase3 signal {symbol} changed from {original_signal_type} to {new_signal_type}",
+                    description=f"Phase3 signal {symbol} changed from {original_signal_type} to {new_signal_type} | Price: ${fresh_signal.technical_indicators.get('current_price', 0):.2f} | Fused: {fresh_signal.fused_score:.4f} | Confidence: {fresh_signal.confidence:.2%}",
                     user="monitoring",
                     metadata={
                         "symbol": symbol,
+                        "timeframe": fresh_signal.timeframe,
                         "old_type": original_signal_type,
                         "new_type": new_signal_type,
                         "fused_score": fresh_signal.fused_score,
-                        "confidence": fresh_signal.confidence
+                        "technical_score": fresh_signal.technical_score,
+                        "sentiment_score": fresh_signal.sentiment_score,
+                        "confidence": fresh_signal.confidence,
+                        "current_price": fresh_signal.technical_indicators.get('current_price', 0),
+                        "stop_loss": fresh_signal.stop_loss,
+                        "take_profit": fresh_signal.take_profit,
+                        "rsi_14": fresh_signal.technical_indicators.get('rsi_14', 'N/A'),
+                        "regime": fresh_signal.regime_detection.get('regime_classification', 'unknown'),
+                        "trend_strength": fresh_signal.regime_detection.get('trend_strength', 0),
+                        "risk_level": fresh_signal.risk_metrics.get('risk_level', 'medium'),
+                        "position_size": fresh_signal.position_sizing.get('recommended', 0)
                     }
                 )
                 
@@ -367,24 +428,75 @@ class SignalMonitor:
                 
                 return True
             else:
-                # Status didn't change, but still add history event for monitoring activity
+                # Status didn't change, but add history event with dynamic data to show market changes
                 logger.info(f"⏸️ [MONITOR-STATUS] Phase3 signal status unchanged for {signal.get('timestamp')}: {original_signal_type}")
                 
-                # Add history event for regular monitoring cycle
+                # Add comprehensive history event for regular monitoring cycle with dynamic data
                 await self.redis_client.add_signal_history_event(
                     signal_timestamp=signal.get('timestamp'),
                     event_type="monitoring_cycle",
-                    description=f"Phase3 monitoring cycle - status remains {original_signal_type}",
+                    description=f"monitoring cycle - status remains {original_signal_type} | FUSED SCORE: {fresh_signal.fused_score:.4f} | TECHNICAL SCORE: {fresh_signal.technical_score:.4f} | SENTIMENT SCORE: {fresh_signal.sentiment_score:.4f}",
                     metadata={
+                        # Status info
                         "current_status": original_signal_type,
+                        "reason": "regular monitoring cycle - market data updated",
+                        
+                        # Core scores with current values
                         "fused_score": fresh_signal.fused_score,
                         "technical_score": fresh_signal.technical_score,
                         "sentiment_score": fresh_signal.sentiment_score,
+                        "confidence": fresh_signal.confidence,
+                        
+                        # Applied thresholds
                         "applied_buy_threshold": fresh_signal.applied_buy_threshold,
                         "applied_sell_threshold": fresh_signal.applied_sell_threshold,
                         "applied_tech_weight": fresh_signal.applied_tech_weight,
                         "applied_sentiment_weight": fresh_signal.applied_sentiment_weight,
-                        "reason": "Phase3 regular monitoring cycle - no status change"
+                        
+                        # Price and risk management
+                        "current_price": fresh_signal.technical_indicators.get('current_price', 0),
+                        "stop_loss": fresh_signal.stop_loss,
+                        "take_profit": fresh_signal.take_profit,
+                        "risk_reward_ratio": fresh_signal.meta.get('risk_reward_ratio', 1.0),
+                        
+                        # Technical indicators
+                        "rsi_14": fresh_signal.technical_indicators.get('rsi_14', 'N/A'),
+                        "macd": fresh_signal.technical_indicators.get('macd', 'N/A'),
+                        "atr": fresh_signal.technical_indicators.get('atr', 'N/A'),
+                        "adx": fresh_signal.technical_indicators.get('adx', 'N/A'),
+                        "bb_percent": fresh_signal.technical_indicators.get('bb_percent', 'N/A'),
+                        "ema_20": fresh_signal.technical_indicators.get('ema_20', 'N/A'),
+                        "ema_50": fresh_signal.technical_indicators.get('ema_50', 'N/A'),
+                        
+                        # Market analysis
+                        "regime_classification": fresh_signal.regime_detection.get('regime_classification', 'unknown'),
+                        "trend_strength": fresh_signal.regime_detection.get('trend_strength', 0),
+                        "volatility_state": fresh_signal.regime_detection.get('volatility_state', 'medium'),
+                        "rsi_alignment": fresh_signal.advanced_rsi.get('alignment', 'mixed'),
+                        
+                        # Multi-timeframe analysis
+                        "overall_trend": fresh_signal.multi_timeframe.get('overall_trend', 'neutral'),
+                        "trend_consensus": fresh_signal.multi_timeframe.get('trend_consensus', 0.5),
+                        
+                        # Market-wide sentiment
+                        "btc_dominance": fresh_signal.btc_dominance.get('btc_dominance', 50),
+                        "market_sentiment": fresh_signal.market_wide_sentiment.get('overall_sentiment', 'neutral'),
+                        
+                        # Position sizing and risk
+                        "position_size": fresh_signal.position_sizing.get('recommended', 0),
+                        "risk_level": fresh_signal.risk_metrics.get('risk_level', 'medium'),
+                        "volatility": fresh_signal.risk_metrics.get('volatility', 0),
+                        "var_95": fresh_signal.risk_metrics.get('var_95', 0),
+                        "sharpe_ratio": fresh_signal.risk_metrics.get('sharpe_ratio', 1.0),
+                        
+                        # Market microstructure
+                        "bollinger_squeeze": fresh_signal.bollinger_bands.get('squeeze', False),
+                        "vwap_deviation": fresh_signal.vwap_analysis.get('deviation', 0),
+                        "volume_trend": fresh_signal.volume_indicators.get('obv_trend', 'neutral'),
+                        "ma_crossovers": fresh_signal.moving_averages.get('crossovers', {}).get('last_bullish', False),
+                        
+                        # Timestamp for comparison
+                        "monitoring_timestamp": datetime.now(self.israel_tz).isoformat()
                     }
                 )
                 
@@ -560,7 +672,13 @@ class SignalMonitor:
                 logger.debug(f"No chat_id found for user {username}, skipping notification")
                 return
             
-            # Create notification message
+            # Create comprehensive notification message (escape special characters for Markdown)
+            def escape_markdown(text):
+                """Escape special characters for Telegram Markdown"""
+                if text is None:
+                    return "N/A"
+                return str(text).replace('*', '\\*').replace('_', '\\_').replace('[', '\\[').replace('`', '\\`')
+            
             symbol = signal.get('symbol', 'Unknown')
             timeframe = signal.get('timeframe', 'Unknown')
             timestamp = signal.get('timestamp', 'Unknown')
@@ -576,27 +694,54 @@ class SignalMonitor:
             old_emoji = status_emoji.get(old_status, '⚪')
             new_emoji = status_emoji.get(new_status, '⚪')
             
-            message = f"""
-🚨 **Signal Status Changed** 🚨
+            # Parse timestamp for better formatting
+            try:
+                if timestamp != 'Unknown':
+                    dt = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+                    formatted_time = dt.strftime('%Y-%m-%d %H:%M:%S')
+                else:
+                    formatted_time = 'Unknown'
+            except:
+                formatted_time = timestamp
+            
+            message = f"""🚨 *Signal Status Change Alert* 🚨
 
-{old_emoji} **{old_status}** → {new_emoji} **{new_status}**
+{old_emoji} *{escape_markdown(old_status)}* → {new_emoji} *{escape_markdown(new_status)}*
 
-📊 **Symbol**: {symbol}
-⏰ **Timeframe**: {timeframe}
-👤 **User**: {username}
-🕐 **Time**: {timestamp}
+📊 *Symbol:* {escape_markdown(symbol)}
+⏰ *Timeframe:* {escape_markdown(timeframe)}
+👤 *User:* {escape_markdown(username)}
+🕐 *Time:* {escape_markdown(formatted_time)}
 
-📈 **Scores**:
-• Fused Score: {fused_score:.3f}
-• Technical Score: {technical_score:.3f}
-• Sentiment Score: {sentiment_score:.3f}
+📈 *Updated Scores:*
+• Fused Score: {fused_score:.4f}
+• Technical Score: {technical_score:.4f}
+• Sentiment Score: {sentiment_score:.4f}
 
-💡 **Risk Management**:
-• Stop Loss: {signal.get('stop_loss', 'N/A')}
-• Take Profit: {signal.get('take_profit', 'N/A')}
+🎛️ *Applied Thresholds:*
+• Buy Threshold: {signal.get('applied_buy_threshold', 'N/A')}
+• Sell Threshold: {signal.get('applied_sell_threshold', 'N/A')}
+• Technical Weight: {signal.get('applied_tech_weight', 'N/A')}
+• Sentiment Weight: {signal.get('applied_sentiment_weight', 'N/A')}
 
-🔍 **Reason**: Market conditions changed
-            """.strip()
+🛡️ *Risk Management:*
+• Stop Loss: ${signal.get('stop_loss', 'N/A')}
+• Take Profit: ${signal.get('take_profit', 'N/A')}
+• Current Price: ${signal.get('current_price', 'N/A')}
+
+📊 *Technical Indicators:*
+• RSI: {signal.get('technical_indicators', {}).get('rsi_14', 'N/A')}
+• MACD: {signal.get('technical_indicators', {}).get('macd', 'N/A')}
+• ATR: {signal.get('technical_indicators', {}).get('atr', 'N/A')}
+
+📊 *Market Analysis:*
+• Regime: {escape_markdown(signal.get('regime_detection', {}).get('regime_classification', 'unknown'))}
+• Trend: {escape_markdown(signal.get('multi_timeframe', {}).get('overall_trend', 'neutral'))}
+• Volatility: {escape_markdown(signal.get('regime_detection', {}).get('volatility_state', 'medium'))}
+
+🔍 *Change Reason:* Market conditions updated based on real\\-time analysis
+
+⚡ *Monitoring System:* Automated status update"""
             
             # Send to Telegram
             url = f"https://api.telegram.org/bot{config.telegram.bot_token}/sendMessage"

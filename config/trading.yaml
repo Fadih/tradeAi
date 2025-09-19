@@ -200,11 +200,11 @@ signals:
     max_daily_signals: 50
     
     # ATR-based risk management multipliers - optimized for ultra-short-term crypto scalping
-    # ATR stop loss multiplier (0.8 = 0.8x ATR for ultra-tight stop loss)
-    atr_stop_multiplier: 0.8
+    # ATR stop loss multiplier (2.0 = 2.0x ATR for proper risk management)
+    atr_stop_multiplier: 2.0
     
-    # ATR take profit multiplier (1.5 = 1.5x ATR for quick profits)
-    atr_take_profit_multiplier: 1.5
+    # ATR take profit multiplier (2.5 = 2.5x ATR for good risk/reward ratio)
+    atr_take_profit_multiplier: 2.5
     
 # =============================================================================
 # TECHNICAL ANALYSIS CONFIGURATION
@@ -493,7 +493,7 @@ phase4:
 
 # Monitoring configuration
 monitoring:
-  signal_check_interval_minutes: 3    # Check signals every 3 minutes
+  signal_check_interval_minutes: 1    # Check signals every 1 minute for short-term trading
   health_check_interval_seconds: 30   # Health check every 30 seconds
   max_concurrent_monitors: 10         # Maximum concurrent monitoring tasks
   history_retention_days: 30          # Keep monitoring history for 30 days

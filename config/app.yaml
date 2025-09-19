@@ -182,7 +182,7 @@ telegram:
 # =============================================================================
 monitoring:
   # Interval between signal monitoring checks (minutes)
-  signal_check_interval_minutes: 3
+  signal_check_interval_minutes: 1
   
   # Interval between health checks (seconds)
   health_check_interval_seconds: 30

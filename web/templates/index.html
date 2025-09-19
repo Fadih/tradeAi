@@ -2715,54 +2715,175 @@
                         break;
                 }
 
-                // Format metadata in a single line - only show essential fields
+                // Create comprehensive metadata display
                 let metadataText = '';
+                let detailedMetadata = '';
+                
+                
                 if (event.metadata && Object.keys(event.metadata).length > 0) {
                     const metadata = event.metadata;
                     const parts = [];
                     
-                    // Add fused score if available
-                    if (metadata.fused_score !== undefined && metadata.fused_score !== null) {
-                        const fusedScore = typeof metadata.fused_score === 'number' ? metadata.fused_score.toFixed(4) : metadata.fused_score;
-                        parts.push(`FUSED SCORE: ${fusedScore}`);
-                    }
-                    
-                    // Add technical score if available
-                    if (metadata.technical_score !== undefined && metadata.technical_score !== null) {
-                        const technicalScore = typeof metadata.technical_score === 'number' ? metadata.technical_score.toFixed(4) : metadata.technical_score;
-                        parts.push(`TECHNICAL SCORE: ${technicalScore}`);
-                    }
-                    
-                    // Add sentiment score if available
-                    if (metadata.sentiment_score !== undefined && metadata.sentiment_score !== null) {
-                        const sentimentScore = typeof metadata.sentiment_score === 'number' ? metadata.sentiment_score.toFixed(4) : metadata.sentiment_score;
-                        parts.push(`SENTIMENT SCORE: ${sentimentScore}`);
-                    }
-                    
-                    // Add current status (signal type) if available
-                    if (metadata.signal_type) {
-                        parts.push(`CURRENT STATUS: ${metadata.signal_type}`);
+                    // For monitoring cycle events, don't add scores to metadata since they're already in description
+                    if (event.event_type !== 'monitoring_cycle') {
+                        // Add fused score if available
+                        if (metadata.fused_score !== undefined && metadata.fused_score !== null) {
+                            const fusedScore = typeof metadata.fused_score === 'number' ? metadata.fused_score.toFixed(4) : metadata.fused_score;
+                            parts.push(`FUSED SCORE: ${fusedScore}`);
+                        }
+                        
+                        // Add technical score if available
+                        if (metadata.technical_score !== undefined && metadata.technical_score !== null) {
+                            const technicalScore = typeof metadata.technical_score === 'number' ? metadata.technical_score.toFixed(4) : metadata.technical_score;
+                            parts.push(`TECHNICAL SCORE: ${technicalScore}`);
+                        }
+                        
+                        // Add sentiment score if available
+                        if (metadata.sentiment_score !== undefined && metadata.sentiment_score !== null) {
+                            const sentimentScore = typeof metadata.sentiment_score === 'number' ? metadata.sentiment_score.toFixed(4) : metadata.sentiment_score;
+                            parts.push(`SENTIMENT SCORE: ${sentimentScore}`);
+                        }
+                        
+                        // Add current status (signal type) if available
+                        if (metadata.current_status || metadata.new_status) {
+                            const status = metadata.new_status || metadata.current_status;
+                            parts.push(`STATUS: ${status}`);
+                        }
                     }
                     
                     if (parts.length > 0) {
                         metadataText = parts.join(' | ');
                     }
+                    
+                    // Create detailed metadata for expandable view
+                    const detailedParts = [];
+                    
+                    // Price and Risk Management
+                    if (metadata.current_price !== undefined && metadata.current_price !== null) {
+                        detailedParts.push(`💰 Price: $${typeof metadata.current_price === 'number' ? metadata.current_price.toFixed(2) : metadata.current_price}`);
+                    }
+                    if (metadata.stop_loss !== undefined && metadata.stop_loss !== null) {
+                        detailedParts.push(`🛡️ Stop Loss: $${typeof metadata.stop_loss === 'number' ? metadata.stop_loss.toFixed(2) : metadata.stop_loss}`);
+                    }
+                    if (metadata.take_profit !== undefined && metadata.take_profit !== null) {
+                        detailedParts.push(`🎯 Take Profit: $${typeof metadata.take_profit === 'number' ? metadata.take_profit.toFixed(2) : metadata.take_profit}`);
+                    }
+                    if (metadata.risk_reward_ratio !== undefined && metadata.risk_reward_ratio !== null) {
+                        detailedParts.push(`⚖️ Risk/Reward: ${typeof metadata.risk_reward_ratio === 'number' ? metadata.risk_reward_ratio.toFixed(2) : metadata.risk_reward_ratio}`);
+                    }
+                    
+                    // Technical Indicators
+                    if (metadata.rsi_14 !== undefined && metadata.rsi_14 !== null && metadata.rsi_14 !== 'N/A') {
+                        detailedParts.push(`📊 RSI: ${typeof metadata.rsi_14 === 'number' ? metadata.rsi_14.toFixed(2) : metadata.rsi_14}`);
+                    }
+                    if (metadata.macd !== undefined && metadata.macd !== null && metadata.macd !== 'N/A') {
+                        detailedParts.push(`📈 MACD: ${typeof metadata.macd === 'number' ? metadata.macd.toFixed(2) : metadata.macd}`);
+                    }
+                    if (metadata.atr !== undefined && metadata.atr !== null && metadata.atr !== 'N/A') {
+                        detailedParts.push(`📉 ATR: ${typeof metadata.atr === 'number' ? metadata.atr.toFixed(2) : metadata.atr}`);
+                    }
+                    if (metadata.adx !== undefined && metadata.adx !== null && metadata.adx !== 'N/A') {
+                        detailedParts.push(`📊 ADX: ${typeof metadata.adx === 'number' ? metadata.adx.toFixed(2) : metadata.adx}`);
+                    }
+                    if (metadata.bb_percent !== undefined && metadata.bb_percent !== null && metadata.bb_percent !== 'N/A') {
+                        detailedParts.push(`📊 BB%: ${typeof metadata.bb_percent === 'number' ? metadata.bb_percent.toFixed(3) : metadata.bb_percent}`);
+                    }
+                    
+                    // Market Analysis
+                    if (metadata.regime_classification) {
+                        detailedParts.push(`🌍 Regime: ${metadata.regime_classification}`);
+                    }
+                    if (metadata.trend_strength !== undefined && metadata.trend_strength !== null) {
+                        detailedParts.push(`📈 Trend Strength: ${typeof metadata.trend_strength === 'number' ? metadata.trend_strength.toFixed(1) : metadata.trend_strength}`);
+                    }
+                    if (metadata.volatility_state) {
+                        detailedParts.push(`📊 Volatility: ${metadata.volatility_state}`);
+                    }
+                    if (metadata.rsi_alignment) {
+                        detailedParts.push(`📊 RSI Alignment: ${metadata.rsi_alignment}`);
+                    }
+                    if (metadata.overall_trend) {
+                        detailedParts.push(`📊 Trend: ${metadata.overall_trend}`);
+                    }
+                    
+                    // Risk and Position
+                    if (metadata.risk_level) {
+                        detailedParts.push(`⚠️ Risk Level: ${metadata.risk_level}`);
+                    }
+                    if (metadata.position_size !== undefined && metadata.position_size !== null) {
+                        const positionSize = typeof metadata.position_size === 'number' ? (metadata.position_size * 100).toFixed(1) : metadata.position_size;
+                        detailedParts.push(`📏 Position Size: ${positionSize}%`);
+                    }
+                    if (metadata.confidence !== undefined && metadata.confidence !== null) {
+                        const confidence = typeof metadata.confidence === 'number' ? (metadata.confidence * 100).toFixed(1) : metadata.confidence;
+                        detailedParts.push(`🎲 Confidence: ${confidence}%`);
+                    }
+                    
+                    // Market-wide data
+                    if (metadata.btc_dominance !== undefined && metadata.btc_dominance !== null) {
+                        detailedParts.push(`₿ BTC Dominance: ${typeof metadata.btc_dominance === 'number' ? metadata.btc_dominance.toFixed(1) : metadata.btc_dominance}%`);
+                    }
+                    if (metadata.market_sentiment) {
+                        detailedParts.push(`💭 Market Sentiment: ${metadata.market_sentiment}`);
+                    }
+                    
+                    // Applied thresholds
+                    if (metadata.applied_buy_threshold !== undefined && metadata.applied_buy_threshold !== null) {
+                        detailedParts.push(`🎛️ Buy Threshold: ${typeof metadata.applied_buy_threshold === 'number' ? metadata.applied_buy_threshold.toFixed(3) : metadata.applied_buy_threshold}`);
+                    }
+                    if (metadata.applied_sell_threshold !== undefined && metadata.applied_sell_threshold !== null) {
+                        detailedParts.push(`🎛️ Sell Threshold: ${typeof metadata.applied_sell_threshold === 'number' ? metadata.applied_sell_threshold.toFixed(3) : metadata.applied_sell_threshold}`);
+                    }
+                    
+                    if (detailedParts.length > 0) {
+                        detailedMetadata = detailedParts.join(' | ');
+                    }
                 }
 
+                // Create unique ID for this history event (sanitize timestamp for valid CSS selector)
+                const sanitizedTimestamp = event.timestamp.replace(/[:+]/g, '-').replace(/\./g, '-');
+                const eventId = `event-${sanitizedTimestamp}-${Math.random().toString(36).substr(2, 9)}`;
+
                 return `
-                    <div class="d-flex align-items-center mb-1 p-2 border-start border-3 border-${eventColor} bg-light rounded">
-                        <div class="me-2">
-                            <span class="fs-6">${eventIcon}</span>
-                        </div>
-                        <div class="flex-grow-1">
-                            <div class="d-flex justify-content-between align-items-center">
-                                <div class="flex-grow-1">
-                                    <strong class="text-${eventColor} small me-2">${event.description}</strong>
-                                    ${metadataText ? `<span class="text-muted small">${metadataText}</span>` : ''}
+                    <div class="mb-2 border-start border-3 border-${eventColor} bg-light rounded">
+                        <div class="d-flex align-items-center p-2">
+                            <div class="me-2">
+                                <span class="fs-6">${eventIcon}</span>
                             </div>
-                                <small class="text-muted ms-2">${eventTime}</small>
+                            <div class="flex-grow-1">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div class="flex-grow-1">
+                                        <strong class="text-${eventColor} small me-2">${event.description}</strong>
+                                        ${metadataText ? `<span class="text-muted small">${metadataText}</span>` : ''}
+                                    </div>
+                                    <div class="d-flex align-items-center">
+                                        <small class="text-muted me-2">${eventTime}</small>
+                                        ${detailedMetadata ? `
+                                            <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#${eventId}" aria-expanded="false" aria-controls="${eventId}" title="Show detailed data">
+                                                <i class="bi bi-chevron-down" id="icon-${eventId}"></i>
+                                            </button>
+                                        ` : ''}
+                                    </div>
                                 </div>
+                            </div>
                         </div>
+                        ${detailedMetadata ? `
+                            <div class="collapse" id="${eventId}">
+                                <div class="p-2 pt-0">
+                                    <div class="small text-muted">
+                                        <div class="row">
+                                            <div class="col-12">
+                                                <div class="bg-white p-2 rounded border">
+                                                    <div class="text-break" style="line-height: 1.4;">
+                                                        ${detailedMetadata}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        ` : ''}
                     </div>
                 `;
             }).join('');
@@ -2773,6 +2894,26 @@
             const tooltipTriggerList = [].slice.call(historyElement.querySelectorAll('[data-bs-toggle="tooltip"]'));
             tooltipTriggerList.map(function (tooltipTriggerEl) {
                 return new bootstrap.Tooltip(tooltipTriggerEl);
+            });
+            
+            // Initialize collapse event listeners for chevron icon changes
+            const collapseElements = historyElement.querySelectorAll('[data-bs-toggle="collapse"]');
+            collapseElements.forEach(function(collapseEl) {
+                const targetId = collapseEl.getAttribute('data-bs-target').substring(1); // Remove #
+                const iconEl = document.getElementById(`icon-${targetId}`);
+                
+                if (iconEl) {
+                    collapseEl.addEventListener('click', function() {
+                        // Toggle chevron icon
+                        if (iconEl.classList.contains('bi-chevron-down')) {
+                            iconEl.classList.remove('bi-chevron-down');
+                            iconEl.classList.add('bi-chevron-up');
+                        } else {
+                            iconEl.classList.remove('bi-chevron-up');
+                            iconEl.classList.add('bi-chevron-down');
+                        }
+                    });
+                }
             });
         }
         

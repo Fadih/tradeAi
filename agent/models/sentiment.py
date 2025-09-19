@@ -24,7 +24,7 @@ class SentimentAnalyzer:
 		self.model_name = model_name
 		self.hf_token = os.getenv("HF_TOKEN")
 		self._pipe = None
-		self.cache_ttl = 300  # 5 minutes cache TTL
+		self.cache_ttl = 120  # 2 minutes cache TTL for short-term trading
 		
 		logger.info(f"Initializing SentimentAnalyzer with model: {model_name}")
 		

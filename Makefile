@@ -32,14 +32,25 @@ help:
 	@echo "  redis-status  - Check Redis status"
 	@echo ""
 	@echo "Docker:"
-	@echo "  docker-build - Build Docker image"
-	@echo "  docker-run   - Run Docker container"
-	@echo "  docker-stop  - Stop Docker container"
-	@echo "  docker-clean - Clean Docker images and containers"
+	@echo "  docker-build     - Build Docker image"
+	@echo "  docker-tag       - Tag Docker image for Docker Hub"
+	@echo "  docker-push      - Push Docker image to Docker Hub"
+	@echo "  docker-build-push - Build, tag, and push to Docker Hub"
+	@echo "  docker-run       - Run Docker container"
+	@echo "  docker-stop      - Stop Docker container"
+	@echo "  docker-clean     - Clean Docker images and containers"
+	@echo ""
+	@echo "Production:"
+	@echo "  docker-prod-deploy - Deploy to production using Docker Hub image"
+	@echo "  docker-prod-stop   - Stop production services"
+	@echo "  docker-prod-logs   - Show production logs"
+	@echo "  docker-prod-status - Show production service status"
 	@echo ""
 	@echo "Examples:"
 	@echo "  make install && make test"
 	@echo "  make docker-build && make docker-run"
+	@echo "  make docker-build-push  # Build, tag, and push to Docker Hub"
+	@echo "  make docker-prod-deploy # Deploy to production"
 
 # Development setup
 install:
@@ -169,6 +180,47 @@ docker-build:
 	@echo "Building Docker image..."
 	docker build -t trading-agent:latest .
 	@echo "✅ Docker image built successfully!"
+
+docker-tag:
+	@echo "Tagging Docker image for Docker Hub..."
+	@read -p "Enter your Docker Hub username: " username; \
+	read -p "Enter image tag (default: latest): " tag; \
+	tag=$${tag:-v1.0.0}; \
+	docker tag trading-agent:latest $$username/trading-agent:$$tag; \
+	echo "✅ Docker image tagged as $$username/trading-agent:$$tag"
+
+docker-push:
+	@echo "Pushing Docker image to Docker Hub..."
+	@read -p "Enter your Docker Hub username: " username; \
+	read -p "Enter image tag (default: latest): " tag; \
+	tag=$${tag:-latest}; \
+	docker push $$username/trading-agent:$$tag; \
+	echo "✅ Docker image pushed to Docker Hub as $$username/trading-agent:$$tag"
+
+docker-build-push: docker-build docker-tag docker-push
+	@echo "✅ Complete Docker build, tag, and push workflow completed!"
+
+docker-prod-deploy:
+	@echo "🚀 Deploying to production using Docker Hub image..."
+	@if [ ! -f ".env.prod" ]; then \
+		echo "❌ Error: .env.prod file not found!"; \
+		echo "Please create .env.prod with your production environment variables."; \
+		exit 1; \
+	fi
+	./deploy-prod.sh
+
+docker-prod-stop:
+	@echo "🛑 Stopping production services..."
+	docker-compose -f docker-compose.prod.yml down
+	@echo "✅ Production services stopped!"
+
+docker-prod-logs:
+	@echo "📋 Showing production logs..."
+	docker-compose -f docker-compose.prod.yml logs -f
+
+docker-prod-status:
+	@echo "🔍 Production service status:"
+	docker-compose -f docker-compose.prod.yml ps
 
 docker-run:
 	@echo "Running Docker container..."

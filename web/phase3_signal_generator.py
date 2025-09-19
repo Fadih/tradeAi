@@ -177,6 +177,7 @@ class Phase3TradingSignal(BaseModel):
     stop_loss: float
     take_profit: float
     output_level: str = "full"  # Performance optimization: "minimal", "standard", "full"
+    meta: Optional[Dict[str, Any]] = None  # Additional metadata including risk_reward_ratio
         
         # Phase 3 Advanced Features
     regime_detection: Dict[str, Any]
@@ -216,7 +217,7 @@ class Phase3SignalGenerator:
         self.sentiment_analyzer = None
         self.session = None  # aiohttp session for async requests
         self.disable_caching = False  # Flag to disable caching during monitoring
-        self.cache_ttl = 300  # 5 minutes cache TTL
+        self.cache_ttl = 60  # 1 minute cache TTL for short-term trading
         logger.debug("🚀 Phase 3 Signal Generator initialized - Performance Optimized mode")
     
     
@@ -1386,39 +1387,78 @@ class Phase3SignalGenerator:
                     return "N/A"
                 return str(text).replace('*', '\\*').replace('_', '\\_').replace('[', '\\[').replace('`', '\\`')
             
-            message = f"""🚀 *Complete Phase 3 Trading Signal*
+            # Determine signal strength and recommendation
+            signal_strength = "Strong" if abs(signal.fused_score) > 0.15 else "Moderate" if abs(signal.fused_score) > 0.08 else "Weak"
+            signal_emoji = "🟢" if signal.signal_type == "BUY" else "🔴" if signal.signal_type == "SELL" else "🟡"
+            
+            message = f"""🚀 *AI Trading Signal Generated* 🚀
 
 📊 *Symbol:* {escape_markdown(signal.symbol)}
 ⏰ *Timeframe:* {escape_markdown(signal.timeframe)}
-🎯 *Signal:* {escape_markdown(signal.signal_type)}
+🎯 *Signal:* {escape_markdown(signal.signal_type)} ({signal_strength} Strength)
 📈 *Technical Score:* {signal.technical_score:.4f}
 💭 *Sentiment Score:* {signal.sentiment_score:.4f}
 🧮 *Fused Score:* {signal.fused_score:.4f}
 🎲 *Confidence:* {signal.confidence:.2%}
+💰 *Current Price:* ${signal.technical_indicators.get('current_price', 0):.2f}
 
 🛡️ *Risk Management:*
 • Stop Loss: ${signal.stop_loss:.2f}
 • Take Profit: ${signal.take_profit:.2f}
-• Risk/Reward: {signal.risk_metrics.get('risk_reward_ratio', 1.0):.2f}
+• Risk/Reward: {signal.meta.get('risk_reward_ratio', 1.0):.2f}
+• Position Size: {signal.position_sizing.get('recommended', 0):.1%}
+• Risk Level: {signal.risk_metrics.get('risk_level', 'medium')}
 
-📊 *Phase 1 Features:*
+📊 *Features:*
 • Bollinger Squeeze: {escape_markdown(signal.bollinger_bands.get('squeeze', False))}
 • VWAP Deviation: {signal.vwap_analysis.get('deviation', 0):.2f} bps
 • Volume Trend: {escape_markdown(signal.volume_indicators.get('obv_trend', 'neutral'))}
 • MA Crossovers: {escape_markdown(signal.moving_averages.get('crossovers', {}).get('last_bullish', False))}
 
-📊 *Phase 2 Features:*
 • Multi-TF Trend: {escape_markdown(signal.multi_timeframe.get('overall_trend', 'neutral'))}
 • Trend Consensus: {signal.multi_timeframe.get('trend_consensus', 0.5):.2%}
 • BTC Dominance: {signal.btc_dominance.get('btc_dominance', 50):.1f}%
 • Market Sentiment: {escape_markdown(signal.market_wide_sentiment.get('overall_sentiment', 'neutral'))}
 
-📊 *Phase 3 Features:*
 • Regime: {escape_markdown(signal.regime_detection.get('regime_classification', 'unknown'))}
 • RSI Alignment: {escape_markdown(signal.advanced_rsi.get('alignment', 'mixed'))}
 • Volatility: {escape_markdown(signal.regime_detection.get('volatility_state', 'medium'))}
+• Trend Strength: {signal.regime_detection.get('trend_strength', 0):.1f}
 
-🕐 *Generated:* {signal.timestamp.strftime('%Y-%m-%d %H:%M:%S')} (Israel Time)"""
+🔍 *Technical Indicators:*
+• RSI (14): {signal.technical_indicators.get('rsi_14', 'N/A')}
+• MACD: {signal.technical_indicators.get('macd', 'N/A')}
+• ATR: {signal.technical_indicators.get('atr', 'N/A')}
+• ADX: {signal.technical_indicators.get('adx', 'N/A')}
+• BB Percent: {signal.technical_indicators.get('bb_percent', 'N/A')}
+
+🎛️ *Applied Settings:*
+• Buy Threshold: {signal.applied_buy_threshold:.3f}
+• Sell Threshold: {signal.applied_sell_threshold:.3f}
+• Technical Weight: {signal.applied_tech_weight:.1%}
+• Sentiment Weight: {signal.applied_sentiment_weight:.1%}
+
+🕐 *Generated:* {signal.timestamp.strftime('%Y-%m-%d %H:%M:%S')} (Israel Time)
+
+📖 *Parameter Explanations:*
+• *Fused Score*: Combined technical + sentiment analysis (-1 to +1)
+• *Technical Score*: RSI, MACD, Bollinger Bands analysis (-1 to +1)
+• *Sentiment Score*: News & social media analysis (-1 to +1)
+• *Confidence*: Signal strength percentage (higher = more reliable)
+• *Regime*: Market state (trending/ranging/volatile)
+• *Risk/Reward*: Expected profit vs potential loss ratio
+• *Position Size*: Recommended position size as % of portfolio
+• *Risk Level*: Current market risk assessment (low/medium/high)
+• *RSI*: Relative Strength Index momentum indicator (0-100)
+• *MACD*: Moving Average Convergence Divergence trend indicator
+• *ATR*: Average True Range volatility measure
+• *ADX*: Average Directional Index trend strength (0-100)
+• *BB Percent*: Bollinger Bands position (0-1, lower = oversold)
+• *VWAP*: Volume Weighted Average Price deviation
+• *Multi-TF*: Multi-timeframe trend analysis
+• *BTC Dominance*: Bitcoin's market share percentage
+
+💡 *Trading Tip:* Always use proper risk management and never risk more than you can afford to lose."""
             
             # Send notification
             import requests
@@ -1949,15 +1989,25 @@ class Phase3SignalGenerator:
             # Step 11: Calculate risk management
             risk_metrics = self.calculate_enhanced_risk_management(ohlcv, technical_indicators, regime_data)
             stop_loss, take_profit = self.calculate_volatility_adjusted_stops(ohlcv, signal_type, risk_metrics)
+            
+            # Calculate risk/reward ratio
+            current_price = float(ohlcv['close'].iloc[-1])
+            if signal_type == "BUY" and stop_loss < current_price:
+                risk_reward_ratio = (take_profit - current_price) / (current_price - stop_loss)
+            elif signal_type == "SELL" and stop_loss > current_price:
+                risk_reward_ratio = (current_price - take_profit) / (stop_loss - current_price)
+            else:
+                risk_reward_ratio = 0.0
             try:
                 logger.info(
-                    "🛡️ Risk metrics → vol=%.4f, var95=%.4f, sharpe=%.3f, mdd=%.4f | SL=%.2f, TP=%.2f",
+                    "🛡️ Risk metrics → vol=%.4f, var95=%.4f, sharpe=%.3f, mdd=%.4f | SL=%.2f, TP=%.2f | R/R=%.2f",
                     float(risk_metrics.get('volatility', 0.0)),
                     float(risk_metrics.get('var_95', 0.0)),
                     float(risk_metrics.get('sharpe_ratio', 0.0)),
                     float(risk_metrics.get('max_drawdown', 0.0)),
                     float(stop_loss),
-                    float(take_profit)
+                    float(take_profit),
+                    float(risk_reward_ratio)
                 )
             except Exception:
                 pass
@@ -2007,6 +2057,7 @@ class Phase3SignalGenerator:
                 confidence=float(confidence),
                 stop_loss=float(stop_loss),
                 take_profit=float(take_profit),
+                meta={'risk_reward_ratio': float(risk_reward_ratio)},
                 reasoning=self.generate_phase3_reasoning(signal_type, technical_score, sentiment_score, fused_score, regime_data, rsi_data),
                 # Phase 3 Advanced Features
                 regime_detection=to_serializable(regime_data),
