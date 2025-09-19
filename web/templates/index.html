@@ -1657,7 +1657,10 @@
         }
 
         function startStatusUpdates() {
-            statusUpdateInterval = setInterval(updateStatus, 5000); // Update every 5 seconds
+            // Use configuration value for status update interval (default 30 seconds)
+            const statusIntervalMs = (appConfig.status_update_interval_seconds || 30) * 1000;
+            statusUpdateInterval = setInterval(updateStatus, statusIntervalMs);
+            console.log(`Status update interval set to ${appConfig.status_update_interval_seconds || 30} seconds`);
             // Delay market data updates to prioritize critical data
             setTimeout(() => {
                 startMarketDataUpdates();

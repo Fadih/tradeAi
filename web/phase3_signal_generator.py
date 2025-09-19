@@ -36,8 +36,8 @@ from agent.indicators import (
     compute_market_wide_sentiment
 )
 from agent.models.sentiment import SentimentAnalyzer
-from agent.news.rss import fetch_headlines
-from agent.news.reddit import fetch_reddit_posts
+from agent.news.rss import fetch_headlines_async
+from agent.news.reddit import fetch_reddit_posts_async
 from agent.data.ccxt_client import fetch_ohlcv
 from agent.data.alpaca_client import fetch_ohlcv as fetch_alpaca_ohlcv
 from agent.cache.redis_client import get_redis_client
@@ -215,8 +215,9 @@ class Phase3SignalGenerator:
     def __init__(self):
         self.sentiment_analyzer = None
         self.session = None  # aiohttp session for async requests
+        self.disable_caching = False  # Flag to disable caching during monitoring
         self.cache_ttl = 300  # 5 minutes cache TTL
-        logger.info("🚀 Phase 3 Signal Generator initialized - Performance Optimized mode")
+        logger.debug("🚀 Phase 3 Signal Generator initialized - Performance Optimized mode")
     
     
     def fetch_market_data(self, symbol: str, timeframe: str) -> pd.DataFrame:
@@ -250,7 +251,7 @@ class Phase3SignalGenerator:
                 return 0.0
         except Exception:
             return 0.0
-
+    
     def calculate_phase3_technical_indicators(self, ohlcv: pd.DataFrame) -> Dict[str, Any]:
         """Calculate comprehensive technical indicators for Phase 3 with all Phase 1, 2, and 3 features"""
         start_time = time.time()
@@ -268,31 +269,35 @@ class Phase3SignalGenerator:
             logger.info("📊 Computing RSI indicators (14, 21 periods)")
             rsi_14_series = compute_rsi(close, period=14)
             rsi_21_series = compute_rsi(close, period=21)
-            indicators['rsi_14'] = rsi_14_series
-            indicators['rsi_21'] = rsi_21_series
+            # Store scalar values instead of Series
+            rsi_14_value = self._get_last_valid_value(rsi_14_series)
+            rsi_21_value = self._get_last_valid_value(rsi_21_series)
+            indicators['rsi_14'] = rsi_14_value
+            indicators['rsi_21'] = rsi_21_value
             # Add simple 'rsi' field for UI compatibility (scalar value)
-            rsi_value = self._get_last_valid_value(rsi_14_series)
-            indicators['rsi'] = rsi_value
-            logger.info(f"📊 RSI: {rsi_value}")
+            indicators['rsi'] = rsi_14_value
+            logger.info(f"📊 RSI: {rsi_14_value}")
             
             # Enhanced Moving Averages (Phase 1) - All periods
-            logger.info("📊 Computing EMAs (5, 9, 12, 21, 26, 50, 200 periods)")
-            indicators['ema_5'] = compute_ema(close, span=5)
-            indicators['ema_9'] = compute_ema(close, span=9)
-            indicators['ema_12'] = compute_ema(close, span=12)
-            indicators['ema_21'] = compute_ema(close, span=21)
-            indicators['ema_26'] = compute_ema(close, span=26)
-            indicators['ema_50'] = compute_ema(close, span=50)
-            indicators['ema_200'] = compute_ema(close, span=200)
+            logger.info("📊 Computing EMAs (5, 9, 12, 20, 21, 26, 50, 200 periods)")
+            indicators['ema_5'] = self._get_last_valid_value(compute_ema(close, span=5))
+            indicators['ema_9'] = self._get_last_valid_value(compute_ema(close, span=9))
+            indicators['ema_12'] = self._get_last_valid_value(compute_ema(close, span=12))
+            indicators['ema_20'] = self._get_last_valid_value(compute_ema(close, span=20))
+            indicators['ema_21'] = self._get_last_valid_value(compute_ema(close, span=21))
+            indicators['ema_26'] = self._get_last_valid_value(compute_ema(close, span=26))
+            indicators['ema_50'] = self._get_last_valid_value(compute_ema(close, span=50))
+            indicators['ema_200'] = self._get_last_valid_value(compute_ema(close, span=200))
             
             # MACD
             logger.info("📊 Computing MACD (12, 26, 9)")
             macd_data = compute_macd(close)
             macd_value = self._get_last_valid_value(macd_data['macd'])
+            macd_signal_value = self._get_last_valid_value(macd_data['signal'])
+            macd_histogram_value = self._get_last_valid_value(macd_data['hist'])
             indicators['macd'] = macd_value
-            indicators['macd_signal'] = macd_data['signal']
-            # Indicators DataFrame uses 'hist' column name
-            indicators['macd_histogram'] = macd_data['hist']
+            indicators['macd_signal'] = macd_signal_value
+            indicators['macd_histogram'] = macd_histogram_value
             logger.info(f"📈 MACD: {macd_value}")
             
             # ATR
@@ -305,21 +310,42 @@ class Phase3SignalGenerator:
             # ADX for trend strength
             logger.info("📊 Computing ADX and DI indicators (14 period)")
             adx_data = compute_adx(high, low, close, period=14)
-            indicators['adx'] = adx_data['adx']
-            indicators['di_plus'] = adx_data['di_plus']
-            indicators['di_minus'] = adx_data['di_minus']
+            indicators['adx'] = self._get_last_valid_value(adx_data['adx'])
+            indicators['di_plus'] = self._get_last_valid_value(adx_data['di_plus'])
+            indicators['di_minus'] = self._get_last_valid_value(adx_data['di_minus'])
+            
+            # Bollinger Bands for technical score calculation
+            logger.info("📊 Computing Bollinger Bands (20 period, 2 std dev)")
+            bb_data = compute_bollinger_bands(close, period=20, std_dev=2.0)
+            indicators['bb_percent'] = self._get_last_valid_value(bb_data['percent'])
+            indicators['bb_upper'] = self._get_last_valid_value(bb_data['upper'])
+            indicators['bb_middle'] = self._get_last_valid_value(bb_data['middle'])
+            indicators['bb_lower'] = self._get_last_valid_value(bb_data['lower'])
+            indicators['bb_width'] = self._get_last_valid_value(bb_data['width'])
+            indicators['bb_squeeze'] = self._get_last_valid_value(bb_data['squeeze'])
+            logger.info(f"📊 Bollinger Bands: percent={indicators['bb_percent']:.4f}, squeeze={indicators['bb_squeeze']}")
             
             duration = time.time() - start_time
             logger.info(f"✅ Phase 3 technical indicators calculated in {duration:.3f}s")
             
             # Log key values
             try:
-                rsi_14_val = float(indicators['rsi_14'].iloc[-1]) if not indicators['rsi_14'].empty else None
-                ema_21_val = float(indicators['ema_21'].iloc[-1]) if not indicators['ema_21'].empty else None
-                ema_50_val = float(indicators['ema_50'].iloc[-1]) if not indicators['ema_50'].empty else None
-                atr_val = float(indicators['atr'].iloc[-1]) if not indicators['atr'].empty else None
-                adx_val = float(indicators['adx'].iloc[-1]) if not indicators['adx'].empty else None
-                logger.info(f"📊 Key values: RSI14={rsi_14_val:.2f}, EMA21={ema_21_val:.2f}, EMA50={ema_50_val:.2f}, ATR={atr_val:.2f}, ADX={adx_val:.2f}")
+                # Handle both scalar and Series values
+                def get_value(key):
+                    val = indicators.get(key)
+                    if val is None:
+                        return None
+                    if hasattr(val, 'iloc') and hasattr(val, 'empty'):
+                        return float(val.iloc[-1]) if not val.empty else None
+                    else:
+                        return float(val)
+                
+                rsi_14_val = get_value('rsi_14')
+                ema_21_val = get_value('ema_21')
+                ema_50_val = get_value('ema_50')
+                atr_val = get_value('atr')
+                adx_val = get_value('adx')
+                logger.info(f"📊 Key values: RSI14={rsi_14_val:.2f if rsi_14_val else 'N/A'}, EMA21={ema_21_val:.2f if ema_21_val else 'N/A'}, EMA50={ema_50_val:.2f if ema_50_val else 'N/A'}, ATR={atr_val:.2f if atr_val else 'N/A'}, ADX={adx_val:.2f if adx_val else 'N/A'}")
             except Exception:
                 pass
                 
@@ -386,23 +412,36 @@ class Phase3SignalGenerator:
             # Get advanced RSI variants from indicators helper
             rsi_data = compute_advanced_rsi_variants(close, periods=[7, 9, 14, 21])
             
-            # Normalize keys defensively (some helpers may not return all keys)
-            rsi_7 = rsi_data.get('rsi_7', pd.Series([50]))
-            rsi_14 = rsi_data.get('rsi_14', pd.Series([50]))
-            rsi_21 = rsi_data.get('rsi_21', pd.Series([50]))
-            
-            # RSI alignment analysis - handle both Series and scalar values
-            def get_rsi_value(rsi_data):
-                if hasattr(rsi_data, 'iloc') and len(rsi_data) > 0:
-                    return float(rsi_data.iloc[-1])
-                elif isinstance(rsi_data, (int, float)):
-                    return float(rsi_data)
+            # Extract RSI values from the complex structure returned by compute_advanced_rsi_variants
+            def get_rsi_value(rsi_variant_data):
+                """Extract current RSI value from the complex RSI variant structure"""
+                if isinstance(rsi_variant_data, dict):
+                    # Try to get current_rsi first (most reliable)
+                    if 'current_rsi' in rsi_variant_data:
+                        return float(rsi_variant_data['current_rsi'])
+                    # Fallback to extracting from the RSI series
+                    elif 'rsi' in rsi_variant_data and hasattr(rsi_variant_data['rsi'], 'iloc'):
+                        rsi_series = rsi_variant_data['rsi']
+                        if len(rsi_series) > 0:
+                            return float(rsi_series.iloc[-1])
+                elif hasattr(rsi_variant_data, 'iloc') and len(rsi_variant_data) > 0:
+                    # Direct Series access
+                    return float(rsi_variant_data.iloc[-1])
+                elif isinstance(rsi_variant_data, (int, float)):
+                    # Direct scalar value
+                    return float(rsi_variant_data)
                 else:
+                    # Default fallback
                     return 50.0
             
-            current_rsi_7 = get_rsi_value(rsi_7)
-            current_rsi_14 = get_rsi_value(rsi_14)
-            current_rsi_21 = get_rsi_value(rsi_21)
+            # Extract RSI values from the complex structure
+            rsi_7_data = rsi_data.get('rsi_7', {})
+            rsi_14_data = rsi_data.get('rsi_14', {})
+            rsi_21_data = rsi_data.get('rsi_21', {})
+            
+            current_rsi_7 = get_rsi_value(rsi_7_data)
+            current_rsi_14 = get_rsi_value(rsi_14_data)
+            current_rsi_21 = get_rsi_value(rsi_21_data)
             
             if current_rsi_7 > current_rsi_14 > current_rsi_21:
                 rsi_alignment = "bullish"
@@ -446,14 +485,14 @@ class Phase3SignalGenerator:
             # Get configuration
             config = load_config_from_env()
             
-            # Collect texts from RSS and Reddit (recent, symbol-filtered)
-            rss_texts = fetch_headlines(
+            # Collect texts from RSS and Reddit (recent, symbol-filtered) - async for better performance
+            rss_texts = await fetch_headlines_async(
                 config.sentiment_analysis.rss_feeds,
                 limit_per_feed=config.sentiment_analysis.rss_max_headlines_per_feed,
                 symbol=symbol,
                 hours_back=6,
             )
-            reddit_texts = fetch_reddit_posts(
+            reddit_texts = await fetch_reddit_posts_async(
                 config.sentiment_analysis.reddit_subreddits,
                 limit_per_subreddit=config.sentiment_analysis.reddit_max_posts_per_subreddit,
                 symbol=symbol,
@@ -483,8 +522,9 @@ class Phase3SignalGenerator:
             score = 0.0
             
             # RSI analysis (40% weight)
-            rsi_14 = indicators.get('rsi_14', pd.Series([50]))
-            current_rsi = rsi_14.iloc[-1] if len(rsi_14) > 0 else 50
+            rsi_14 = indicators.get('rsi_14', 50)
+            # All indicators are now scalar values
+            current_rsi = float(rsi_14) if rsi_14 is not None else 50.0
             
             logger.info(f"🔍 RSI Analysis: current_rsi={current_rsi:.2f}, type={type(current_rsi)}")
             
@@ -516,14 +556,16 @@ class Phase3SignalGenerator:
             logger.info(f"🎯 RSI Final: score={rsi_score:.4f} * 0.4 = {rsi_contribution:.4f}")
             
             # MACD analysis (25% weight)
-            macd = indicators.get('macd', pd.Series([0]))
-            macd_signal = indicators.get('macd_signal', pd.Series([0]))
+            macd = indicators.get('macd', 0)
+            macd_signal = indicators.get('macd_signal', 0)
             
-            logger.info(f"📊 MACD Analysis: macd_series_length={len(macd)}, signal_series_length={len(macd_signal)}")
+            # All indicators are now scalar values
+            current_macd = float(macd) if macd is not None else 0.0
+            current_signal = float(macd_signal) if macd_signal is not None else 0.0
             
-            if len(macd) > 0 and len(macd_signal) > 0:
-                current_macd = macd.iloc[-1]
-                current_signal = macd_signal.iloc[-1]
+            logger.info(f"📊 MACD Analysis: macd={current_macd:.4f}, signal={current_signal:.4f}")
+            
+            if current_macd is not None and current_signal is not None:
                 
                 logger.info(f"📊 MACD Values: MACD={current_macd:.4f}, Signal={current_signal:.4f}")
                 
@@ -541,11 +583,13 @@ class Phase3SignalGenerator:
                 logger.warning("⚠️ MACD data missing or empty")
             
             # Bollinger Bands analysis (20% weight)
-            bb_percent = indicators.get('bb_percent', pd.Series([0.5]))
-            logger.info(f"📊 Bollinger Bands Analysis: bb_percent_length={len(bb_percent)}")
+            bb_percent = indicators.get('bb_percent', 0.5)
+            # All indicators are now scalar values
+            current_bb = float(bb_percent) if bb_percent is not None else 0.5
             
-            if len(bb_percent) > 0:
-                current_bb = bb_percent.iloc[-1]
+            logger.info(f"📊 Bollinger Bands Analysis: bb_percent={current_bb:.4f}")
+            
+            if current_bb is not None:
                 logger.info(f"📊 BB Percent: {current_bb:.4f}")
                 
                 if current_bb < 0.2:
@@ -688,13 +732,28 @@ class Phase3SignalGenerator:
         
         try:
             current_price = ohlcv['close'].iloc[-1]
-            volatility = technical_indicators.get('atr', pd.Series([current_price * 0.02])).iloc[-1]
+            atr_value = technical_indicators.get('atr', current_price * 0.02)
+            # Handle both Series and scalar values
+            if hasattr(atr_value, 'iloc'):
+                volatility = atr_value.iloc[-1]
+            else:
+                volatility = float(atr_value)
+            
+            # Calculate risk level based on volatility
+            vol_ratio = float(volatility / current_price)
+            if vol_ratio < 0.01:
+                risk_level = 'low'
+            elif vol_ratio < 0.03:
+                risk_level = 'medium'
+            else:
+                risk_level = 'high'
             
             risk_metrics = {
-                'volatility': float(volatility / current_price),
+                'volatility': vol_ratio,
                 'var_95': float(volatility * 1.645 / current_price),  # 95% VaR
                 'sharpe_ratio': 1.0,  # Placeholder
-                'max_drawdown': 0.05  # Placeholder
+                'max_drawdown': 0.05,  # Placeholder
+                'risk_level': risk_level
             }
             
             duration = time.time() - start_time
@@ -709,7 +768,8 @@ class Phase3SignalGenerator:
                 'volatility': 0.02,
                 'var_95': 0.03,
                 'sharpe_ratio': 1.0,
-                'max_drawdown': 0.05
+                'max_drawdown': 0.05,
+                'risk_level': 'medium'
             }
     
     def calculate_volatility_adjusted_stops(self, ohlcv: pd.DataFrame, signal_type: str, risk_metrics: Dict[str, Any]) -> tuple:
@@ -1309,18 +1369,28 @@ class Phase3SignalGenerator:
                 logger.warning("⚠️ Redis not available - cannot send Telegram notification")
                 return
             
-            chat_id = await redis_client.get_telegram_connection(username)
-            if not chat_id:
+            telegram_connection = await redis_client.get_telegram_connection(username)
+            if not telegram_connection:
                 logger.info(f"📱 No Telegram connection found for user {username}")
                 return
             
-            # Create comprehensive notification message
-            message = f"""
-🚀 *Complete Phase 3 Trading Signal*
+            chat_id = telegram_connection.get('chat_id')
+            if not chat_id:
+                logger.info(f"📱 No chat_id found for user {username}")
+                return
+            
+            # Create comprehensive notification message (escape special characters for Markdown)
+            def escape_markdown(text):
+                """Escape special characters for Telegram Markdown"""
+                if text is None:
+                    return "N/A"
+                return str(text).replace('*', '\\*').replace('_', '\\_').replace('[', '\\[').replace('`', '\\`')
+            
+            message = f"""🚀 *Complete Phase 3 Trading Signal*
 
-📊 *Symbol:* {signal.symbol}
-⏰ *Timeframe:* {signal.timeframe}
-🎯 *Signal:* {signal.signal_type}
+📊 *Symbol:* {escape_markdown(signal.symbol)}
+⏰ *Timeframe:* {escape_markdown(signal.timeframe)}
+🎯 *Signal:* {escape_markdown(signal.signal_type)}
 📈 *Technical Score:* {signal.technical_score:.4f}
 💭 *Sentiment Score:* {signal.sentiment_score:.4f}
 🧮 *Fused Score:* {signal.fused_score:.4f}
@@ -1332,24 +1402,23 @@ class Phase3SignalGenerator:
 • Risk/Reward: {signal.risk_metrics.get('risk_reward_ratio', 1.0):.2f}
 
 📊 *Phase 1 Features:*
-• Bollinger Squeeze: {signal.bollinger_bands.get('squeeze', False)}
+• Bollinger Squeeze: {escape_markdown(signal.bollinger_bands.get('squeeze', False))}
 • VWAP Deviation: {signal.vwap_analysis.get('deviation', 0):.2f} bps
-• Volume Trend: {signal.volume_indicators.get('obv_trend', 'neutral')}
-• MA Crossovers: {signal.moving_averages.get('crossovers', {}).get('last_bullish', False)}
+• Volume Trend: {escape_markdown(signal.volume_indicators.get('obv_trend', 'neutral'))}
+• MA Crossovers: {escape_markdown(signal.moving_averages.get('crossovers', {}).get('last_bullish', False))}
 
 📊 *Phase 2 Features:*
-• Multi-TF Trend: {signal.multi_timeframe.get('overall_trend', 'neutral')}
+• Multi-TF Trend: {escape_markdown(signal.multi_timeframe.get('overall_trend', 'neutral'))}
 • Trend Consensus: {signal.multi_timeframe.get('trend_consensus', 0.5):.2%}
 • BTC Dominance: {signal.btc_dominance.get('btc_dominance', 50):.1f}%
-• Market Sentiment: {signal.market_wide_sentiment.get('overall_sentiment', 'neutral')}
+• Market Sentiment: {escape_markdown(signal.market_wide_sentiment.get('overall_sentiment', 'neutral'))}
 
 📊 *Phase 3 Features:*
-• Regime: {signal.regime_detection.get('regime_classification', 'unknown')}
-• RSI Alignment: {signal.advanced_rsi.get('alignment', 'mixed')}
-• Volatility: {signal.regime_detection.get('volatility_state', 'medium')}
+• Regime: {escape_markdown(signal.regime_detection.get('regime_classification', 'unknown'))}
+• RSI Alignment: {escape_markdown(signal.advanced_rsi.get('alignment', 'mixed'))}
+• Volatility: {escape_markdown(signal.regime_detection.get('volatility_state', 'medium'))}
 
-🕐 *Generated:* {signal.timestamp.strftime('%Y-%m-%d %H:%M:%S')} (Israel Time)
-            """
+🕐 *Generated:* {signal.timestamp.strftime('%Y-%m-%d %H:%M:%S')} (Israel Time)"""
             
             # Send notification
             import requests
@@ -1364,7 +1433,7 @@ class Phase3SignalGenerator:
             if response.status_code == 200:
                 logger.info("✅ Phase 3 Telegram notification sent successfully")
             else:
-                logger.error(f"❌ Failed to send Phase 3 Telegram notification: {response.status_code}")
+                logger.error(f"❌ Failed to send Phase 3 Telegram notification: {response.status_code} - {response.text}")
                 
         except Exception as e:
             logger.error(f"❌ Error sending Phase 3 Telegram notification: {e}")
@@ -1377,6 +1446,10 @@ class Phase3SignalGenerator:
     
     async def _get_cached_data(self, cache_key: str) -> Optional[Any]:
         """Get data from Redis cache"""
+        if self.disable_caching:
+            logger.debug(f"Cache disabled, skipping cache lookup for {cache_key}")
+            return None
+            
         try:
             from agent.cache.redis_client import get_redis_client
             redis_client = await get_redis_client()
@@ -1389,6 +1462,10 @@ class Phase3SignalGenerator:
     
     async def _set_cached_data(self, cache_key: str, data: Any) -> None:
         """Set data in Redis cache"""
+        if self.disable_caching:
+            logger.debug(f"Cache disabled, skipping cache store for {cache_key}")
+            return
+            
         try:
             from agent.cache.redis_client import get_redis_client
             redis_client = await get_redis_client()
@@ -1421,12 +1498,22 @@ class Phase3SignalGenerator:
         cached_data = await self._get_cached_data(cache_key)
         
         if cached_data:
-            logger.info(f"📦 Using cached technical indicators for {symbol}")
-            return cached_data
+            # Validate cached data before using it
+            if self._is_valid_technical_data(cached_data):
+                logger.info(f"📦 Using cached technical indicators for {symbol}")
+                return cached_data
+            else:
+                logger.warning(f"⚠️ Cached technical data is invalid for {symbol}, recalculating...")
         
         # Calculate fresh indicators
         indicators = self.calculate_phase3_technical_indicators(ohlcv)
-        await self._set_cached_data(cache_key, indicators)
+        
+        # Only cache if the data is valid
+        if self._is_valid_technical_data(indicators):
+            await self._set_cached_data(cache_key, indicators)
+        else:
+            logger.warning(f"⚠️ Fresh technical data is invalid for {symbol}, not caching")
+        
         return indicators
     
     async def analyze_advanced_regime_detection_cached(self, ohlcv: pd.DataFrame, symbol: str) -> Dict[str, Any]:
@@ -1449,13 +1536,65 @@ class Phase3SignalGenerator:
         cached_data = await self._get_cached_data(cache_key)
         
         if cached_data:
-            logger.info(f"📦 Using cached RSI variants for {symbol}")
-            return cached_data
+            # Validate cached data before using it
+            if self._is_valid_rsi_data(cached_data):
+                logger.info(f"📦 Using cached RSI variants for {symbol}")
+                return cached_data
+            else:
+                logger.warning(f"⚠️ Cached RSI data is invalid for {symbol}, recalculating...")
         
         # Calculate fresh RSI data
         rsi_data = self.analyze_advanced_rsi_variants(ohlcv)
-        await self._set_cached_data(cache_key, rsi_data)
+        
+        # Only cache if the data is valid
+        if self._is_valid_rsi_data(rsi_data):
+            await self._set_cached_data(cache_key, rsi_data)
+        else:
+            logger.warning(f"⚠️ Fresh RSI data is invalid for {symbol}, not caching")
+        
         return rsi_data
+    
+    def _is_valid_rsi_data(self, rsi_data: Dict[str, Any]) -> bool:
+        """Check if RSI data is valid (no NaN values)"""
+        try:
+            for period in [7, 14, 21]:
+                rsi_key = f'rsi_{period}'
+                if rsi_key in rsi_data:
+                    rsi_variant = rsi_data[rsi_key]
+                    if isinstance(rsi_variant, dict) and 'current_rsi' in rsi_variant:
+                        current_rsi = rsi_variant['current_rsi']
+                        if current_rsi is None or (isinstance(current_rsi, float) and (current_rsi != current_rsi or current_rsi < 0 or current_rsi > 100)):
+                            logger.warning(f"⚠️ Invalid RSI value for {rsi_key}: {current_rsi}")
+                            return False
+            return True
+        except Exception as e:
+            logger.warning(f"⚠️ Error validating RSI data: {e}")
+            return False
+    
+    def _is_valid_technical_data(self, indicators: Dict[str, Any]) -> bool:
+        """Check if technical indicators data is valid (no NaN values)"""
+        try:
+            # Check key indicators for validity
+            key_indicators = ['rsi', 'rsi_14', 'ema_20', 'ema_50', 'macd', 'atr']
+            for indicator in key_indicators:
+                if indicator in indicators:
+                    value = indicators[indicator]
+                    if value is not None:
+                        if hasattr(value, 'iloc') and len(value) > 0:
+                            # It's a pandas Series, check the last value
+                            last_value = value.iloc[-1]
+                            if last_value is None or (isinstance(last_value, float) and last_value != last_value):
+                                logger.warning(f"⚠️ Invalid {indicator} value: {last_value}")
+                                return False
+                        elif isinstance(value, (int, float)):
+                            # It's a scalar value
+                            if value != value:  # Check for NaN
+                                logger.warning(f"⚠️ Invalid {indicator} value: {value}")
+                                return False
+            return True
+        except Exception as e:
+            logger.warning(f"⚠️ Error validating technical data: {e}")
+            return False
     
     async def analyze_phase3_sentiment_async(self, symbol: str) -> float:
         """Optimized async sentiment analysis with parallel data fetching and caching"""
@@ -1583,24 +1722,56 @@ class Phase3SignalGenerator:
 
     async def generate_phase3_signal_shared(self, symbol: str, timeframe: str, username: str, output_level: str = "full", 
                                            buy_threshold: Optional[float] = None, sell_threshold: Optional[float] = None,
-                                           technical_weight: Optional[float] = None, sentiment_weight: Optional[float] = None) -> Phase3TradingSignal:
+                                           technical_weight: Optional[float] = None, sentiment_weight: Optional[float] = None,
+                                           skip_storage: bool = False, disable_caching: bool = False) -> Phase3TradingSignal:
         """Shared Phase3 signal generation function that can be used by both manual generation and monitoring"""
         total_start_time = time.time()
-        logger.info(f"🚀 Starting Phase 3 signal generation for {symbol} @ {timeframe} (user: {username}, output: {output_level})")
         
-        # Log custom parameters if provided
-        if any([buy_threshold, sell_threshold, technical_weight, sentiment_weight]):
-            logger.info("🎛️ Custom parameters provided:")
-            if buy_threshold is not None:
-                logger.info(f"   📈 Buy Threshold: {buy_threshold:.4f}")
-            if sell_threshold is not None:
-                logger.info(f"   📉 Sell Threshold: {sell_threshold:.4f}")
-            if technical_weight is not None:
-                logger.info(f"   🔧 Technical Weight: {technical_weight:.4f}")
-            if sentiment_weight is not None:
-                logger.info(f"   💭 Sentiment Weight: {sentiment_weight:.4f}")
+        # Determine if this is a monitoring call based on skip_storage and disable_caching
+        is_monitoring = skip_storage and disable_caching
+        log_prefix = "🔍 [MONITOR-SIGNAL]" if is_monitoring else "🚀 [NEW-SIGNAL]"
+        
+        logger.info(f"{log_prefix} Starting Phase 3 signal generation for {symbol} @ {timeframe} (user: {username}, output: {output_level})")
+        
+        # Set caching flag for monitoring
+        self.disable_caching = disable_caching
+        if disable_caching:
+            logger.info(f"{log_prefix} Caching disabled for monitoring mode to avoid event loop conflicts")
+        
+        # Load config to get default values
+        from agent.config import load_config_from_env
+        config = load_config_from_env()
+        
+        # Log parameters (custom or default)
+        logger.info(f"{log_prefix} Signal generation parameters:")
+        
+        # Buy threshold
+        if buy_threshold is not None:
+            logger.info(f"   📈 Buy Threshold: {buy_threshold:.4f} (custom)")
         else:
-            logger.info("🎛️ Using default configuration parameters")
+            default_buy = config.thresholds.buy_threshold
+            logger.info(f"   📈 Buy Threshold: {default_buy:.4f} (default)")
+            
+        # Sell threshold
+        if sell_threshold is not None:
+            logger.info(f"   📉 Sell Threshold: {sell_threshold:.4f} (custom)")
+        else:
+            default_sell = -config.thresholds.buy_threshold
+            logger.info(f"   📉 Sell Threshold: {default_sell:.4f} (default)")
+            
+        # Technical weight
+        if technical_weight is not None:
+            logger.info(f"   🔧 Technical Weight: {technical_weight:.4f} (custom)")
+        else:
+            default_tech = config.thresholds.technical_weight
+            logger.info(f"   🔧 Technical Weight: {default_tech:.4f} (default)")
+            
+        # Sentiment weight
+        if sentiment_weight is not None:
+            logger.info(f"   💭 Sentiment Weight: {sentiment_weight:.4f} (custom)")
+        else:
+            default_sent = config.thresholds.sentiment_weight
+            logger.info(f"   💭 Sentiment Weight: {default_sent:.4f} (default)")
         
         try:
             # Step 1: Fetch OHLCV data (cached)
@@ -1621,6 +1792,13 @@ class Phase3SignalGenerator:
 
             # Step 2-5: Parallel analysis (cached)
             step2_start = time.time()
+            
+            # Initialize variables with default values
+            technical_indicators = {}
+            regime_data = {'regime_classification': 'unknown', 'confidence': 0.5, 'trend_strength': 0.0}
+            rsi_data = {'alignment': 'neutral', 'momentum': 0.0}
+            sentiment_score = 0.0
+            
             try:
                 (
                     technical_indicators,
@@ -1648,40 +1826,13 @@ class Phase3SignalGenerator:
                                 logger.info("   %s: %s", key, value)
                     else:
                         logger.info("   Type: %s, Value: %s", type(technical_indicators), technical_indicators)
-                    
-                    # Log complete regime_data content
-                    logger.info("🏳️ REGIME_DATA COMPLETE CONTENT:")
-                    if isinstance(regime_data, dict):
-                        for key, value in regime_data.items():
-                            if hasattr(value, 'iloc') and len(value) > 0:
-                                # Handle pandas Series
-                                logger.info("   %s: %s (last value: %s)", key, type(value).__name__, value.iloc[-1])
-                            else:
-                                logger.info("   %s: %s", key, value)
-                    else:
-                        logger.info("   Type: %s, Value: %s", type(regime_data), regime_data)
-                    
-                    # Log complete rsi_data content
-                    logger.info("📐 RSI_DATA COMPLETE CONTENT:")
-                    if isinstance(rsi_data, dict):
-                        for key, value in rsi_data.items():
-                            if hasattr(value, 'iloc') and len(value) > 0:
-                                # Handle pandas Series
-                                logger.info("   %s: %s (last value: %s)", key, type(value).__name__, value.iloc[-1])
-                            else:
-                                logger.info("   %s: %s", key, value)
-                    else:
-                        logger.info("   Type: %s, Value: %s", type(rsi_data), rsi_data)
+                   
                         
                 except Exception as e:
                     logger.error("❌ Error logging parameter content: %s", e)
             except Exception as e:
                 logger.error(f"❌ Error in parallel analysis: {e}")
-                # Fallback to default values
-                technical_indicators = {}
-                regime_data = {'regime_classification': 'unknown', 'confidence': 0.5, 'trend_strength': 0.0}
-                rsi_data = {'alignment': 'neutral', 'momentum': 0.0}
-                sentiment_score = 0.0
+                # Variables already initialized with default values above
             step2_duration = time.time() - step2_start
             logger.info(f"⏱️  STEP 2-5 (Parallel Analysis): {step2_duration:.3f}s")
 
@@ -1693,21 +1844,8 @@ class Phase3SignalGenerator:
             
             # Add current values for UI compatibility (scalar values instead of arrays)
             try:
-                if 'rsi_14' in technical_indicators and not technical_indicators['rsi_14'].empty:
-                    # Store the current RSI value for UI display (overwrite the array with current value)
-                    current_rsi = float(technical_indicators['rsi_14'].iloc[-1])
-                    technical_indicators['rsi_14_series'] = technical_indicators['rsi_14']  # Keep original series
-                    technical_indicators['rsi_14'] = current_rsi  # Overwrite with current value
-                if 'macd' in technical_indicators and not technical_indicators['macd'].empty:
-                    # Store the current MACD value for UI display (overwrite the array with current value)
-                    current_macd = float(technical_indicators['macd'].iloc[-1])
-                    technical_indicators['macd_series'] = technical_indicators['macd']  # Keep original series
-                    technical_indicators['macd'] = current_macd  # Overwrite with current value
-                if 'atr' in technical_indicators and not technical_indicators['atr'].empty:
-                    # Store the current ATR value for UI display (overwrite the array with current value)
-                    current_atr = float(technical_indicators['atr'].iloc[-1])
-                    technical_indicators['atr_series'] = technical_indicators['atr']  # Keep original series
-                    technical_indicators['atr'] = current_atr  # Overwrite with current value
+                # Technical indicators are now scalars, so we don't need to extract from Series
+                # Just log the current values
                 logger.info(f"📊 Current values: RSI14={technical_indicators.get('rsi_14', 'N/A')}, MACD={technical_indicators.get('macd', 'N/A')}, ATR={technical_indicators.get('atr', 'N/A')}")
             except Exception as e:
                 logger.warning(f"⚠️ Error extracting current indicator values: {e}")
@@ -1841,7 +1979,7 @@ class Phase3SignalGenerator:
                 total_duration = time.time() - total_start_time
                 logger.info("=" * 80)
                 logger.info(
-                    "✅ Phase 3 summary → %s %s @ %s | fused=%.4f, tech=%.4f, sent=%.4f, conf=%.2f%% | SL=%.2f TP=%.2f | total=%.3fs",
+                    f"{log_prefix} Phase 3 summary → %s %s @ %s | fused=%.4f, tech=%.4f, sent=%.4f, conf=%.2f%% | SL=%.2f TP=%.2f | total=%.3fs",
                     signal_type,
                     symbol,
                     timeframe,
@@ -1889,25 +2027,28 @@ class Phase3SignalGenerator:
                 cross_asset_correlation=to_serializable(cross_asset_correlation),
                 btc_dominance=to_serializable(btc_dominance),
                 market_wide_sentiment=to_serializable(market_wide_sentiment),
-                # Applied Parameters (for UI display)
-                applied_buy_threshold=buy_threshold,
-                applied_sell_threshold=sell_threshold,
-                applied_tech_weight=technical_weight,
-                applied_sentiment_weight=sentiment_weight,
+                # Applied Parameters (for UI display) - use actual values (custom or default)
+                applied_buy_threshold=buy_threshold if buy_threshold is not None else config.thresholds.buy_threshold,
+                applied_sell_threshold=sell_threshold if sell_threshold is not None else -config.thresholds.buy_threshold,
+                applied_tech_weight=technical_weight if technical_weight is not None else config.thresholds.technical_weight,
+                applied_sentiment_weight=sentiment_weight if sentiment_weight is not None else config.thresholds.sentiment_weight,
                 # Configuration
                 output_level=output_level,
                 username=username
             )
             
             # Step 14: Store signal (await to ensure it's visible in recent tips immediately)
-            logger.info("💾 Storing signal (await)")
-            await self.store_signal(phase3_signal, username)
-            # Step 15: Send notification in background (non-blocking)
-            asyncio.create_task(self.send_telegram_notification(phase3_signal, username))
+            if not skip_storage:
+                logger.info(f"{log_prefix} Storing signal (await)")
+                await self.store_signal(phase3_signal, username)
+                # Step 15: Send notification in background (non-blocking)
+                asyncio.create_task(self.send_telegram_notification(phase3_signal, username))
+            else:
+                logger.info(f"{log_prefix} Skipping signal storage (monitoring mode)")
 
             total_duration = time.time() - total_start_time
-            logger.info(f"⏱️  TOTAL EXECUTION TIME: {total_duration:.3f}s")
-            logger.info(f"✅ Phase 3 signal generated successfully: {signal_type} (confidence: {confidence:.3f})")
+            logger.info(f"{log_prefix} TOTAL EXECUTION TIME: {total_duration:.3f}s")
+            logger.info(f"{log_prefix} Phase 3 signal generated successfully: {signal_type} (confidence: {confidence:.3f})")
             
             # Log comprehensive response details
             logger.info("=" * 80)
@@ -1927,22 +2068,22 @@ class Phase3SignalGenerator:
             logger.info(f"💰 Current Price: {phase3_signal.technical_indicators.get('current_price', 'N/A')}")
             # Safely extract technical indicator values
             try:
-                rsi_data = phase3_signal.technical_indicators.get('rsi_14', pd.Series([50]))
-                rsi_value = rsi_data.iloc[-1] if hasattr(rsi_data, 'iloc') and len(rsi_data) > 0 else (rsi_data[-1] if isinstance(rsi_data, list) and len(rsi_data) > 0 else 'N/A')
+                # Technical indicators are now stored as scalar values, not Series
+                rsi_value = phase3_signal.technical_indicators.get('rsi_14', 'N/A')
                 logger.info(f"📊 RSI: {rsi_value}")
             except Exception:
                 logger.info(f"📊 RSI: N/A")
             
             try:
-                macd_data = phase3_signal.technical_indicators.get('macd', pd.Series([0]))
-                macd_value = macd_data.iloc[-1] if hasattr(macd_data, 'iloc') and len(macd_data) > 0 else (macd_data[-1] if isinstance(macd_data, list) and len(macd_data) > 0 else 'N/A')
+                # Technical indicators are now stored as scalar values, not Series
+                macd_value = phase3_signal.technical_indicators.get('macd', 'N/A')
                 logger.info(f"📈 MACD: {macd_value}")
             except Exception:
                 logger.info(f"📈 MACD: N/A")
             
             try:
-                atr_data = phase3_signal.technical_indicators.get('atr', pd.Series([0]))
-                atr_value = atr_data.iloc[-1] if hasattr(atr_data, 'iloc') and len(atr_data) > 0 else (atr_data[-1] if isinstance(atr_data, list) and len(atr_data) > 0 else 'N/A')
+                # Technical indicators are now stored as scalar values, not Series
+                atr_value = phase3_signal.technical_indicators.get('atr', 'N/A')
                 logger.info(f"📉 ATR: {atr_value}")
             except Exception:
                 logger.info(f"📉 ATR: N/A")
@@ -2001,3 +2142,4 @@ class Phase3SignalGenerator:
 
 # Create global instance
 phase3_signal_generator = Phase3SignalGenerator()
+

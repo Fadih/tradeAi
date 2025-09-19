@@ -1,16 +1,48 @@
 from __future__ import annotations
 
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 import requests
 import time
 import random
 from datetime import datetime, timedelta, timezone
 import aiohttp
 import asyncio
+import json
 
 from ..logging_config import get_logger
 
 logger = get_logger(__name__)
+
+# Global cache for Reddit data to reduce API calls
+_reddit_cache: Dict[str, Dict[str, Any]] = {}
+_cache_duration = 300  # 5 minutes cache
+
+def _get_cache_key(subreddits: List[str], limit_per_subreddit: int, symbol: Optional[str], hours_back: int) -> str:
+    """Generate a cache key for Reddit data"""
+    return f"reddit:{':'.join(sorted(subreddits))}:{limit_per_subreddit}:{symbol or 'all'}:{hours_back}"
+
+def _is_cache_valid(cache_entry: Dict[str, Any]) -> bool:
+    """Check if cache entry is still valid"""
+    if not cache_entry:
+        return False
+    cache_time = cache_entry.get('timestamp', 0)
+    return time.time() - cache_time < _cache_duration
+
+def _get_cached_data(cache_key: str) -> Optional[List[str]]:
+    """Get cached Reddit data if valid"""
+    cache_entry = _reddit_cache.get(cache_key)
+    if _is_cache_valid(cache_entry):
+        logger.debug(f"Using cached Reddit data for key: {cache_key}")
+        return cache_entry.get('data', [])
+    return None
+
+def _set_cached_data(cache_key: str, data: List[str]) -> None:
+    """Cache Reddit data"""
+    _reddit_cache[cache_key] = {
+        'data': data,
+        'timestamp': time.time()
+    }
+    logger.debug(f"Cached Reddit data for key: {cache_key}")
 
 def fetch_reddit_posts(subreddits: List[str], limit_per_subreddit: int = 10, symbol: Optional[str] = None, hours_back: int = 6) -> List[str]:
     """
@@ -29,6 +61,13 @@ def fetch_reddit_posts(subreddits: List[str], limit_per_subreddit: int = 10, sym
     if symbol:
         logger.info(f"Filtering Reddit posts for symbol: {symbol}")
     logger.info(f"Time filter: Only posts from last {hours_back} hours")
+    
+    # Check cache first
+    cache_key = _get_cache_key(subreddits, limit_per_subreddit, symbol, hours_back)
+    cached_data = _get_cached_data(cache_key)
+    if cached_data is not None:
+        logger.info(f"Using cached Reddit data: {len(cached_data)} posts")
+        return cached_data
     
     # Calculate cutoff time for recent posts (using UTC)
     cutoff_time = datetime.now(timezone.utc) - timedelta(hours=hours_back)
@@ -108,7 +147,12 @@ def fetch_reddit_posts(subreddits: List[str], limit_per_subreddit: int = 10, sym
             time.sleep(0.5)
             
         except requests.exceptions.RequestException as e:
-            logger.error(f"Failed to fetch from r/{subreddit}: {e}")
+            if "429" in str(e):
+                logger.warning(f"Rate limited by Reddit for r/{subreddit}, skipping remaining subreddits")
+                # If we hit rate limit, stop fetching more subreddits
+                break
+            else:
+                logger.error(f"Failed to fetch from r/{subreddit}: {e}")
             continue
         except Exception as e:
             logger.error(f"Unexpected error fetching from r/{subreddit}: {e}")
@@ -117,6 +161,9 @@ def fetch_reddit_posts(subreddits: List[str], limit_per_subreddit: int = 10, sym
     logger.info(f"Total Reddit posts collected: {len(texts)}")
     if texts:
         logger.debug(f"Sample Reddit posts: {texts[:2]}")
+    
+    # Cache the results
+    _set_cached_data(cache_key, texts)
     
     return texts
 
@@ -148,6 +195,13 @@ async def fetch_reddit_posts_async(subreddits: List[str], limit_per_subreddit: i
     if symbol:
         logger.info(f"Filtering Reddit posts for symbol: {symbol}")
     logger.info(f"Time filter: Only posts from last {hours_back} hours")
+    
+    # Check cache first
+    cache_key = _get_cache_key(subreddits, limit_per_subreddit, symbol, hours_back)
+    cached_data = _get_cached_data(cache_key)
+    if cached_data is not None:
+        logger.info(f"Using cached Reddit data (async): {len(cached_data)} posts")
+        return cached_data
     
     # Calculate cutoff time for recent posts (using UTC)
     cutoff_time = datetime.now(timezone.utc) - timedelta(hours=hours_back)
@@ -244,6 +298,9 @@ async def fetch_reddit_posts_async(subreddits: List[str], limit_per_subreddit: i
     logger.info(f"Total Reddit posts collected (async): {len(texts)}")
     if texts:
         logger.debug(f"Sample Reddit posts: {texts[:2]}")
+    
+    # Cache the results
+    _set_cached_data(cache_key, texts)
     
     return texts
 

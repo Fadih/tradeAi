@@ -182,7 +182,7 @@ telegram:
 # =============================================================================
 monitoring:
   # Interval between signal monitoring checks (minutes)
-  signal_check_interval_minutes: 1
+  signal_check_interval_minutes: 3
   
   # Interval between health checks (seconds)
   health_check_interval_seconds: 30
@@ -261,6 +261,9 @@ ui:
   
   # Auto-refresh interval in seconds
   refresh_interval_seconds: 60
+  
+  # Status update interval in seconds (how often to check system status)
+  status_update_interval_seconds: 30
   
   # Default theme (light/dark)
   theme: "light"

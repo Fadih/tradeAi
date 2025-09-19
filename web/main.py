@@ -50,8 +50,8 @@ from agent.data.alpaca_client import fetch_ohlcv as fetch_alpaca_ohlcv
 from agent.indicators import compute_rsi, compute_ema, compute_macd, compute_atr
 from agent.engine import make_fused_tip
 from agent.models.sentiment import SentimentAnalyzer
-from agent.news.rss import fetch_headlines
-from agent.news.reddit import fetch_crypto_reddit_posts, fetch_stock_reddit_posts
+from agent.news.rss import fetch_headlines_async
+from agent.news.reddit import fetch_reddit_posts_async
 from agent.cache.redis_client import get_redis_client, close_redis_client
 from agent.monitor import SignalMonitor
 from agent.positions import PositionTracker
@@ -314,7 +314,7 @@ monitoring_scheduler = None  # Global reference to allow stop/start
 async def start_signal_monitoring():
     """Start the signal monitoring scheduler"""
     try:
-        logger.info("Starting signal monitoring scheduler...")
+        logger.info("🚀 [MONITOR-SCHEDULER] Starting signal monitoring scheduler...")
         
         # Create monitoring job function (synchronous wrapper for async function)
         def monitoring_job():
@@ -345,16 +345,30 @@ async def start_signal_monitoring():
         monitoring_interval = config.monitoring.signal_check_interval_minutes
         global monitoring_scheduler
         monitoring_scheduler = start_scheduler(monitoring_job, cron=f"*/{monitoring_interval} * * * *")
-        logger.info(f"Signal monitoring scheduler started - running every {monitoring_interval} minutes")
+        logger.info(f"🔧 [MONITOR-SCHEDULER] Signal monitoring scheduler started - running every {monitoring_interval} minutes")
         
     except Exception as e:
         logger.error(f"Failed to start signal monitoring: {e}")
 
 async def run_monitoring_cycle():
     """Run a single monitoring cycle"""
+    redis_client = None
     try:
-        redis_client = await get_redis_client()
-        if not redis_client:
+        # Create a fresh Redis client instance for this monitoring cycle
+        # This avoids event loop conflicts when running in separate threads
+        from agent.cache.redis_client import TradingAgentRedis
+        
+        # Use hardcoded Redis connection parameters to avoid config loading issues
+        redis_client = TradingAgentRedis(
+            host="redis",  # Docker service name
+            port=6379,
+            db=0,
+            password=None
+        )
+        
+        # Connect to Redis in the current event loop
+        connected = await redis_client.connect()
+        if not connected:
             logger.warning("Redis not available for monitoring")
             return
         
@@ -365,7 +379,68 @@ async def run_monitoring_cycle():
         logger.info(f"Direct signal retrieval test: {len(test_signals) if test_signals else 0} signals")
         
         # Get sentiment analyzer (lazy initialization)
-        analyzer = get_sentiment_analyzer()
+        analyzer = SentimentAnalyzer("ProsusAI/finbert")
+        
+        # Fetch fresh news data for sentiment analysis
+        logger.info("📰 Fetching fresh news data for sentiment analysis...")
+        try:
+            from agent.config import get_config
+            config = get_config()
+            
+            # Fetch RSS headlines
+            if config.sentiment_analysis.rss_enabled:
+                logger.info(f"📡 Fetching RSS headlines from {len(config.sentiment_analysis.rss_feeds)} feeds")
+                rss_texts = await fetch_headlines_async(
+                    config.sentiment_analysis.rss_feeds, 
+                    limit_per_feed=config.sentiment_analysis.rss_max_headlines_per_feed
+                )
+                logger.info(f"📰 Fetched {len(rss_texts)} RSS headlines")
+            else:
+                rss_texts = []
+                logger.info("📡 RSS feeds disabled in configuration")
+            
+            # Fetch Reddit posts
+            if config.sentiment_analysis.reddit_enabled:
+                logger.info(f"🔴 Fetching Reddit posts from {len(config.sentiment_analysis.reddit_subreddits)} subreddits")
+                reddit_texts = await fetch_reddit_posts_async(
+                    config.sentiment_analysis.reddit_subreddits,
+                    limit_per_subreddit=config.sentiment_analysis.reddit_max_posts_per_subreddit
+                )
+                logger.info(f"🔴 Fetched {len(reddit_texts)} Reddit posts")
+            else:
+                reddit_texts = []
+                logger.info("🔴 Reddit feeds disabled in configuration")
+            
+            # Combine all news texts
+            all_news_texts = rss_texts + reddit_texts
+            logger.info(f"📊 Total news items collected: {len(all_news_texts)} (RSS: {len(rss_texts)}, Reddit: {len(reddit_texts)})")
+            
+            # Analyze sentiment if we have news data
+            if all_news_texts:
+                logger.info("🧠 Analyzing sentiment from fresh news data...")
+                sentiment_score = analyzer.score(all_news_texts)
+                logger.info(f"💭 Fresh sentiment score: {sentiment_score:.4f}")
+                
+                # Store sentiment score for use by signal generators
+                logger.info("💾 Storing fresh sentiment score for signal generation...")
+                try:
+                    # Store sentiment score in Redis with timestamp
+                    sentiment_data = {
+                        "score": sentiment_score,
+                        "timestamp": datetime.now().isoformat(),
+                        "news_count": len(all_news_texts),
+                        "rss_count": len(rss_texts),
+                        "reddit_count": len(reddit_texts)
+                    }
+                    await redis_client.setex("latest_sentiment_score", 3600, json.dumps(sentiment_data))  # 1 hour TTL
+                    logger.info("✅ Fresh sentiment score stored successfully")
+                except Exception as e:
+                    logger.error(f"❌ Error storing sentiment score: {e}")
+            else:
+                logger.warning("⚠️ No news data available for sentiment analysis")
+                
+        except Exception as e:
+            logger.error(f"❌ Error fetching news data: {e}")
         
         # Create monitor and run monitoring
         monitor = SignalMonitor(redis_client, analyzer)
@@ -375,6 +450,13 @@ async def run_monitoring_cycle():
         
     except Exception as e:
         logger.error(f"Error in monitoring cycle: {e}")
+    finally:
+        # Always disconnect the Redis client to clean up resources
+        if redis_client:
+            try:
+                await redis_client.disconnect()
+            except Exception as e:
+                logger.warning(f"Error disconnecting Redis client: {e}")
 
 # User management functions
 async def get_user_from_redis(username: str) -> Optional[Dict[str, Any]]:
@@ -2787,7 +2869,7 @@ async def get_market_data(symbol: str, timeframe: str = "1h", limit: int = 100):
         return {"symbol": symbol, "timeframe": timeframe, "data": data}
         
     except Exception as e:
-        logger.error(f"Error fetching market data: {e}")
+        logger.error(f"❌ [OVERVIEW-DATA] Error fetching market data: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 # Simple in-memory cache for market data
@@ -2805,12 +2887,14 @@ async def get_market_overview(timeframe: str = "1h"):
         if (cache_key in _market_data_cache and 
             cache_key in _market_data_cache_time and 
             current_time - _market_data_cache_time[cache_key] < 30):
-            logger.info(f"Returning cached market data for {timeframe}")
+            logger.info(f"📊 [OVERVIEW-CACHE] Returning cached market data for {timeframe}")
             return _market_data_cache[cache_key]
         
         # Get configured symbols
         config = load_config_from_env()
         symbols = config.universe.tickers
+        
+        logger.info(f"📊 [OVERVIEW-FETCH] Fetching fresh market data for {len(symbols)} symbols @ {timeframe}")
         
         # Fetch data for all symbols in parallel
         import asyncio
@@ -2877,9 +2961,11 @@ async def get_market_overview(timeframe: str = "1h"):
         _market_data_cache[cache_key] = result
         _market_data_cache_time[cache_key] = current_time
         
+        logger.info(f"✅ [OVERVIEW-COMPLETE] Market overview data fetched and cached for {len(symbols)} symbols @ {timeframe}")
+        
         return result
     except Exception as e:
-        logger.error(f"Error fetching market overview: {e}")
+        logger.error(f"❌ [OVERVIEW-DATA] Error fetching market overview: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/health")

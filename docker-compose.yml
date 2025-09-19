@@ -41,6 +41,9 @@ services:
       - AGENT_LOG_FILE=${AGENT_LOG_FILE:-}
       - AGENT_LOG_MAX_BYTES=${AGENT_LOG_MAX_BYTES:-}
       - AGENT_LOG_BACKUP_COUNT=${AGENT_LOG_BACKUP_COUNT:-}
+      
+      # Monitoring (enable automatic signal monitoring)
+      - ENABLE_MONITORING=${ENABLE_MONITORING:-1}
     depends_on:
       - redis
     volumes:

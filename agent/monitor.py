@@ -14,8 +14,8 @@ from .cache.redis_client import TradingAgentRedis
 from .data.ccxt_client import fetch_ohlcv as fetch_ccxt_ohlcv
 from .data.alpaca_client import fetch_ohlcv as fetch_alpaca_ohlcv
 from .models.sentiment import SentimentAnalyzer
-from .news.rss import fetch_headlines
-from .news.reddit import fetch_crypto_reddit_posts, fetch_stock_reddit_posts
+from .news.rss import fetch_headlines_async
+from .news.reddit import fetch_reddit_posts_async
 from .config import get_config
 
 logger = logging.getLogger(__name__)
@@ -35,7 +35,7 @@ class SignalMonitor:
             self.health_check_interval_seconds = config.monitoring.health_check_interval_seconds
             self.max_concurrent_monitors = config.monitoring.max_concurrent_monitors
             self.history_retention_days = config.monitoring.history_retention_days
-            logger.info(f"Loaded monitoring config: check_interval={self.signal_check_interval_minutes}min, "
+            logger.info(f"🔧 [MONITOR-CONFIG] Loaded monitoring config: check_interval={self.signal_check_interval_minutes}min, "
                        f"health_interval={self.health_check_interval_seconds}s, "
                        f"max_concurrent={self.max_concurrent_monitors}, "
                        f"retention={self.history_retention_days}days")
@@ -58,7 +58,7 @@ class SignalMonitor:
                 logger.info("No signals to monitor")
                 return {"monitored": 0, "updated": 0, "errors": 0}
             
-            logger.info(f"Monitoring {len(all_signals)} signals")
+            logger.info(f"🔍 [MONITOR] Monitoring {len(all_signals)} signals")
             
             updated_count = 0
             error_count = 0
@@ -92,7 +92,7 @@ class SignalMonitor:
                 "timestamp": datetime.now(self.israel_tz).isoformat()
             }
             
-            logger.info(f"Monitoring completed: {result}")
+            logger.info(f"✅ [MONITOR] Monitoring completed: {result}")
             return result
             
         except Exception as e:
@@ -187,33 +187,32 @@ class SignalMonitor:
             
             all_texts = []
             
-            # Fetch RSS headlines
-            logger.info("Monitoring: Fetching RSS headlines...")
+            # Fetch RSS headlines (async for better performance)
+            logger.info("📰 [MONITOR-DATA] Fetching RSS headlines...")
             # Use RSS feeds from configuration
             rss_feeds = config.sentiment_analysis.rss_feeds if config.sentiment_analysis.rss_enabled else []
-            headlines = fetch_headlines(rss_feeds, limit_per_feed=config.sentiment_analysis.rss_max_headlines_per_feed)
+            headlines = await fetch_headlines_async(rss_feeds, limit_per_feed=config.sentiment_analysis.rss_max_headlines_per_feed)
             if headlines:
                 all_texts.extend(headlines)
-                logger.info(f"Monitoring: RSS collected {len(headlines)} headlines")
+                logger.info(f"📰 [MONITOR-DATA] RSS collected {len(headlines)} headlines")
             
-            # Fetch Reddit posts using configuration
+            # Fetch Reddit posts using configuration (async for better performance)
             if config.sentiment_analysis.reddit_enabled:
-                logger.info("Monitoring: Fetching Reddit posts...")
+                logger.info("🔴 [MONITOR-DATA] Fetching Reddit posts...")
                 try:
-                    from .news.reddit import fetch_reddit_posts
-                    reddit_posts = fetch_reddit_posts(
+                    reddit_posts = await fetch_reddit_posts_async(
                         subreddits=config.sentiment_analysis.reddit_subreddits,
                         limit_per_subreddit=config.sentiment_analysis.reddit_max_posts_per_subreddit
                     )
                     
                     if reddit_posts:
                         all_texts.extend(reddit_posts)
-                        logger.info(f"Monitoring: Reddit collected {len(reddit_posts)} posts from {len(config.sentiment_analysis.reddit_subreddits)} subreddits")
+                        logger.info(f"🔴 [MONITOR-DATA] Reddit collected {len(reddit_posts)} posts from {len(config.sentiment_analysis.reddit_subreddits)} subreddits")
                         
                 except Exception as e:
-                    logger.warning(f"Monitoring: Could not fetch Reddit posts: {e}")
+                    logger.warning(f"⚠️ [MONITOR-DATA] Could not fetch Reddit posts: {e}")
             else:
-                logger.info("Monitoring: Reddit integration disabled in configuration")
+                logger.info("🔴 [MONITOR-DATA] Reddit integration disabled in configuration")
             
             if all_texts:
                 # Use sample size from configuration
@@ -222,9 +221,9 @@ class SignalMonitor:
                 shuffled_texts = all_texts.copy()
                 random.shuffle(shuffled_texts)
                 text_sample = shuffled_texts[:sample_size]
-                logger.info(f"Monitoring: Analyzing {len(text_sample)} texts (RSS + Reddit) for sentiment")
+                logger.info(f"🧠 [MONITOR-SENTIMENT] Analyzing {len(text_sample)} texts (RSS + Reddit) for sentiment")
                 sentiment_score = self.sentiment_analyzer.score(text_sample)
-                logger.info(f"Monitoring: Sentiment analysis result: {sentiment_score:.3f}")
+                logger.info(f"🧠 [MONITOR-SENTIMENT] Sentiment analysis result: {sentiment_score:.3f}")
                 return sentiment_score
             
             return 0.0
@@ -254,7 +253,7 @@ class SignalMonitor:
             return False
     
     async def _update_phase3_signal_status(self, signal: Dict, ohlcv_data: Any, sentiment_score: float) -> bool:
-        """Update Phase3 signal status using shared Phase3 signal generation"""
+        """Update Phase3 signal status by refreshing its data with original parameters"""
         try:
             from web.phase3_signal_generator import phase3_signal_generator
             
@@ -262,22 +261,41 @@ class SignalMonitor:
             timeframe = signal.get('timeframe', '1h')
             username = signal.get('username', 'monitoring')
             
-            # Generate fresh Phase3 signal
+            # Extract original parameters from the signal to maintain consistency
+            original_buy_threshold = signal.get('applied_buy_threshold')
+            original_sell_threshold = signal.get('applied_sell_threshold')
+            original_tech_weight = signal.get('applied_tech_weight')
+            original_sentiment_weight = signal.get('applied_sentiment_weight')
+            
+            logger.info(f"🔍 [MONITOR] {symbol}: Using original parameters - buy_thresh={original_buy_threshold}, sell_thresh={original_sell_threshold}, tech_weight={original_tech_weight}, sent_weight={original_sentiment_weight}")
+            
+            # Generate fresh Phase3 signal data using the same parameters as the original
+            # But don't store it - we'll use the data to update the existing signal
+            # Disable caching during monitoring to avoid event loop conflicts
             fresh_signal = await phase3_signal_generator.generate_phase3_signal_shared(
                 symbol=symbol,
                 timeframe=timeframe,
                 username=username,
-                output_level="monitoring"  # Use monitoring level for performance
+                output_level="monitoring",  # Use monitoring level for performance
+                buy_threshold=original_buy_threshold,
+                sell_threshold=original_sell_threshold,
+                technical_weight=original_tech_weight,
+                sentiment_weight=original_sentiment_weight,
+                skip_storage=True,  # Don't store the new signal, just use the data
+                disable_caching=True  # Disable caching to avoid Redis event loop conflicts
             )
             
             # Compare with original signal
             original_signal_type = signal.get('signal_type', 'HOLD')
             new_signal_type = fresh_signal.signal_type
             
-            if new_signal_type != original_signal_type:
-                logger.info(f"Phase3 signal status changed: {symbol} {original_signal_type} → {new_signal_type}")
+            # Check if status actually changed
+            status_changed = new_signal_type != original_signal_type
+            
+            if status_changed:
+                logger.info(f"🔄 [MONITOR-STATUS] Phase3 signal status changed: {symbol} {original_signal_type} → {new_signal_type}")
                 
-                # Update signal in Redis with fresh Phase3 data
+                # Update dynamic fields with fresh data while preserving original metadata
                 signal['signal_type'] = new_signal_type
                 signal['fused_score'] = fresh_signal.fused_score
                 signal['technical_score'] = fresh_signal.technical_score
@@ -286,9 +304,14 @@ class SignalMonitor:
                 signal['stop_loss'] = fresh_signal.stop_loss
                 signal['take_profit'] = fresh_signal.take_profit
                 signal['last_updated'] = datetime.now(self.israel_tz).isoformat()
-                signal['status_change_reason'] = f"Phase3 monitoring: Technical={fresh_signal.technical_score:.3f}, Sentiment={fresh_signal.sentiment_score:.3f}, Fused={fresh_signal.fused_score:.3f}"
                 
-                # Update Phase3 specific fields
+                # Preserve applied threshold values (they should remain the same)
+                signal['applied_buy_threshold'] = fresh_signal.applied_buy_threshold
+                signal['applied_sell_threshold'] = fresh_signal.applied_sell_threshold
+                signal['applied_tech_weight'] = fresh_signal.applied_tech_weight
+                signal['applied_sentiment_weight'] = fresh_signal.applied_sentiment_weight
+                
+                # Update Phase3 specific fields with fresh data
                 signal['regime_detection'] = fresh_signal.regime_detection
                 signal['advanced_rsi'] = fresh_signal.advanced_rsi
                 signal['position_sizing'] = fresh_signal.position_sizing
@@ -299,8 +322,28 @@ class SignalMonitor:
                 signal['btc_dominance'] = fresh_signal.btc_dominance
                 signal['market_wide_sentiment'] = fresh_signal.market_wide_sentiment
                 
-                # Store updated signal
+                # Store updated signal (this updates the existing signal, doesn't create a new one)
                 await self.redis_client.store_signal(signal)
+                
+                # Add history event for status change
+                await self.redis_client.add_signal_history_event(
+                    signal_timestamp=signal.get('timestamp'),
+                    event_type="status_changed",
+                    description=f"Phase3 status changed: {original_signal_type} → {new_signal_type}",
+                    metadata={
+                        "old_status": original_signal_type,
+                        "new_status": new_signal_type,
+                        "fused_score": fresh_signal.fused_score,
+                        "technical_score": fresh_signal.technical_score,
+                        "sentiment_score": fresh_signal.sentiment_score,
+                        "confidence": fresh_signal.confidence,
+                        "applied_buy_threshold": fresh_signal.applied_buy_threshold,
+                        "applied_sell_threshold": fresh_signal.applied_sell_threshold,
+                        "applied_tech_weight": fresh_signal.applied_tech_weight,
+                        "applied_sentiment_weight": fresh_signal.applied_sentiment_weight,
+                        "reason": "Phase3 monitoring - market conditions changed"
+                    }
+                )
                 
                 # Log activity
                 await self.redis_client.log_activity(
@@ -316,9 +359,36 @@ class SignalMonitor:
                     }
                 )
                 
+                # Send Telegram notification for status change
+                await self.send_telegram_notification(
+                    signal, original_signal_type, new_signal_type, 
+                    fresh_signal.fused_score, fresh_signal.technical_score, fresh_signal.sentiment_score
+                )
+                
                 return True
-            
-            return False
+            else:
+                # Status didn't change, but still add history event for monitoring activity
+                logger.info(f"⏸️ [MONITOR-STATUS] Phase3 signal status unchanged for {signal.get('timestamp')}: {original_signal_type}")
+                
+                # Add history event for regular monitoring cycle
+                await self.redis_client.add_signal_history_event(
+                    signal_timestamp=signal.get('timestamp'),
+                    event_type="monitoring_cycle",
+                    description=f"Phase3 monitoring cycle - status remains {original_signal_type}",
+                    metadata={
+                        "current_status": original_signal_type,
+                        "fused_score": fresh_signal.fused_score,
+                        "technical_score": fresh_signal.technical_score,
+                        "sentiment_score": fresh_signal.sentiment_score,
+                        "applied_buy_threshold": fresh_signal.applied_buy_threshold,
+                        "applied_sell_threshold": fresh_signal.applied_sell_threshold,
+                        "applied_tech_weight": fresh_signal.applied_tech_weight,
+                        "applied_sentiment_weight": fresh_signal.applied_sentiment_weight,
+                        "reason": "Phase3 regular monitoring cycle - no status change"
+                    }
+                )
+                
+                return False
             
         except Exception as e:
             logger.error(f"Error updating Phase3 signal status: {e}")
@@ -377,7 +447,7 @@ class SignalMonitor:
             
             # Check if signal status changed
             if new_signal_type != original_signal_type:
-                logger.info(f"Legacy signal status changed: {signal.get('symbol')} {original_signal_type} → {new_signal_type}")
+                logger.info(f"🔄 [MONITOR-STATUS] Legacy signal status changed: {signal.get('symbol')} {original_signal_type} → {new_signal_type}")
                 
                 # Update signal in Redis
                 signal['signal_type'] = new_signal_type
@@ -548,12 +618,12 @@ class SignalMonitor:
     
     async def start_monitoring(self, interval_minutes: int = 5):
         """Start continuous monitoring of signals"""
-        logger.info(f"Starting signal monitoring with {interval_minutes} minute intervals")
+        logger.info(f"🚀 [MONITOR-START] Starting signal monitoring with {interval_minutes} minute intervals")
         
         while True:
             try:
                 result = await self.monitor_all_signals()
-                logger.info(f"Monitoring cycle completed: {result}")
+                logger.info(f"✅ [MONITOR-CYCLE] Monitoring cycle completed: {result}")
                 
                 # Wait for next cycle
                 await asyncio.sleep(interval_minutes * 60)

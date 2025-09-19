@@ -163,7 +163,7 @@ class TelegramConfig:
 
 @dataclass
 class MonitoringConfig:
-	signal_check_interval_minutes: int = 2
+	signal_check_interval_minutes: int = 3
 	health_check_interval_seconds: int = 30
 	max_concurrent_monitors: int = 10
 	history_retention_days: int = 30

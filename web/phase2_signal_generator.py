@@ -79,7 +79,7 @@ class Phase2SignalGenerator(EnhancedSignalGenerator):
             '4h': 0.20,   # Medium-term
             '1d': 0.15    # Long-term
         }
-        logger.info("Phase 2 Signal Generator initialized")
+        logger.debug("Phase 2 Signal Generator initialized")
     
     # ==================== PHASE 2: MULTI-TIMEFRAME ANALYSIS ====================
     

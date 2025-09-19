@@ -53,10 +53,11 @@ class SentimentAnalyzer:
 		"""Get data from Redis cache"""
 		try:
 			from agent.cache.redis_client import get_redis_client
-			redis_client = get_redis_client()
-			cached = await redis_client.get(cache_key)
-			if cached:
-				return json.loads(cached)
+			redis_client = await get_redis_client()
+			if redis_client:
+				cached = await redis_client.get(cache_key)
+				if cached:
+					return json.loads(cached)
 		except Exception as e:
 			logger.warning(f"Cache get error: {e}")
 		return None
@@ -65,8 +66,9 @@ class SentimentAnalyzer:
 		"""Set data in Redis cache"""
 		try:
 			from agent.cache.redis_client import get_redis_client
-			redis_client = get_redis_client()
-			await redis_client.setex(cache_key, self.cache_ttl, json.dumps(data, default=str))
+			redis_client = await get_redis_client()
+			if redis_client:
+				await redis_client.setex(cache_key, self.cache_ttl, json.dumps(data, default=str))
 		except Exception as e:
 			logger.warning(f"Cache set error: {e}")
 	

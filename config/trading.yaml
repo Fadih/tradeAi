@@ -338,40 +338,29 @@ sentiment_analysis:
   reddit_enabled: true
   
   # Subreddits to monitor for comprehensive crypto and stock sentiment
+  # NOTE: Reduced for monitoring to prevent rate limits (429 errors)
   reddit_subreddits:
-    # Major crypto communities (high activity, diverse opinions)
+    # Major crypto communities (high activity, diverse opinions) - Core 6 for monitoring
     - "CryptoCurrency"    # General cryptocurrency discussion (6M+ members)
     - "Bitcoin"           # Bitcoin-specific discussion (4M+ members)
     - "ethereum"          # Ethereum-specific discussion (1M+ members)
     - "cryptomarkets"     # Crypto market analysis and trading
     - "cryptotrading"     # Active crypto trading community
     - "defi"              # Decentralized finance discussions
-    - "altcoin"           # Altcoin discussions and analysis
-    - "cryptomoonshots"   # High-risk crypto investments
-    - "cryptocurrencytrading" # Crypto trading strategies
-    - "binance"           # Binance exchange discussions
-    - "coinbase"          # Coinbase exchange discussions
     
-    # Stock market communities
+    # Stock market communities - Core 4 for monitoring
     - "investing"         # General investing discussion (2M+ members)
     - "stocks"            # Stock market discussion (1M+ members)
     - "SecurityAnalysis"  # Fundamental stock analysis
     - "ValueInvesting"    # Value investing strategies
-    - "StockMarket"       # General stock market news
-    - "wallstreetbets"    # High-risk trading (very active sentiment)
-    - "dividends"         # Dividend-focused investing
-    - "options"           # Options trading discussions
-    - "pennystocks"       # Penny stock discussions
-    - "SPACs"             # SPAC investments
     
-    # Technology and fintech
+    # Technology and fintech - Core 2 for monitoring
     - "technology"        # Tech news and discussions
     - "fintech"           # Financial technology
-    - "blockchain"        # Blockchain technology discussions
   
   # Maximum posts to fetch per subreddit
-  # Increased for better coverage with 20 subreddits
-  reddit_max_posts_per_subreddit: 15
+  # Reduced for monitoring to prevent rate limits (429 errors)
+  reddit_max_posts_per_subreddit: 8
   
   # Sample size for sentiment analysis (random selection from all collected texts)
   # Increased to handle more diverse Reddit content
@@ -501,3 +490,10 @@ phase4:
     order_book_levels: 10             # Top N levels to compute imbalance
     imbalance_threshold: 0.60         # |bid - ask| / (bid + ask) to consider biased
     spread_widen_threshold_bps: 5     # Spread widening threshold (basis points)
+
+# Monitoring configuration
+monitoring:
+  signal_check_interval_minutes: 3    # Check signals every 3 minutes
+  health_check_interval_seconds: 30   # Health check every 30 seconds
+  max_concurrent_monitors: 10         # Maximum concurrent monitoring tasks
+  history_retention_days: 30          # Keep monitoring history for 30 days
