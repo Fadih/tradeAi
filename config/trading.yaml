@@ -63,7 +63,7 @@ universe:
   
   # Default timeframe for technical analysis and signal generation
   # Optimized for short-term crypto trading - ultra-fast for scalping
-  default_timeframe: "1m"
+  default_timeframe: "1h"
   
   # Available timeframes for analysis (optimized for short-term crypto trading)
   timeframes:

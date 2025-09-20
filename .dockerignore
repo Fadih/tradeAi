@@ -1,0 +1,106 @@
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Documentation
+*.md
+docs/
+README.md
+API_DOCUMENTATION.md
+API_QUICK_REFERENCE.md
+PRODUCTION_DEPLOYMENT.md
+SIGNAL_GENERATION_DETAILED_DIAGRAM.md
+SIGNAL_IMPROVEMENTS_SUMMARY.md
+SYSTEM_ARCHITECTURE_DIAGRAM.md
+TRADING_SYSTEM_FLOW_DIAGRAM.md
+TRADING_TIP_FLOW_DIAGRAM.md
+complete_trading_decision_flow.md
+ema_explanation.md
+phase_implementation_analysis.md
+phase3_signal_generation_flow.md
+trading_decision_simplified.md
+
+# Logs
+logs/
+*.log
+*.log.*
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Test files
+test_*.py
+*_test.py
+tests/
+
+# Development files
+Makefile
+deploy-prod.sh
+test_auth_flow.html
+Trading_AI_API.postman_collection.json

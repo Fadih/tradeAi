@@ -423,7 +423,8 @@ class SignalMonitor:
                 # Send Telegram notification for status change
                 await self.send_telegram_notification(
                     signal, original_signal_type, new_signal_type, 
-                    fresh_signal.fused_score, fresh_signal.technical_score, fresh_signal.sentiment_score
+                    fresh_signal.fused_score, fresh_signal.technical_score, fresh_signal.sentiment_score,
+                    fresh_signal.technical_indicators.get('current_price', 0)
                 )
                 
                 return True
@@ -618,7 +619,8 @@ class SignalMonitor:
                 # Send Telegram notification for status change
                 await self.send_telegram_notification(
                     signal, original_signal_type, new_signal_type, 
-                    fresh_fused_score, tech_score, sentiment_score
+                    fresh_fused_score, tech_score, sentiment_score,
+                    current_close
                 )
                 
                 return True
@@ -649,7 +651,8 @@ class SignalMonitor:
             return False
     
     async def send_telegram_notification(self, signal: Dict[str, Any], old_status: str, new_status: str, 
-                                       fused_score: float, technical_score: float, sentiment_score: float) -> None:
+                                       fused_score: float, technical_score: float, sentiment_score: float, 
+                                       current_price: float = None) -> None:
         """Send Telegram notification when signal status changes"""
         try:
             # Get configuration
@@ -727,7 +730,7 @@ class SignalMonitor:
 🛡️ *Risk Management:*
 • Stop Loss: ${signal.get('stop_loss', 'N/A')}
 • Take Profit: ${signal.get('take_profit', 'N/A')}
-• Current Price: ${signal.get('current_price', 'N/A')}
+• Current Price: ${current_price if current_price is not None else signal.get('technical_indicators', {}).get('current_price', 'N/A')}
 
 📊 *Technical Indicators:*
 • RSI: {signal.get('technical_indicators', {}).get('rsi_14', 'N/A')}
