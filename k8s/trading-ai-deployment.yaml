@@ -19,6 +19,8 @@ spec:
         app: trading-ai
         component: application
     spec:
+      imagePullSecrets:
+      - name: dockerhub-secret
       containers:
       - name: trading-ai
         image: fadihussien/tradingtips:v3.0.0
