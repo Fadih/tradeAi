@@ -54,7 +54,7 @@ server:
 database:
   redis:
     # Redis server hostname or IP address
-    host: "localhost"
+    host: "redis-service"
     
     # Redis server port number
     port: 6379

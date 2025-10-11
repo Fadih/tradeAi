@@ -874,16 +874,10 @@ class Phase3SignalGenerator:
             buy_threshold = config.thresholds.buy_threshold
             sell_threshold = -buy_threshold
             
-            # Determine signal based on fused score and regime
-            regime_classification = regime_data.get('regime_classification', 'trending')
-            
-            if fused_score > buy_threshold:
+            # Determine signal strictly by fused thresholds (remove regime override bias)
+            if fused_score >= buy_threshold:
                 signal_type = "BUY"
-            elif fused_score < sell_threshold:
-                signal_type = "SELL"
-            elif regime_classification == 'trending' and technical_score > 0.3:
-                signal_type = "BUY"
-            elif regime_classification == 'trending' and technical_score < -0.3:
+            elif fused_score <= sell_threshold:
                 signal_type = "SELL"
             else:
                 signal_type = "HOLD"

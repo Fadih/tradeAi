@@ -832,6 +832,12 @@ def load_config_from_env() -> AgentConfig:
 	if redis_password := os.getenv("REDIS_PASSWORD"):
 		config.database.redis_password = redis_password
 	
+	# Redis host and port from environment (for Kubernetes)
+	if redis_host := os.getenv("REDIS_HOST"):
+		config.database.redis_host = redis_host
+	if redis_port := os.getenv("REDIS_PORT"):
+		config.database.redis_port = int(redis_port)
+	
 	# Security configuration (sensitive)
 	if jwt_secret := os.getenv("JWT_SECRET_KEY"):
 		config.security.jwt_secret_key = jwt_secret

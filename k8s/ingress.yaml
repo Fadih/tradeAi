@@ -1,0 +1,52 @@
+---
+# Ingress for external access to Trading AI application
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: trading-ai-ingress
+  namespace: default
+  labels:
+    app: trading-ai
+    component: ingress
+  annotations:
+    # Enable minikube ingress addon (use spec.ingressClassName instead of deprecated annotation)
+    # SSL redirect (optional)
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+    # Rate limiting
+    nginx.ingress.kubernetes.io/rate-limit: "100"
+    nginx.ingress.kubernetes.io/rate-limit-window: "1m"
+    # CORS configuration
+    nginx.ingress.kubernetes.io/enable-cors: "true"
+    nginx.ingress.kubernetes.io/cors-allow-origin: "*"
+    nginx.ingress.kubernetes.io/cors-allow-methods: "GET, POST, PUT, DELETE, OPTIONS"
+    nginx.ingress.kubernetes.io/cors-allow-headers: "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization"
+    # Timeout settings
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "60"
+    # Body size limit
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: localhost  # Simple localhost access
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: trading-ai-service
+            port:
+              number: 8000
+  # For production, you would use a real domain:
+  # - host: trading-ai.yourdomain.com
+  #   http:
+  #     paths:
+  #     - path: /
+  #       pathType: Prefix
+  #       backend:
+  #         service:
+  #           name: trading-ai-service
+  #           port:
+  #             number: 8000

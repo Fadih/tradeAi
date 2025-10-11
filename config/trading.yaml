@@ -81,11 +81,11 @@ signals:
   thresholds:
     # Minimum fused score to generate BUY signal (0.0 to 1.0)
     # Ultra-sensitive for 1-minute scalping - captures small moves quickly
-    buy_threshold: 0.08
+    buy_threshold: 0.07
     
     # Maximum fused score to generate SELL signal (-1.0 to 0.0)
     # Ultra-sensitive for 1-minute scalping - captures small moves quickly
-    sell_threshold: -0.08
+    sell_threshold: -0.05
     
   # Weight configuration for signal fusion (must sum to 1.0)
   # Optimized for ultra-short-term crypto scalping - technical analysis is most reliable
@@ -432,7 +432,7 @@ positions:
   # Position lifecycle management
   lifecycle:
     # Automatically close positions when opposite signal is generated
-    auto_close_on_signal: false
+    auto_close_on_signal: true
     
     # Maximum number of days to hold a position
     max_holding_days: 30

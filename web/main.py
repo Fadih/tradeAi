@@ -357,13 +357,21 @@ async def run_monitoring_cycle():
         # Create a fresh Redis client instance for this monitoring cycle
         # This avoids event loop conflicts when running in separate threads
         from agent.cache.redis_client import TradingAgentRedis
+        import os
+        from agent.config import get_config
         
-        # Use hardcoded Redis connection parameters to avoid config loading issues
+        # Use configured Redis connection parameters (env overrides YAML)
+        cfg = get_config()
+        redis_host = os.getenv("REDIS_HOST", cfg.database.redis_host)
+        redis_port = int(os.getenv("REDIS_PORT", str(cfg.database.redis_port)))
+        redis_db = int(os.getenv("REDIS_DB", str(cfg.database.redis_db)))
+        redis_password = os.getenv("REDIS_PASSWORD", cfg.database.redis_password or None)
+        
         redis_client = TradingAgentRedis(
-            host="redis",  # Docker service name
-            port=6379,
-            db=0,
-            password=None
+            host=redis_host,
+            port=redis_port,
+            db=redis_db,
+            password=redis_password
         )
         
         # Connect to Redis in the current event loop

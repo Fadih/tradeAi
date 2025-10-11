@@ -1,0 +1,78 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: trading-ai-config
+  namespace: default
+  labels:
+    app: trading-ai
+    component: config
+data:
+  # Application Configuration
+  APP_NAME: "Trading AI Tips"
+  APP_VERSION: "2.0.0"
+  APP_DESCRIPTION: "AI-Powered Trading Signals & Analysis Platform"
+  
+  # Server Configuration
+  SERVER_HOST: "0.0.0.0"
+  SERVER_PORT: "8000"
+  SERVER_DEBUG: "false"
+  SERVER_RELOAD: "false"
+  SERVER_WORKERS: "1"
+  
+  # Redis Configuration (non-sensitive)
+  REDIS_HOST: "redis-service"
+  REDIS_PORT: "6379"
+  REDIS_DB: "0"
+  REDIS_MAX_CONNECTIONS: "10"
+  REDIS_SOCKET_TIMEOUT: "5"
+  REDIS_SOCKET_CONNECT_TIMEOUT: "5"
+  REDIS_RETRY_ON_TIMEOUT: "true"
+  
+  # Logging Configuration
+  AGENT_LOG_LEVEL: "info"
+  AGENT_LOG_FORMAT: "simple"
+  AGENT_LOG_FILE: "/app/logs/trading_agent.log"
+  AGENT_LOG_MAX_BYTES: "10485760"  # 10MB
+  AGENT_LOG_BACKUP_COUNT: "5"
+  
+  # Monitoring Configuration
+  ENABLE_MONITORING: "1"
+  SIGNAL_CHECK_INTERVAL_MINUTES: "1"
+  HEALTH_CHECK_INTERVAL_SECONDS: "30"
+  MAX_CONCURRENT_MONITORS: "10"
+  HISTORY_RETENTION_DAYS: "30"
+  
+  # Feature Flags
+  SIGNAL_GENERATION: "true"
+  SIGNAL_MONITORING: "true"
+  POSITION_TRACKING: "true"
+  USER_MANAGEMENT: "true"
+  ADMIN_DASHBOARD: "true"
+  API_DOCUMENTATION: "true"
+  REAL_TIME_UPDATES: "true"
+  SENTIMENT_ANALYSIS: "true"
+  TECHNICAL_ANALYSIS: "true"
+  REDDIT_INTEGRATION: "true"
+  NEWS_INTEGRATION: "true"
+  
+  # UI Configuration
+  AUTO_REFRESH_ENABLED: "true"
+  REFRESH_INTERVAL_SECONDS: "60"
+  STATUS_UPDATE_INTERVAL_SECONDS: "30"
+  THEME: "light"
+  DATE_FORMAT: "YYYY-MM-DD"
+  TIMEZONE: "UTC"
+  CURRENCY: "USD"
+  
+  # System Configuration
+  LOG_LEVEL: "INFO"
+  CACHE_TTL_HOURS: "24"
+  BACKUP_ENABLED: "true"
+  BACKUP_FREQUENCY_HOURS: "24"
+  
+  # Development Configuration
+  DEBUG_MODE: "false"
+  VERBOSE_LOGGING: "false"
+  MOCK_DATA: "false"
+  HOT_RELOAD: "false"
+  PROFILING: "false"

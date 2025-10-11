@@ -1,0 +1,167 @@
+---
+# Trading AI Application Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: trading-ai
+  namespace: default
+  labels:
+    app: trading-ai
+    component: application
+spec:
+  replicas: 1  # Single replica to avoid auth token and scheduler conflicts
+  selector:
+    matchLabels:
+      app: trading-ai
+  template:
+    metadata:
+      labels:
+        app: trading-ai
+        component: application
+    spec:
+      containers:
+      - name: trading-ai
+        image: trading-ai:latest  # We'll build this image locally
+        imagePullPolicy: Never   # Use local image for minikube
+        ports:
+        - containerPort: 8000
+          name: http
+        env:
+        # Load configuration from ConfigMap
+        - name: APP_NAME
+          valueFrom:
+            configMapKeyRef:
+              name: trading-ai-config
+              key: APP_NAME
+        - name: APP_VERSION
+          valueFrom:
+            configMapKeyRef:
+              name: trading-ai-config
+              key: APP_VERSION
+        - name: SERVER_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: trading-ai-config
+              key: SERVER_HOST
+        - name: SERVER_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: trading-ai-config
+              key: SERVER_PORT
+        - name: REDIS_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: trading-ai-config
+              key: REDIS_HOST
+        - name: REDIS_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: trading-ai-config
+              key: REDIS_PORT
+        - name: AGENT_LOG_LEVEL
+          valueFrom:
+            configMapKeyRef:
+              name: trading-ai-config
+              key: AGENT_LOG_LEVEL
+        - name: ENABLE_MONITORING
+          valueFrom:
+            configMapKeyRef:
+              name: trading-ai-config
+              key: ENABLE_MONITORING
+        
+        # Load secrets
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: trading-ai-secrets
+              key: REDIS_PASSWORD
+              optional: true
+        - name: JWT_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: trading-ai-secrets
+              key: JWT_SECRET_KEY
+        - name: DEFAULT_ADMIN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: trading-ai-secrets
+              key: DEFAULT_ADMIN_PASSWORD
+        - name: TELEGRAM_BOT_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: trading-ai-secrets
+              key: TELEGRAM_BOT_TOKEN
+              optional: true
+        
+        resources:
+          requests:
+            memory: "4Gi"
+            cpu: "1000m"
+          limits:
+            memory: "8Gi"
+            cpu: "4000m"
+        
+        volumeMounts:
+        - name: config-volume
+          mountPath: /app/config
+          readOnly: true
+        - name: logs-volume
+          mountPath: /app/logs
+        
+        # Health checks
+        livenessProbe:
+          httpGet:
+            path: /api/health
+            port: 8000
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+        
+        readinessProbe:
+          httpGet:
+            path: /api/health
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        
+        # Startup probe (for slow-starting applications)
+        startupProbe:
+          httpGet:
+            path: /api/health
+            port: 8000
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 30  # Allow up to 5 minutes for startup
+      
+      volumes:
+      - name: config-volume
+        configMap:
+          name: trading-ai-config
+      - name: logs-volume
+        emptyDir: {}
+      
+      restartPolicy: Always
+
+---
+# Trading AI Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: trading-ai-service
+  namespace: default
+  labels:
+    app: trading-ai
+    component: application
+spec:
+  type: ClusterIP
+  ports:
+  - port: 8000
+    targetPort: 8000
+    protocol: TCP
+    name: http
+  selector:
+    app: trading-ai
