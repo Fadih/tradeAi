@@ -21,8 +21,8 @@ spec:
     spec:
       containers:
       - name: trading-ai
-        image: trading-ai:latest  # We'll build this image locally
-        imagePullPolicy: Never   # Use local image for minikube
+        image: fadihussien/tradingtips:v3.0.0
+        imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8000
           name: http
@@ -95,11 +95,11 @@ spec:
         
         resources:
           requests:
-            memory: "3Gi"
+            memory: "2Gi"
             cpu: "1000m"
           limits:
-            memory: "3Gi"
-            cpu: "3000m"
+            memory: "2Gi"
+            cpu: "1000m"
         
         volumeMounts:
         - name: config-volume
