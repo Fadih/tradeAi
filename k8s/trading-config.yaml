@@ -8,14 +8,45 @@ metadata:
     component: config
 data:
   trading.yaml: |
-    # Minimal trading configuration for Kubernetes deployment
+    # Trading AI Tips - Trading Configuration
+    # Kubernetes deployment version - complete configuration
+    
+    # =============================================================================
+    # SAFETY & VALIDATION CONFIGURATION
+    # =============================================================================
+    safety:
+      allow_incomplete_candles: false
+      min_data_points_for_indicators: 50
+      safety_margin: 10
+      max_candle_staleness:
+        "1m": 2
+        "5m": 8
+        "15m": 20
+        "1h": 70
+      validate_thresholds: true
+      normalize_weights: true
+      deterministic_sampling: true
+      sentiment_timeout_seconds: 30
+      market_data_timeout_seconds: 15
+      rss_timeout_seconds: 10
+      reddit_timeout_seconds: 15
+      circuit_breaker:
+        enabled: true
+        failure_threshold: 3
+        cooldown_minutes: 5
+    
+    # =============================================================================
+    # TRADING UNIVERSE CONFIGURATION
+    # =============================================================================
     universe:
-      tickers:
-        - "BTC/USDT"
-        - "ETH/USDT"
-        - "BNB/USDT"
-        - "ADA/USDT"
-        - "SOL/USDT"
+      symbols:
+        crypto:
+          - "BTC/USDT"
+          - "ETH/USDT"
+          - "BNB/USDT"
+          - "ADA/USDT"
+          - "SOL/USDT"
+        stocks: []
       default_timeframe: "1h"
       timeframes:
         - "1m"
@@ -23,13 +54,63 @@ data:
         - "15m"
         - "1h"
     
+    # =============================================================================
+    # SIGNAL GENERATION CONFIGURATION
+    # =============================================================================
     signals:
       thresholds:
         buy_threshold: 0.07
         sell_threshold: -0.05
+      
       weights:
         technical_weight: 0.75
         sentiment_weight: 0.25
+      
+      sentiment_enhancement:
+        crypto_amplification: 1.2
+        stock_amplification: 1.0
+      
+      risk_management_by_asset:
+        crypto:
+          base_stop_multiplier: 2.0
+          base_tp_multiplier: 2.5
+          volatility_threshold_high: 3.0
+          volatility_threshold_low: 1.0
+        stock:
+          base_stop_multiplier: 1.5
+          base_tp_multiplier: 2.0
+          volatility_threshold_high: 2.0
+          volatility_threshold_low: 0.5
+      
+      regime_adjustments:
+        bull_market:
+          buy_stop_adjustment: 0.8
+          sell_stop_adjustment: 1.3
+          buy_tp_adjustment: 1.2
+          sell_tp_adjustment: 0.8
+        bear_market:
+          buy_stop_adjustment: 1.3
+          sell_stop_adjustment: 0.8
+          buy_tp_adjustment: 0.8
+          sell_tp_adjustment: 1.2
+      
+      volatility_adjustments:
+        high_volatility_multiplier: 1.5
+        low_volatility_multiplier: 0.8
+        high_volatility_tp_adjustment: 1.2
+      
+      multi_timeframe:
+        enabled: true
+        timeframes:
+          - "1m"
+          - "5m"
+          - "15m"
+        weights:
+          "1m": 0.5
+          "5m": 0.3
+          "15m": 0.2
+        data_points: 50
+      
       risk_management:
         stop_loss_percentage: 0.01
         take_profit_percentage: 0.02
@@ -38,35 +119,161 @@ data:
         atr_stop_multiplier: 2.0
         atr_take_profit_multiplier: 2.5
     
+    # =============================================================================
+    # TECHNICAL ANALYSIS CONFIGURATION
+    # =============================================================================
     technical_analysis:
+      data_fetching:
+        default_limit: 200
+        max_limit: 1000
+        min_limit: 50
+      
       rsi:
         period: 5
         method: "wilder"
+        signal_period: 3
+        stoch_rsi:
+          k_period: 8
+          d_period: 2
+        thresholds:
+          overbought: 65
+          oversold: 35
+          overbought_tight: 50
+          oversold_tight: 50
+          overbought_extreme: 75
+          oversold_extreme: 25
+        cross_thresholds:
+          buy_cross: 40
+          sell_cross: 60
+      
       macd:
         fast_period: 3
         slow_period: 7
         signal_period: 2
+      
       atr:
         period: 5
+      
       moving_averages:
         sma_periods: [10, 20, 50]
         ema_periods: [5, 8, 13]
     
+    # =============================================================================
+    # SENTIMENT ANALYSIS CONFIGURATION
+    # =============================================================================
     sentiment_analysis:
       model:
         name: "ProsusAI/finbert"
         max_length: 512
+        batch_size: 32
+      
       rss_enabled: true
+      rss_feeds:
+        - "https://news.google.com/rss/search?q=stock+market&hl=en-US&gl=US&ceid=US:en"
+        - "https://cointelegraph.com/rss"
+        - "https://cointelegraph.com/rss/tag/altcoin"
+        - "https://cointelegraph.com/rss/tag/ethereum"
+        - "https://cointelegraph.com/rss/tag/defi"
+        - "https://www.coindesk.com/arc/outboundfeeds/rss/?outputType=xml"
+        - "https://cryptoslate.com/feed/"
+        - "https://decrypt.co/feed"
+        - "https://cryptobriefing.com/feed/"
+        - "https://www.newsbtc.com/feed/"
+        - "https://www.theblock.co/rss.xml"
+      rss_max_headlines_per_feed: 20
+      
       reddit_enabled: true
+      reddit_subreddits:
+        - "CryptoCurrency"
+        - "Bitcoin"
+        - "ethereum"
+        - "cryptomarkets"
+        - "cryptotrading"
+        - "defi"
+        - "investing"
+        - "stocks"
+        - "SecurityAnalysis"
+        - "ValueInvesting"
+        - "technology"
+        - "fintech"
+      reddit_max_posts_per_subreddit: 8
+      reddit_sample_size: 50
+      hours_back: 1
+      
+      scoring:
+        positive_threshold: 0.1
+        negative_threshold: -0.1
+        neutral_range: [-0.1, 0.1]
     
+    # =============================================================================
+    # EXCHANGE CONFIGURATION
+    # =============================================================================
     exchanges:
       ccxt:
         default_exchange: "binance"
         rate_limit: true
+        timeout: 30000
+        retries: 3
+      
+      alpaca:
+        base_url: "https://paper-api.alpaca.markets"
+        data_url: "https://data.alpaca.markets"
+        timeout: 30
+        retries: 3
     
+    # =============================================================================
+    # POSITION TRACKING CONFIGURATION
+    # =============================================================================
+    positions:
+      tracking:
+        enabled: true
+        update_interval_minutes: 5
+        max_positions_per_user: 50
+      lifecycle:
+        auto_close_on_signal: true
+        max_holding_days: 30
+        min_holding_minutes: 5
+    
+    # =============================================================================
+    # BACKTESTING CONFIGURATION
+    # =============================================================================
+    backtesting:
+      default:
+        start_date: "2024-01-01"
+        end_date: "2024-12-31"
+        initial_capital: 10000
+        commission: 0.001
+      metrics:
+        - "sharpe_ratio"
+        - "max_drawdown"
+        - "win_rate"
+        - "total_return"
+        - "volatility"
+    
+    # =============================================================================
+    # PHASE 4 (OPTIONAL) - DERIVATIVES & MICROSTRUCTURE CONFIGURATION
+    # =============================================================================
+    phase4:
+      enabled: true
+      weights:
+        derivatives_weight: 0.15
+        microstructure_weight: 0.10
+      derivatives:
+        enabled: true
+        funding_rate_extreme: 0.02
+        open_interest_lookback_hours: 24
+        basis_lookback_hours: 24
+      microstructure:
+        enabled: true
+        order_book_levels: 10
+        imbalance_threshold: 0.60
+        spread_widen_threshold_bps: 5
+    
+    # =============================================================================
+    # MONITORING CONFIGURATION
+    # =============================================================================
     monitoring:
       signal_check_interval_minutes: 1
       health_check_interval_seconds: 30
       max_concurrent_monitors: 10
       history_retention_days: 30
-
