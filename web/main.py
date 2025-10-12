@@ -365,6 +365,9 @@ async def run_monitoring_cycle():
     """Run a single monitoring cycle"""
     redis_client = None
     try:
+        # Track that a monitoring job is running
+        trading_active_monitors.inc()
+        
         # Create a fresh Redis client instance for this monitoring cycle
         # This avoids event loop conflicts when running in separate threads
         from agent.cache.redis_client import TradingAgentRedis
@@ -389,6 +392,7 @@ async def run_monitoring_cycle():
         connected = await redis_client.connect()
         if not connected:
             logger.warning("Redis not available for monitoring")
+            trading_active_monitors.dec()
             return
         
         logger.info(f"Redis client connected: {await redis_client.is_connected()}")
@@ -470,6 +474,9 @@ async def run_monitoring_cycle():
     except Exception as e:
         logger.error(f"Error in monitoring cycle: {e}")
     finally:
+        # Decrement active monitors counter
+        trading_active_monitors.dec()
+        
         # Always disconnect the Redis client to clean up resources
         if redis_client:
             try:
@@ -3130,6 +3137,7 @@ async def update_metrics():
                 try:
                     stats = await redis_client.get_cache_stats()
                     if stats.get("status") == "connected":
+                        # Connected clients
                         redis_connected_clients.set(stats.get("connected_clients", 0))
                         
                         # Get total keys
@@ -3140,19 +3148,44 @@ async def update_metrics():
                         memory_str = stats.get("memory_usage", "0")
                         if isinstance(memory_str, str):
                             memory_bytes = 0
+                            # Remove any trailing characters and parse
+                            memory_str = memory_str.strip()
                             if "K" in memory_str:
-                                memory_bytes = float(memory_str.replace("K", "")) * 1024
+                                memory_bytes = float(memory_str.replace("K", "").strip()) * 1024
                             elif "M" in memory_str:
-                                memory_bytes = float(memory_str.replace("M", "")) * 1024 * 1024
+                                memory_bytes = float(memory_str.replace("M", "").strip()) * 1024 * 1024
                             elif "G" in memory_str:
-                                memory_bytes = float(memory_str.replace("G", "")) * 1024 * 1024 * 1024
-                            else:
+                                memory_bytes = float(memory_str.replace("G", "").strip()) * 1024 * 1024 * 1024
+                            elif memory_str.isdigit():
                                 memory_bytes = float(memory_str)
                             redis_memory_used_bytes.set(memory_bytes)
+                        elif isinstance(memory_str, (int, float)):
+                            redis_memory_used_bytes.set(float(memory_str))
                         
-                        # Update signal count
+                        # Get actual INFO stats from Redis for accurate memory
+                        try:
+                            info = await redis_client.client.info("memory")
+                            if info:
+                                redis_memory_used_bytes.set(info.get("used_memory", 0))
+                                redis_memory_max_bytes.set(info.get("maxmemory", 0))
+                        except Exception as info_error:
+                            logger.debug(f"Could not get Redis INFO: {info_error}")
+                        
+                        # Update signal count - try multiple methods
                         signal_count = await redis_client.get_signal_count()
+                        
+                        # Fallback: count from global signals list if get_signal_count returns 0
+                        if signal_count == 0:
+                            try:
+                                signals_list_len = await redis_client.client.llen("signals:list")
+                                if signals_list_len > 0:
+                                    signal_count = signals_list_len
+                            except:
+                                pass
+                        
                         trading_signals_total.set(signal_count)
+                        
+                        logger.info(f"✅ Metrics updated: signals={signal_count}, redis_clients={stats.get('connected_clients', 0)}, redis_keys={total_keys}, memory_used={redis_memory_used_bytes._value.get()}")
                 except Exception as e:
                     logger.debug(f"Error updating Redis metrics: {e}")
             
