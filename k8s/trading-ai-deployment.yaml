@@ -23,7 +23,7 @@ spec:
       - name: dockerhub-secret
       containers:
       - name: trading-ai
-        image: fadihussien/tradingtips:v3.0.0
+        image: fadihussien/tradingtips:v1.0.4
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8000
