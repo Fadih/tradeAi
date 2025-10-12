@@ -96,6 +96,26 @@ spec:
               name: trading-ai-secrets
               key: TELEGRAM_BOT_TOKEN
               optional: true
+        - name: TELEGRAM_ENABLED
+          valueFrom:
+            configMapKeyRef:
+              name: trading-ai-config
+              key: TELEGRAM_ENABLED
+        - name: TELEGRAM_NOTIFICATIONS_SIGNAL_CREATED
+          valueFrom:
+            configMapKeyRef:
+              name: trading-ai-config
+              key: TELEGRAM_NOTIFICATIONS_SIGNAL_CREATED
+        - name: TELEGRAM_NOTIFICATIONS_SIGNAL_CHANGED
+          valueFrom:
+            configMapKeyRef:
+              name: trading-ai-config
+              key: TELEGRAM_NOTIFICATIONS_SIGNAL_CHANGED
+        - name: TELEGRAM_NOTIFICATIONS_MAINTENANCE
+          valueFrom:
+            configMapKeyRef:
+              name: trading-ai-config
+              key: TELEGRAM_NOTIFICATIONS_MAINTENANCE
         
         resources:
           requests:
@@ -110,7 +130,12 @@ spec:
           mountPath: /app/config-env
           readOnly: true
         - name: trading-config-volume
-          mountPath: /app/config
+          mountPath: /app/config/trading.yaml
+          subPath: trading.yaml
+          readOnly: true
+        - name: app-config-volume
+          mountPath: /app/config/app.yaml
+          subPath: app.yaml
           readOnly: true
         - name: logs-volume
           mountPath: /app/logs
@@ -151,6 +176,9 @@ spec:
       - name: trading-config-volume
         configMap:
           name: trading-config-yaml
+      - name: app-config-volume
+        configMap:
+          name: app-config-yaml
       - name: logs-volume
         emptyDir: {}
       

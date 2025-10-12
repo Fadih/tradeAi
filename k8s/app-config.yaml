@@ -1,0 +1,142 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config-yaml
+  namespace: default
+  labels:
+    app: trading-ai
+    component: config
+data:
+  app.yaml: |
+    # Trading AI Tips - Application Configuration
+    # Kubernetes deployment version
+    
+    app:
+      name: "Trading AI Tips"
+      version: "2.0.0"
+      description: "AI-Powered Trading Signals & Analysis Platform"
+      author: "Fadi Hussein"
+      license: "MIT"
+      website: "https://github.com/fadi-hussein/tradeAi"
+      maintenance_message: ""
+    
+    server:
+      host: "0.0.0.0"
+      port: 8000
+      debug: false
+      reload: false
+      workers: 1
+    
+    database:
+      redis:
+        host: "redis"
+        port: 6379
+        db: 0
+        password: ""
+        max_connections: 10
+        socket_timeout: 5
+        socket_connect_timeout: 5
+        retry_on_timeout: true
+    
+    security:
+      jwt:
+        secret_key: "your-secret-key-change-in-production"
+        algorithm: "HS256"
+        access_token_expire_minutes: 1440
+      password:
+        min_length: 8
+        require_special_chars: true
+        require_numbers: true
+        require_uppercase: true
+      session:
+        timeout_hours: 24
+        max_login_attempts: 5
+        lockout_duration_minutes: 30
+      default_admin:
+        username: "admin"
+        password: "admin123"
+    
+    api:
+      rate_limit:
+        requests_per_minute: 100
+        burst_limit: 200
+      cors:
+        allowed_origins: ["*"]
+        allowed_methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+        allowed_headers: ["*"]
+        allow_credentials: true
+    
+    telegram:
+      bot_token: ""  # Will be overridden by TELEGRAM_BOT_TOKEN env var
+      enabled: true
+      api_url: "https://api.telegram.org/bot"
+      timeout: 10
+      max_retries: 3
+      notifications:
+        signal_created: true
+        signal_changed: true
+        signal_deleted: true
+        maintenance: true
+        system_errors: false
+        max_notifications_per_minute: 10
+        cooldown_seconds: 5
+    
+    monitoring:
+      signal_check_interval_minutes: 1
+      health_check_interval_seconds: 30
+      max_concurrent_monitors: 10
+      history_retention_days: 30
+    
+    notifications:
+      enabled: true
+      channels:
+        - "console"
+        - "webhook"
+      webhook:
+        timeout_seconds: 10
+        retry_attempts: 3
+        retry_delay_seconds: 5
+    
+    features:
+      signal_generation: true
+      signal_monitoring: true
+      position_tracking: true
+      user_management: true
+      admin_dashboard: true
+      api_documentation: true
+      real_time_updates: true
+      sentiment_analysis: true
+      technical_analysis: true
+      reddit_integration: true
+      news_integration: true
+    
+    ui:
+      auto_refresh_enabled: true
+      refresh_interval_seconds: 60
+      status_update_interval_seconds: 30
+      theme: "light"
+      date_format: "YYYY-MM-DD"
+      timezone: "UTC"
+      currency: "USD"
+    
+    email:
+      enabled: false
+      smtp_server: ""
+      smtp_port: 587
+      smtp_username: ""
+      smtp_password: ""
+      alert_recipients: []
+    
+    system:
+      log_level: "INFO"
+      cache_ttl_hours: 24
+      backup_enabled: true
+      backup_frequency_hours: 24
+    
+    development:
+      debug_mode: false
+      verbose_logging: false
+      mock_data: false
+      hot_reload: false
+      profiling: false
+
