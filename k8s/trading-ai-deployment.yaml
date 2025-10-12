@@ -195,10 +195,11 @@ metadata:
     app: trading-ai
     component: application
 spec:
-  type: ClusterIP
+  type: NodePort
   ports:
   - port: 8000
     targetPort: 8000
+    nodePort: 32224
     protocol: TCP
     name: http
   selector:
