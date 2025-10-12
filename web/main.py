@@ -2131,13 +2131,19 @@ async def generate_phase3_signal(
         # Use the Phase 3 signal generator with performance optimization
         signal = await phase3_signal_generator.generate_phase3_signal(request, current_user['username'], output_level)
         
-        # Update global state
+        # Update global state and metrics
         try:
             redis_client = await get_redis_client()
             if redis_client:
                 agent_status["total_signals"] = await redis_client.get_signal_count()
             else:
                 agent_status["total_signals"] += 1
+            
+            # Update Prometheus metrics
+            trading_signals_generated_total.labels(
+                signal_type=signal.signal_type,
+                symbol=request.symbol
+            ).inc()
         except Exception as e:
             logger.error(f"Failed to update signal count: {e}")
             agent_status["total_signals"] += 1
@@ -3109,6 +3115,52 @@ async def update_status():
             logger.error(f"Error updating status: {e}")
             await asyncio.sleep(60)
 
+# Background task to update Prometheus metrics
+async def update_metrics():
+    """Background task to update Prometheus metrics"""
+    while True:
+        try:
+            # Update app uptime
+            uptime = (datetime.now() - APP_START_TIME).total_seconds()
+            app_uptime_seconds.set(uptime)
+            
+            # Update Redis metrics
+            redis_client = await get_redis_client()
+            if redis_client and await redis_client.is_connected():
+                try:
+                    stats = await redis_client.get_cache_stats()
+                    if stats.get("status") == "connected":
+                        redis_connected_clients.set(stats.get("connected_clients", 0))
+                        
+                        # Get total keys
+                        total_keys = stats.get("total_keys", 0)
+                        redis_db_keys.labels(db="0").set(total_keys)
+                        
+                        # Parse memory usage (e.g., "1.5M" -> bytes)
+                        memory_str = stats.get("memory_usage", "0")
+                        if isinstance(memory_str, str):
+                            memory_bytes = 0
+                            if "K" in memory_str:
+                                memory_bytes = float(memory_str.replace("K", "")) * 1024
+                            elif "M" in memory_str:
+                                memory_bytes = float(memory_str.replace("M", "")) * 1024 * 1024
+                            elif "G" in memory_str:
+                                memory_bytes = float(memory_str.replace("G", "")) * 1024 * 1024 * 1024
+                            else:
+                                memory_bytes = float(memory_str)
+                            redis_memory_used_bytes.set(memory_bytes)
+                        
+                        # Update signal count
+                        signal_count = await redis_client.get_signal_count()
+                        trading_signals_total.set(signal_count)
+                except Exception as e:
+                    logger.debug(f"Error updating Redis metrics: {e}")
+            
+            await asyncio.sleep(30)  # Update every 30 seconds
+        except Exception as e:
+            logger.error(f"Error updating metrics: {e}")
+            await asyncio.sleep(30)
+
 @app.on_event("startup")
 async def startup_event():
     """Initialize the application"""
@@ -3135,6 +3187,7 @@ async def startup_event():
     
     # Start background tasks
     asyncio.create_task(update_status())
+    asyncio.create_task(update_metrics())
     
     # Load initial configuration
     try:
