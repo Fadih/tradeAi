@@ -1,0 +1,72 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: trading-config-yaml
+  namespace: default
+  labels:
+    app: trading-ai
+    component: config
+data:
+  trading.yaml: |
+    # Minimal trading configuration for Kubernetes deployment
+    universe:
+      tickers:
+        - "BTC/USDT"
+        - "ETH/USDT"
+        - "BNB/USDT"
+        - "ADA/USDT"
+        - "SOL/USDT"
+      default_timeframe: "1h"
+      timeframes:
+        - "1m"
+        - "5m"
+        - "15m"
+        - "1h"
+    
+    signals:
+      thresholds:
+        buy_threshold: 0.07
+        sell_threshold: -0.05
+      weights:
+        technical_weight: 0.75
+        sentiment_weight: 0.25
+      risk_management:
+        stop_loss_percentage: 0.01
+        take_profit_percentage: 0.02
+        max_position_size: 0.15
+        max_daily_signals: 50
+        atr_stop_multiplier: 2.0
+        atr_take_profit_multiplier: 2.5
+    
+    technical_analysis:
+      rsi:
+        period: 5
+        method: "wilder"
+      macd:
+        fast_period: 3
+        slow_period: 7
+        signal_period: 2
+      atr:
+        period: 5
+      moving_averages:
+        sma_periods: [10, 20, 50]
+        ema_periods: [5, 8, 13]
+    
+    sentiment_analysis:
+      model:
+        name: "ProsusAI/finbert"
+        max_length: 512
+      rss_enabled: true
+      reddit_enabled: true
+    
+    exchanges:
+      ccxt:
+        default_exchange: "binance"
+        rate_limit: true
+    
+    monitoring:
+      signal_check_interval_minutes: 1
+      health_check_interval_seconds: 30
+      max_concurrent_monitors: 10
+      history_retention_days: 30
+

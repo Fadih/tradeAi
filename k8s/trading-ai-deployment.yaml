@@ -105,6 +105,9 @@ spec:
         
         volumeMounts:
         - name: config-volume
+          mountPath: /app/config-env
+          readOnly: true
+        - name: trading-config-volume
           mountPath: /app/config
           readOnly: true
         - name: logs-volume
@@ -143,6 +146,9 @@ spec:
       - name: config-volume
         configMap:
           name: trading-ai-config
+      - name: trading-config-volume
+        configMap:
+          name: trading-config-yaml
       - name: logs-volume
         emptyDir: {}
       
