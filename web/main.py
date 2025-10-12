@@ -63,6 +63,14 @@ from .enhanced_signal_generator import enhanced_signal_generator, EnhancedTradin
 from .phase2_signal_generator import phase2_signal_generator, Phase2TradingSignal
 from .phase3_signal_generator import phase3_signal_generator, Phase3TradingSignal, Phase3SignalRequest
 
+# Import Prometheus metrics
+from .prometheus_metrics import (
+    metrics_response, PrometheusMiddleware,
+    app_uptime_seconds, app_info, trading_signals_total,
+    trading_active_monitors, redis_connected_clients,
+    trading_signals_generated_total
+)
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -82,6 +90,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Add Prometheus middleware
+app.add_middleware(PrometheusMiddleware)
 
 # Mount static files
 app.mount("/static", StaticFiles(directory="web/static"), name="static")
@@ -2976,6 +2987,12 @@ async def get_market_overview(timeframe: str = "1h"):
         logger.error(f"❌ [OVERVIEW-DATA] Error fetching market overview: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/metrics")
+async def metrics():
+    """Prometheus metrics endpoint"""
+    return metrics_response()
+
+
 @app.get("/api/health")
 async def health_check():
     """Health check endpoint with system information"""
@@ -3096,6 +3113,9 @@ async def update_status():
 async def startup_event():
     """Initialize the application"""
     logger.info("Starting Trading Agent Web Interface")
+    
+    # Initialize Prometheus metrics
+    app_info.labels(version=APP_VERSION, name="Trading AI").set(1)
     
     # Initialize Redis connection
     try:
