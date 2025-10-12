@@ -1,0 +1,51 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: default
+
+resources:
+  - configmap.yaml
+  - app-config.yaml
+  - trading-config.yaml
+  - secrets.yaml
+  - redis.yaml
+  - trading-ai-deployment.yaml
+
+commonLabels:
+  app.kubernetes.io/name: trading-ai
+  app.kubernetes.io/part-of: trading-ai-platform
+  managed-by: argocd
+
+# Sync waves for ordered deployment
+commonAnnotations:
+  argocd.argoproj.io/sync-wave: "0"
+
+# Apply sync waves to specific resources
+patches:
+  - target:
+      kind: ConfigMap
+    patch: |-
+      - op: add
+        path: /metadata/annotations/argocd.argoproj.io~1sync-wave
+        value: "1"
+  - target:
+      kind: Secret
+    patch: |-
+      - op: add
+        path: /metadata/annotations/argocd.argoproj.io~1sync-wave
+        value: "1"
+  - target:
+      kind: Deployment
+      name: redis
+    patch: |-
+      - op: add
+        path: /metadata/annotations/argocd.argoproj.io~1sync-wave
+        value: "2"
+  - target:
+      kind: Deployment
+      name: trading-ai
+    patch: |-
+      - op: add
+        path: /metadata/annotations/argocd.argoproj.io~1sync-wave
+        value: "3"
+

@@ -1,0 +1,57 @@
+---
+# ArgoCD Application for Trading AI
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: trading-ai
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  labels:
+    app: trading-ai
+    environment: production
+spec:
+  project: default
+  
+  source:
+    repoURL: https://github.com/fadih/tradeAi.git
+    targetRevision: main  # or HEAD, or specific branch/tag
+    path: k8s/app
+    
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: default
+  
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+      - PruneLast=true
+      - RespectIgnoreDifferences=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+  
+  # Health assessment
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/replicas
+        - /spec/template/metadata/annotations
+  
+  # Sync waves for ordered deployment
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+    automated:
+      prune: true
+      selfHeal: true
+
