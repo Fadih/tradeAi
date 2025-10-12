@@ -147,7 +147,7 @@ jobs:
       - name: Update Kubernetes manifests
         run: |
           # Update image tag in deployment manifest
-          sed -i "s|image: tradingtips:.*|image: ${{ secrets.DOCKER_USERNAME }}/tradingtips:${{ steps.version.outputs.VERSION }}|g" k8s/app/trading-ai-deployment.yaml
+          sed -i "s|image: .*/tradingtips:.*|image: ${{ secrets.DOCKER_USERNAME }}/tradingtips:${{ steps.version.outputs.VERSION }}|g" k8s/app/trading-ai-deployment.yaml
           
           # Update version in CHANGELOG if needed
           if ! grep -q "## \[${{ steps.version.outputs.VERSION }}\]" CHANGELOG.md 2>/dev/null; then
@@ -162,12 +162,26 @@ jobs:
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
           
-          # Check if there are changes
-          if git diff --quiet; then
+          # Show what changed
+          echo "=== Git Status ==="
+          git status
+          echo ""
+          echo "=== Changed Files ==="
+          git diff --name-only
+          echo ""
+          echo "=== Diff ==="
+          git diff
+          
+          # Add files
+          git add k8s/app/trading-ai-deployment.yaml CHANGELOG.md
+          
+          # Check if there are staged changes
+          if git diff --cached --quiet; then
             echo "No changes to commit"
           else
-            git add k8s/app/trading-ai-deployment.yaml CHANGELOG.md
+            echo "Committing changes..."
             git commit -m "chore: Update deployment manifest and changelog for ${{ github.ref_name }}"
             git push origin main
+            echo "Changes pushed to main branch"
           fi
 
