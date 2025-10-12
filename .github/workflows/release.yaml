@@ -76,8 +76,7 @@ jobs:
           target: production
           push: true
           tags: |
-            ${{ secrets.DOCKER_USERNAME }}/trading-ai:latest
-            ${{ secrets.DOCKER_USERNAME }}/trading-ai:${{ steps.version.outputs.VERSION }}
+            ${{ secrets.DOCKER_USERNAME }}/tradingtips:${{ steps.version.outputs.VERSION }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           build-args: |
@@ -148,8 +147,27 @@ jobs:
       - name: Update Kubernetes manifests
         run: |
           # Update image tag in deployment manifest
-          sed -i "s|image: trading-ai:.*|image: ${{ secrets.DOCKER_USERNAME }}/trading-ai:${{ steps.version.outputs.VERSION }}|g" k8s/app/trading-ai-deployment.yaml
+          sed -i "s|image: tradingtips:.*|image: ${{ secrets.DOCKER_USERNAME }}/tradingtips:${{ steps.version.outputs.VERSION }}|g" k8s/app/trading-ai-deployment.yaml
           
-          # Create a PR with updated manifests (optional)
-          echo "Image tag updated in deployment manifest"
+          # Update version in CHANGELOG if needed
+          if ! grep -q "## \[${{ steps.version.outputs.VERSION }}\]" CHANGELOG.md 2>/dev/null; then
+            # Add version header to CHANGELOG if it doesn't exist
+            sed -i "/## \[Unreleased\]/a\\\\n## [${{ steps.version.outputs.VERSION }}] - $(date +%Y-%m-%d)\\n\\n### Added\\n- Release ${{ steps.version.outputs.VERSION }}\\n" CHANGELOG.md
+          fi
+          
+          echo "Manifests updated"
+      
+      - name: Commit and push updated manifests
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          
+          # Check if there are changes
+          if git diff --quiet; then
+            echo "No changes to commit"
+          else
+            git add k8s/app/trading-ai-deployment.yaml CHANGELOG.md
+            git commit -m "chore: Update deployment manifest and changelog for ${{ github.ref_name }}"
+            git push origin main
+          fi
 
