@@ -20,7 +20,7 @@ data:
   SERVER_WORKERS: "1"
   
   # Redis Configuration (non-sensitive)
-  REDIS_HOST: "redis-service"
+  REDIS_HOST: "redis"
   REDIS_PORT: "6379"
   REDIS_DB: "0"
   REDIS_MAX_CONNECTIONS: "10"
