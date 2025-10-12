@@ -21,6 +21,8 @@ spec:
     spec:
       imagePullSecrets:
       - name: dockerhub-secret
+      nodeSelector:
+        size: high
       containers:
       - name: trading-ai
         image: fadihussien/tradingtips:v1.0.4
@@ -97,11 +99,11 @@ spec:
         
         resources:
           requests:
-            memory: "2Gi"
-            cpu: "1000m"
+            memory: "6Gi"
+            cpu: "3000m"
           limits:
-            memory: "2Gi"
-            cpu: "1000m"
+            memory: "12Gi"
+            cpu: "4000m"
         
         volumeMounts:
         - name: config-volume
