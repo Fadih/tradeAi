@@ -134,10 +134,10 @@ spec:
           httpGet:
             path: /api/health
             port: 8000
-          initialDelaySeconds: 10
+          initialDelaySeconds: 60  # Wait 60 seconds before first check (AI model loading time)
           periodSeconds: 10
           timeoutSeconds: 5
-          failureThreshold: 30  # Allow up to 5 minutes for startup
+          failureThreshold: 20  # Allow up to 4 minutes total for startup (60s + 20*10s = 260s)
       
       volumes:
       - name: config-volume
