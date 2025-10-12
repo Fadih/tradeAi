@@ -80,12 +80,53 @@ git push origin "v$NEW_VERSION"
 - [ ] Verify all services healthy
 - [ ] Update any external documentation
 
+## Deploying the Release
+
+### Using ArgoCD
+
+```bash
+# Option 1: Update the image tag directly
+kubectl set image deployment/trading-ai \
+  trading-ai=<docker-username>/trading-ai:v$NEW_VERSION \
+  -n default
+
+# Option 2: Update the deployment YAML in Git
+# Edit k8s/app/trading-ai-deployment.yaml
+# Change: image: <docker-username>/trading-ai:v$NEW_VERSION
+# Commit and push, then ArgoCD will auto-sync
+
+# Option 3: Update via ArgoCD CLI
+argocd app set trading-ai \
+  --helm-set image.tag=v$NEW_VERSION \
+  --revision main
+
+argocd app sync trading-ai
+```
+
+### Using kubectl
+
+```bash
+# Pull the new image
+docker pull <docker-username>/trading-ai:v$NEW_VERSION
+
+# Update deployment
+kubectl set image deployment/trading-ai \
+  trading-ai=<docker-username>/trading-ai:v$NEW_VERSION
+
+# Or apply manifests
+kubectl apply -k k8s/app/
+```
+
 ## Post-Release
 
+- [ ] Update image tag in k8s/app/trading-ai-deployment.yaml
+- [ ] Commit and push updated manifests (for GitOps)
+- [ ] Sync ArgoCD application: `argocd app sync trading-ai`
 - [ ] Monitor error rates in Grafana
-- [ ] Check logs for issues
-- [ ] Verify metrics are reporting correctly
+- [ ] Check logs for issues: `kubectl logs -f deployment/trading-ai`
+- [ ] Verify metrics are reporting correctly at `/metrics`
 - [ ] Run smoke tests on production
+- [ ] Verify in ArgoCD UI that application is Healthy
 
 ## Hotfix Process
 
