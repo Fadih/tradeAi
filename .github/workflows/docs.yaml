@@ -38,6 +38,20 @@ jobs:
         run: |
           pip install mkdocs mkdocs-material mkdocs-mermaid2-plugin
       
+      - name: Prepare documentation structure
+        run: |
+          # Create docs directory
+          mkdir -p docs
+          
+          # Copy markdown files to docs directory
+          cp *.md docs/ 2>/dev/null || true
+          
+          # Copy k8s docs
+          mkdir -p docs/k8s
+          cp k8s/*.md docs/k8s/ 2>/dev/null || true
+          cp -r k8s/app docs/k8s/ 2>/dev/null || true
+          cp -r k8s/monitoring docs/k8s/ 2>/dev/null || true
+          
       - name: Create mkdocs.yml
         run: |
           cat > mkdocs.yml << 'EOF'
@@ -46,7 +60,7 @@ jobs:
           site_author: Fadi Hussein
           repo_url: https://github.com/${{ github.repository }}
           
-          docs_dir: .
+          docs_dir: docs
           site_dir: site
           
           theme:
