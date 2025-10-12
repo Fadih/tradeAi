@@ -124,8 +124,12 @@ spec:
           configMap:
             name: grafana-dashboards-provider
         - name: grafana-dashboards
-          configMap:
-            name: grafana-dashboards
+          projected:
+            sources:
+            - configMap:
+                name: grafana-dashboard-simple
+            - configMap:
+                name: grafana-dashboard-trading-ai-complete
 
 ---
 # Grafana Service

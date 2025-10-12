@@ -1,14 +1,15 @@
 ---
-# Grafana Dashboard ConfigMap for Trading AI
+# Grafana Dashboard ConfigMap for Trading AI (Simple)
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: grafana-dashboards
+  name: grafana-dashboard-simple
   namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
 data:
-  trading-ai-dashboard.json: |
+  trading-ai-simple.json: |
     {
-      "dashboard": {
         "title": "Trading AI Application",
         "tags": ["trading-ai", "kubernetes"],
         "timezone": "browser",
@@ -160,7 +161,17 @@ data:
               }
             ]
           }
-        ]
-      }
+        ],
+        "refresh": "30s",
+        "time": {
+          "from": "now-1h",
+          "to": "now"
+        },
+        "timepicker": {
+          "refresh_intervals": ["10s", "30s", "1m", "5m", "15m", "30m", "1h"]
+        },
+        "timezone": "browser",
+        "uid": "trading-ai-simple",
+        "version": 1
     }
 

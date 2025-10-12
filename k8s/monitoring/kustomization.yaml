@@ -8,6 +8,7 @@ resources:
   - prometheus/configmap.yaml
   - prometheus/deployment.yaml
   - grafana/dashboard-configmap.yaml
+  - grafana/dashboard-trading-ai-complete.yaml
   - grafana/deployment.yaml
 
 commonLabels:
