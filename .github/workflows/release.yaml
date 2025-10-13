@@ -172,16 +172,34 @@ jobs:
           echo "=== Diff ==="
           git diff
           
-          # Add files
+          # Stash the changes
           git add k8s/app/trading-ai-deployment.yaml CHANGELOG.md
           
-          # Check if there are staged changes
+          # Check if there are changes to commit
           if git diff --cached --quiet; then
             echo "No changes to commit"
           else
+            echo "Changes detected, preparing to commit..."
+            
+            # Stash the staged changes temporarily
+            git stash push --staged -m "temp-stash-for-release"
+            
+            # Checkout main branch
+            echo "Checking out main branch..."
+            git fetch origin main
+            git checkout main
+            
+            # Apply the stashed changes
+            echo "Applying changes to main branch..."
+            git stash pop
+            
+            # Commit and push
             echo "Committing changes..."
             git commit -m "chore: Update deployment manifest and changelog for ${{ github.ref_name }}"
+            
+            echo "Pushing to main branch..."
             git push origin main
-            echo "Changes pushed to main branch"
+            
+            echo "✅ Changes pushed successfully to main branch"
           fi
 
