@@ -94,8 +94,7 @@ app.add_middleware(
 # Add Prometheus middleware
 app.add_middleware(PrometheusMiddleware)
 
-# Mount static files
-app.mount("/static", StaticFiles(directory="web/static"), name="static")
+
 
 # Startup event moved to end of file to avoid conflicts
 
