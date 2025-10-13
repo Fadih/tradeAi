@@ -752,27 +752,30 @@ jobs:
           echo "=== Diff ==="
           git diff
           
-          # Create a patch file with all changes
-          echo "Creating patch of changes..."
-          git add -A
-          git diff --cached > /tmp/release-changes.patch
-          
-          # Check if patch has content
-          if [ ! -s /tmp/release-changes.patch ]; then
+          # Check if there are any changes
+          if git diff --quiet && git diff --cached --quiet && [ -z "$(git ls-files --others --exclude-standard)" ]; then
             echo "No changes to commit"
           else
             echo "Changes detected, preparing to commit..."
-            echo "=== Patch content ==="
-            cat /tmp/release-changes.patch
+            
+            # Copy the modified and new files to a temporary location
+            echo "Backing up changes..."
+            mkdir -p /tmp/release-backup
+            cp k8s/app/trading-ai-deployment.yaml /tmp/release-backup/ 2>/dev/null || true
+            cp CHANGELOG.md /tmp/release-backup/ 2>/dev/null || true
+            cp -r docs/releases/ /tmp/release-backup/ 2>/dev/null || true
             
             # Checkout main branch
             echo "Checking out main branch..."
             git fetch origin main
-            git checkout main
+            git checkout -B main origin/main
             
-            # Apply the patch
-            echo "Applying changes to main branch..."
-            git apply /tmp/release-changes.patch
+            # Restore the files
+            echo "Restoring changes to main branch..."
+            cp /tmp/release-backup/trading-ai-deployment.yaml k8s/app/trading-ai-deployment.yaml 2>/dev/null || true
+            cp /tmp/release-backup/CHANGELOG.md . 2>/dev/null || true
+            mkdir -p docs/releases
+            cp -r /tmp/release-backup/releases/* docs/releases/ 2>/dev/null || true
             
             # Stage all changes
             echo "Staging all changes..."
@@ -787,25 +790,27 @@ jobs:
             echo "=== Staged Changes ==="
             git diff --cached --stat
             
-            # Commit and push
-            echo "Committing changes..."
-            git commit -m "chore: Update deployment manifest, changelog, and documentation for ${{ github.ref_name }}" || {
-              echo "❌ Commit failed"
-              exit 1
-            }
+            # Check if there's anything to commit
+            if git diff --cached --quiet; then
+              echo "⚠️ No changes staged for commit"
+            else
+              # Commit and push
+              echo "Committing changes..."
+              git commit -m "chore: Update deployment manifest, changelog, and documentation for ${{ github.ref_name }}"
+              
+              echo "Pushing to main branch..."
+              git push origin main
+              
+              echo "✅ Changes pushed successfully to main branch"
+              echo "📚 Files committed:"
+              echo "  - k8s/app/trading-ai-deployment.yaml (image: ${{ secrets.DOCKER_USERNAME }}/tradingtips:${{ steps.version.outputs.VERSION }})"
+              echo "  - CHANGELOG.md"
+              echo "  - docs/releases/RELEASE-v${{ steps.version.outputs.VERSION }}.md"
+              echo "  - docs/releases/API-v${{ steps.version.outputs.VERSION }}.md"
+              echo "  - docs/releases/DEPLOYMENT-v${{ steps.version.outputs.VERSION }}.md"
+            fi
             
-            echo "Pushing to main branch..."
-            git push origin main || {
-              echo "❌ Push failed"
-              exit 1
-            }
-            
-            echo "✅ Changes pushed successfully to main branch"
-            echo "📚 Files committed:"
-            echo "  - k8s/app/trading-ai-deployment.yaml (image: ${{ secrets.DOCKER_USERNAME }}/tradingtips:${{ steps.version.outputs.VERSION }})"
-            echo "  - CHANGELOG.md"
-            echo "  - docs/releases/RELEASE-v${{ steps.version.outputs.VERSION }}.md"
-            echo "  - docs/releases/API-v${{ steps.version.outputs.VERSION }}.md"
-            echo "  - docs/releases/DEPLOYMENT-v${{ steps.version.outputs.VERSION }}.md"
+            # Cleanup
+            rm -rf /tmp/release-backup
           fi
 
