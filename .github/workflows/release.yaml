@@ -752,28 +752,29 @@ jobs:
           echo "=== Diff ==="
           git diff
           
-          # Check if there are changes to commit
-          if git diff --quiet k8s/app/trading-ai-deployment.yaml CHANGELOG.md && \
-             ! test -d docs/releases/ || git diff --quiet docs/releases/; then
+          # Create a patch file with all changes
+          echo "Creating patch of changes..."
+          git add -A
+          git diff --cached > /tmp/release-changes.patch
+          
+          # Check if patch has content
+          if [ ! -s /tmp/release-changes.patch ]; then
             echo "No changes to commit"
           else
             echo "Changes detected, preparing to commit..."
-            
-            # Stash ALL changes (tracked and untracked)
-            echo "Stashing changes..."
-            git add k8s/app/trading-ai-deployment.yaml CHANGELOG.md docs/releases/ 2>/dev/null || true
-            git stash push -m "temp-stash-for-release" k8s/app/trading-ai-deployment.yaml CHANGELOG.md docs/
+            echo "=== Patch content ==="
+            cat /tmp/release-changes.patch
             
             # Checkout main branch
             echo "Checking out main branch..."
             git fetch origin main
             git checkout main
             
-            # Apply the stashed changes
+            # Apply the patch
             echo "Applying changes to main branch..."
-            git stash pop
+            git apply /tmp/release-changes.patch
             
-            # Re-add all files to make sure they're staged
+            # Stage all changes
             echo "Staging all changes..."
             git add k8s/app/trading-ai-deployment.yaml
             git add CHANGELOG.md
@@ -782,13 +783,22 @@ jobs:
             # Verify files are staged
             echo "=== Staged Files ==="
             git diff --cached --name-only
+            echo ""
+            echo "=== Staged Changes ==="
+            git diff --cached --stat
             
             # Commit and push
             echo "Committing changes..."
-            git commit -m "chore: Update deployment manifest, changelog, and documentation for ${{ github.ref_name }}"
+            git commit -m "chore: Update deployment manifest, changelog, and documentation for ${{ github.ref_name }}" || {
+              echo "❌ Commit failed"
+              exit 1
+            }
             
             echo "Pushing to main branch..."
-            git push origin main
+            git push origin main || {
+              echo "❌ Push failed"
+              exit 1
+            }
             
             echo "✅ Changes pushed successfully to main branch"
             echo "📚 Files committed:"
