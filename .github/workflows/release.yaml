@@ -96,6 +96,534 @@ jobs:
           echo "$CHANGELOG" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
       
+      - name: Generate Release Documentation
+        run: |
+          VERSION=${{ steps.version.outputs.VERSION }}
+          RELEASE_DATE=$(date +%Y-%m-%d)
+          
+          # Create release documentation directory
+          mkdir -p docs/releases
+          
+          # Generate Release Notes
+          cat > docs/releases/RELEASE-v${VERSION}.md << 'RELEASE_EOF'
+          # Release v${VERSION} - ${RELEASE_DATE}
+          
+          ## 🎉 What's New
+          
+          ${{ steps.changelog.outputs.CHANGELOG }}
+          
+          ## 📦 Docker Image
+          
+          **Docker Hub:** `${{ secrets.DOCKER_USERNAME }}/tradingtips:${VERSION}`
+          
+          ```bash
+          # Pull the image
+          docker pull ${{ secrets.DOCKER_USERNAME }}/tradingtips:${VERSION}
+          
+          # Run locally
+          docker run -p 8000:8000 -e REDIS_HOST=localhost ${{ secrets.DOCKER_USERNAME }}/tradingtips:${VERSION}
+          ```
+          
+          ## 🚀 Deployment
+          
+          ### Using ArgoCD (GitOps)
+          
+          The Kubernetes manifests have been automatically updated. ArgoCD will sync the changes.
+          
+          ```bash
+          # Check ArgoCD sync status
+          argocd app get trading-ai
+          
+          # Force sync if needed
+          argocd app sync trading-ai
+          
+          # Watch deployment
+          kubectl rollout status deployment/trading-ai
+          ```
+          
+          ### Using kubectl (Manual)
+          
+          ```bash
+          # Update deployment image
+          kubectl set image deployment/trading-ai trading-ai=${{ secrets.DOCKER_USERNAME }}/tradingtips:${VERSION}
+          
+          # Or apply the updated manifest
+          kubectl apply -f k8s/app/trading-ai-deployment.yaml
+          
+          # Watch rollout
+          kubectl rollout status deployment/trading-ai
+          ```
+          
+          ### Using Kustomize
+          
+          ```bash
+          # Apply all manifests
+          kubectl apply -k k8s/app/
+          
+          # Verify deployment
+          kubectl get pods -l app=trading-ai
+          ```
+          
+          ## 🔍 Verification
+          
+          After deployment, verify the application is running correctly:
+          
+          ```bash
+          # Check pod status
+          kubectl get pods -l app=trading-ai
+          
+          # Check application version
+          kubectl exec -it deployment/trading-ai -- python -c "print('Version: ${VERSION}')"
+          
+          # Check health endpoint
+          kubectl port-forward svc/trading-ai-service 8000:8000 &
+          curl http://localhost:8000/api/health
+          
+          # Check metrics
+          curl http://localhost:8000/metrics
+          ```
+          
+          ## 📊 Monitoring
+          
+          Access monitoring dashboards:
+          
+          - **Grafana:** `http://<node-ip>:32000`
+          - **Prometheus:** `http://<node-ip>:32090`
+          - **Trading AI:** `http://<node-ip>:32224`
+          
+          ### Key Metrics to Watch
+          
+          - `app_info` - Application version and status
+          - `http_requests_total` - Request rate
+          - `trading_signals_generated_total` - Signal generation
+          - `redis_connected_clients` - Redis connections
+          - `kube_pod_container_status_restarts_total` - Pod restarts
+          
+          ## 🐛 Rollback (If Needed)
+          
+          If issues occur, rollback to previous version:
+          
+          ```bash
+          # Using kubectl
+          kubectl rollout undo deployment/trading-ai
+          
+          # Or specify revision
+          kubectl rollout history deployment/trading-ai
+          kubectl rollout undo deployment/trading-ai --to-revision=<revision>
+          
+          # Using ArgoCD
+          argocd app rollback trading-ai <revision>
+          ```
+          
+          ## 📝 Configuration Changes
+          
+          Review configuration updates in this release:
+          
+          - **ConfigMaps:** Check `k8s/app/configmap.yaml`
+          - **Secrets:** Update secrets if needed (use Sealed Secrets)
+          - **Resources:** Review CPU/Memory limits in deployment
+          
+          ## 🔗 Useful Links
+          
+          - **GitHub Release:** https://github.com/Fadih/tradeAi/releases/tag/v${VERSION}
+          - **Docker Hub:** https://hub.docker.com/r/${{ secrets.DOCKER_USERNAME }}/tradingtips
+          - **Documentation:** https://github.com/Fadih/tradeAi/tree/main/docs
+          - **Issues:** https://github.com/Fadih/tradeAi/issues
+          
+          ## 👥 Contributors
+          
+          Thank you to everyone who contributed to this release!
+          
+          ---
+          
+          **Questions or Issues?** Please open an issue on GitHub.
+          RELEASE_EOF
+          
+          # Generate API Documentation
+          cat > docs/releases/API-v${VERSION}.md << 'API_EOF'
+          # API Documentation - v${VERSION}
+          
+          ## Base URL
+          
+          - **Production:** `http://<your-domain>:32224`
+          - **Local:** `http://localhost:8000`
+          - **Docker:** `http://localhost:8000`
+          
+          ## Interactive Documentation
+          
+          - **Swagger UI:** `http://localhost:8000/docs`
+          - **ReDoc:** `http://localhost:8000/redoc`
+          
+          ## Authentication
+          
+          Most endpoints require JWT authentication.
+          
+          ### Login
+          
+          ```bash
+          curl -X POST http://localhost:8000/api/auth/login \
+            -H "Content-Type: application/json" \
+            -d '{"username": "admin", "password": "your-password"}'
+          ```
+          
+          Response:
+          ```json
+          {
+            "access_token": "eyJ0eXAiOiJKV1QiLCJhbGc...",
+            "token_type": "bearer",
+            "user": {
+              "username": "admin",
+              "role": "admin"
+            }
+          }
+          ```
+          
+          ### Using Token
+          
+          ```bash
+          curl -X GET http://localhost:8000/api/signals \
+            -H "Authorization: Bearer YOUR_TOKEN_HERE"
+          ```
+          
+          ## Key Endpoints
+          
+          ### Health & Status
+          
+          - `GET /api/health` - Health check
+          - `GET /api/status` - Application status
+          - `GET /metrics` - Prometheus metrics
+          
+          ### Trading Signals
+          
+          - `GET /api/signals` - Get recent signals
+          - `POST /api/signals/generate` - Generate new signal
+          - `GET /api/signals/monitor/status` - Monitor status
+          - `GET /api/signals/stats` - Signal statistics
+          
+          ### Market Data
+          
+          - `GET /api/market-data/{symbol}` - Get market data for symbol
+          - `GET /api/market-data/all/overview` - Multi-symbol overview
+          
+          ### Configuration
+          
+          - `GET /api/config/app` - Application config
+          - `GET /api/config/trading` - Trading parameters
+          - `POST /api/config/update` - Update configuration
+          
+          ### User Management
+          
+          - `GET /api/user/dashboard` - User dashboard
+          - `GET /api/user/profile` - User profile
+          - `PUT /api/user/profile` - Update profile
+          
+          ### Admin Endpoints
+          
+          - `GET /api/admin/dashboard` - Admin dashboard
+          - `GET /api/admin/users` - List all users
+          - `POST /api/admin/users` - Create user
+          - `GET /api/admin/signals/all` - All signals
+          
+          ## WebSocket Support
+          
+          Real-time updates via WebSocket (if implemented):
+          
+          ```javascript
+          const ws = new WebSocket('ws://localhost:8000/ws/signals');
+          ws.onmessage = (event) => {
+            console.log('New signal:', JSON.parse(event.data));
+          };
+          ```
+          
+          ## Rate Limiting
+          
+          - Default: 100 requests per minute per IP
+          - Authenticated: 1000 requests per minute
+          
+          ## Error Responses
+          
+          ```json
+          {
+            "detail": "Error message",
+            "status_code": 400
+          }
+          ```
+          
+          ## Examples
+          
+          See full examples in the `/examples` directory.
+          
+          ---
+          
+          **For complete API documentation, visit:** `http://localhost:8000/docs`
+          API_EOF
+          
+          # Generate Deployment Guide
+          cat > docs/releases/DEPLOYMENT-v${VERSION}.md << 'DEPLOY_EOF'
+          # Deployment Guide - v${VERSION}
+          
+          ## Prerequisites
+          
+          - Kubernetes cluster (1.24+)
+          - kubectl configured
+          - ArgoCD installed (optional but recommended)
+          - Docker Hub account
+          
+          ## Quick Deployment
+          
+          ### 1. Clone Repository
+          
+          ```bash
+          git clone https://github.com/Fadih/tradeAi.git
+          cd tradeAi
+          git checkout v${VERSION}
+          ```
+          
+          ### 2. Configure Secrets
+          
+          ```bash
+          # Copy example secrets
+          cp k8s/app/secrets.example.yaml k8s/app/secrets.yaml
+          
+          # Edit with your values
+          vim k8s/app/secrets.yaml
+          ```
+          
+          **Required Secrets:**
+          - `JWT_SECRET_KEY` - JWT token secret
+          - `REDIS_PASSWORD` - Redis password
+          - `DEFAULT_ADMIN_PASSWORD` - Admin password
+          - `CCXT_API_KEY` - Binance API key
+          - `CCXT_API_SECRET` - Binance API secret
+          - `ALPACA_KEY_ID` - Alpaca key
+          - `ALPACA_SECRET_KEY` - Alpaca secret
+          - `HF_TOKEN` - Hugging Face token
+          - `TELEGRAM_BOT_TOKEN` - Telegram bot token
+          - `TELEGRAM_CHAT_ID` - Telegram chat ID
+          
+          ### 3. Deploy with Kustomize
+          
+          ```bash
+          kubectl apply -k k8s/app/
+          ```
+          
+          ### 4. Verify Deployment
+          
+          ```bash
+          # Check pods
+          kubectl get pods -l app=trading-ai
+          
+          # Check services
+          kubectl get svc
+          
+          # Check logs
+          kubectl logs -f deployment/trading-ai
+          ```
+          
+          ## ArgoCD Deployment
+          
+          ### 1. Install ArgoCD
+          
+          ```bash
+          kubectl create namespace argocd
+          kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+          ```
+          
+          ### 2. Access ArgoCD UI
+          
+          ```bash
+          kubectl port-forward svc/argocd-server -n argocd 8080:443
+          ```
+          
+          ### 3. Login
+          
+          ```bash
+          # Get initial password
+          kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d
+          
+          # Login with argocd CLI
+          argocd login localhost:8080
+          ```
+          
+          ### 4. Create Application
+          
+          ```bash
+          kubectl apply -f k8s/argocd-apps/trading-ai-app.yaml
+          ```
+          
+          ### 5. Sync Application
+          
+          ```bash
+          argocd app sync trading-ai
+          ```
+          
+          ## Monitoring Stack Deployment
+          
+          ### Deploy Prometheus & Grafana
+          
+          ```bash
+          kubectl apply -k k8s/monitoring/
+          ```
+          
+          ### Access Grafana
+          
+          ```bash
+          # Get Grafana URL
+          kubectl get svc grafana -n monitoring
+          
+          # Port forward
+          kubectl port-forward -n monitoring svc/grafana 3000:3000
+          
+          # Open http://localhost:3000
+          # Username: admin
+          # Password: admin123
+          ```
+          
+          ## Production Considerations
+          
+          ### 1. Use Sealed Secrets
+          
+          ```bash
+          # Install Sealed Secrets controller
+          kubectl apply -f https://github.com/bitnami-labs/sealed-secrets/releases/download/v0.24.0/controller.yaml
+          
+          # Seal your secrets
+          kubeseal --format yaml < k8s/app/secrets.yaml > k8s/app/sealed-secrets.yaml
+          ```
+          
+          ### 2. Configure Ingress
+          
+          ```yaml
+          apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            name: trading-ai-ingress
+          spec:
+            rules:
+            - host: trading.yourdomain.com
+              http:
+                paths:
+                - path: /
+                  pathType: Prefix
+                  backend:
+                    service:
+                      name: trading-ai-service
+                      port:
+                        number: 8000
+          ```
+          
+          ### 3. Enable TLS
+          
+          ```bash
+          # Install cert-manager
+          kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.13.0/cert-manager.yaml
+          
+          # Create certificate issuer
+          kubectl apply -f k8s/cert-issuer.yaml
+          ```
+          
+          ### 4. Configure Resource Limits
+          
+          Adjust in `k8s/app/trading-ai-deployment.yaml`:
+          
+          ```yaml
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "512Mi"
+            limits:
+              cpu: "2000m"
+              memory: "2Gi"
+          ```
+          
+          ### 5. Enable Horizontal Pod Autoscaling
+          
+          ```yaml
+          apiVersion: autoscaling/v2
+          kind: HorizontalPodAutoscaler
+          metadata:
+            name: trading-ai-hpa
+          spec:
+            scaleTargetRef:
+              apiVersion: apps/v1
+              kind: Deployment
+              name: trading-ai
+            minReplicas: 2
+            maxReplicas: 10
+            metrics:
+            - type: Resource
+              resource:
+                name: cpu
+                target:
+                  type: Utilization
+                  averageUtilization: 70
+          ```
+          
+          ## Troubleshooting
+          
+          ### Pods Not Starting
+          
+          ```bash
+          # Check pod events
+          kubectl describe pod <pod-name>
+          
+          # Check logs
+          kubectl logs <pod-name>
+          
+          # Check resources
+          kubectl top pods
+          ```
+          
+          ### Redis Connection Issues
+          
+          ```bash
+          # Test Redis connection
+          kubectl exec -it deployment/redis -- redis-cli ping
+          
+          # Check Redis password
+          kubectl get secret trading-ai-secrets -o jsonpath='{.data.REDIS_PASSWORD}' | base64 -d
+          ```
+          
+          ### Image Pull Errors
+          
+          ```bash
+          # Check image exists
+          docker pull ${{ secrets.DOCKER_USERNAME }}/tradingtips:${VERSION}
+          
+          # Verify image in deployment
+          kubectl get deployment trading-ai -o jsonpath='{.spec.template.spec.containers[0].image}'
+          ```
+          
+          ## Backup & Recovery
+          
+          ### Backup Redis Data
+          
+          ```bash
+          kubectl exec deployment/redis -- redis-cli BGSAVE
+          kubectl cp <redis-pod>:/data/dump.rdb ./backup/dump.rdb
+          ```
+          
+          ### Backup Kubernetes Resources
+          
+          ```bash
+          kubectl get all -o yaml > backup/resources.yaml
+          kubectl get configmap,secret -o yaml > backup/configs.yaml
+          ```
+          
+          ## Support
+          
+          - **GitHub Issues:** https://github.com/Fadih/tradeAi/issues
+          - **Documentation:** https://github.com/Fadih/tradeAi/tree/main/docs
+          - **Discussions:** https://github.com/Fadih/tradeAi/discussions
+          
+          ---
+          
+          **Deployed successfully? Star the repo!** ⭐
+          DEPLOY_EOF
+          
+          echo "✅ Release documentation generated successfully!"
+          ls -la docs/releases/
+      
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
@@ -103,44 +631,99 @@ jobs:
           body: |
             ## 🚀 Trading AI ${{ github.ref_name }}
             
-            ### What's Changed
+            ### 🎉 What's Changed
             ${{ steps.changelog.outputs.CHANGELOG }}
             
             ### 📦 Docker Image
-            - Docker Hub: `${{ secrets.DOCKER_USERNAME }}/trading-ai:${{ steps.version.outputs.VERSION }}`
             
-            ### 🚀 Deployment
+            **Docker Hub:** `${{ secrets.DOCKER_USERNAME }}/tradingtips:${{ steps.version.outputs.VERSION }}`
             
-            **Using ArgoCD:**
             ```bash
-            # Update image tag in your ArgoCD app or kustomization
-            kubectl set image deployment/trading-ai trading-ai=${{ secrets.DOCKER_USERNAME }}/trading-ai:${{ steps.version.outputs.VERSION }}
+            # Pull the image
+            docker pull ${{ secrets.DOCKER_USERNAME }}/tradingtips:${{ steps.version.outputs.VERSION }}
             
-            # Or let ArgoCD sync from Git
+            # Run locally
+            docker run -p 8000:8000 ${{ secrets.DOCKER_USERNAME }}/tradingtips:${{ steps.version.outputs.VERSION }}
+            ```
+            
+            ### 🚀 Quick Deployment
+            
+            **Using ArgoCD (GitOps):**
+            ```bash
+            # ArgoCD will auto-sync if configured
+            argocd app get trading-ai
             argocd app sync trading-ai
             ```
             
             **Using kubectl:**
             ```bash
-            export REGISTRY=${{ secrets.DOCKER_USERNAME }}
+            git checkout v${{ steps.version.outputs.VERSION }}
+            kubectl apply -k k8s/app/
+            ```
+            
+            **Using Kustomize:**
+            ```bash
             export IMAGE_TAG=${{ steps.version.outputs.VERSION }}
             kubectl apply -k k8s/app/
             ```
             
-            ### 📊 Monitoring
-            Access Grafana dashboard to view metrics and performance.
-            
             ### 📚 Documentation
-            - [API Documentation](./API_DOCUMENTATION.md)
-            - [Kubernetes Setup](./k8s/README.md)
-            - [Monitoring Setup](./k8s/monitoring/README.md)
+            
+            Complete documentation for this release:
+            
+            - 📖 **[Release Notes](./docs/releases/RELEASE-v${{ steps.version.outputs.VERSION }}.md)** - Full changelog and deployment guide
+            - 🔌 **[API Documentation](./docs/releases/API-v${{ steps.version.outputs.VERSION }}.md)** - Complete API reference
+            - 🚀 **[Deployment Guide](./docs/releases/DEPLOYMENT-v${{ steps.version.outputs.VERSION }}.md)** - Step-by-step deployment instructions
+            - 📊 **[Monitoring Setup](./k8s/monitoring/README.md)** - Prometheus & Grafana configuration
+            - ☸️ **[Kubernetes Setup](./k8s/app/README.md)** - Kubernetes manifests guide
+            
+            ### 🔍 Verification
+            
+            ```bash
+            # Check deployment
+            kubectl get pods -l app=trading-ai
+            
+            # Check health
+            kubectl port-forward svc/trading-ai-service 8000:8000
+            curl http://localhost:8000/api/health
+            
+            # Check metrics
+            curl http://localhost:8000/metrics
+            ```
+            
+            ### 📊 Monitoring
+            
+            - **Grafana:** `http://<node-ip>:32000` (admin/admin123)
+            - **Prometheus:** `http://<node-ip>:32090`
+            - **Trading AI:** `http://<node-ip>:32224`
+            
+            ### 🐛 Rollback
+            
+            If needed, rollback to previous version:
+            ```bash
+            kubectl rollout undo deployment/trading-ai
+            ```
+            
+            ### 🔗 Links
+            
+            - **Docker Hub:** https://hub.docker.com/r/${{ secrets.DOCKER_USERNAME }}/tradingtips
+            - **Documentation:** https://github.com/Fadih/tradeAi/tree/main/docs
+            - **Issues:** https://github.com/Fadih/tradeAi/issues
+            
+            ---
+            
+            **Questions?** Open an issue or check the documentation!
           draft: false
           prerelease: false
           generate_release_notes: true
           files: |
             README.md
-            API_DOCUMENTATION.md
-            k8s/app/*.yaml
+            docs/releases/RELEASE-v${{ steps.version.outputs.VERSION }}.md
+            docs/releases/API-v${{ steps.version.outputs.VERSION }}.md
+            docs/releases/DEPLOYMENT-v${{ steps.version.outputs.VERSION }}.md
+            k8s/app/trading-ai-deployment.yaml
+            k8s/app/configmap.yaml
+            k8s/monitoring/grafana/dashboard-trading-ai-complete.yaml
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       
@@ -172,8 +755,8 @@ jobs:
           echo "=== Diff ==="
           git diff
           
-          # Stash the changes
-          git add k8s/app/trading-ai-deployment.yaml CHANGELOG.md
+          # Stash the changes (manifests, changelog, and documentation)
+          git add k8s/app/trading-ai-deployment.yaml CHANGELOG.md docs/releases/
           
           # Check if there are changes to commit
           if git diff --cached --quiet; then
@@ -195,11 +778,15 @@ jobs:
             
             # Commit and push
             echo "Committing changes..."
-            git commit -m "chore: Update deployment manifest and changelog for ${{ github.ref_name }}"
+            git commit -m "chore: Update deployment manifest, changelog, and documentation for ${{ github.ref_name }}"
             
             echo "Pushing to main branch..."
             git push origin main
             
             echo "✅ Changes pushed successfully to main branch"
+            echo "📚 Documentation generated:"
+            echo "  - docs/releases/RELEASE-v${{ steps.version.outputs.VERSION }}.md"
+            echo "  - docs/releases/API-v${{ steps.version.outputs.VERSION }}.md"
+            echo "  - docs/releases/DEPLOYMENT-v${{ steps.version.outputs.VERSION }}.md"
           fi
 

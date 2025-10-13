@@ -90,6 +90,8 @@ jobs:
             - Home: README.md
             - API Documentation: API_DOCUMENTATION.md
             - API Quick Reference: API_QUICK_REFERENCE.md
+            - Releases:
+              - Overview: releases/README.md
             - Kubernetes:
               - Overview: k8s/README.md
               - Application: k8s/app/README.md
