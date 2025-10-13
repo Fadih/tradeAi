@@ -1,0 +1,34 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-rbac-cm
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: argocd-rbac-cm
+    app.kubernetes.io/part-of: argocd
+data:
+  # Policy for GitHub users
+  policy.csv: |
+    # Admin role - full access to everything
+    p, role:org-admin, applications, *, */*, allow
+    p, role:org-admin, clusters, *, *, allow
+    p, role:org-admin, repositories, *, *, allow
+    p, role:org-admin, projects, *, *, allow
+    p, role:org-admin, accounts, *, *, allow
+    p, role:org-admin, certificates, *, *, allow
+    p, role:org-admin, gpgkeys, *, *, allow
+    p, role:org-admin, logs, get, */*, allow
+    p, role:org-admin, exec, create, */*, allow
+    
+    # Grant admin role to GitHub users
+    g, fadih, role:readonly 
+    #g, Fadih, role:org-admin
+    #g, john-doe, role:developer        # Can view and sync apps
+    #g, jane-smith, role:readonly      # Can view only
+  
+  # Default policy for other authenticated users (read-only)
+  policy.default: 'role:readonly'
+  
+  # SSO scope - controls what ArgoCD can request from GitHub
+  scopes: '[groups]'
+

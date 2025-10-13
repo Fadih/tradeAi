@@ -1,0 +1,29 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-cm
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: argocd-cm
+    app.kubernetes.io/part-of: argocd
+data:
+  # Existing resource exclusions and customizations (keep your existing ones)
+  
+  # GitHub SSO Configuration
+  url: https://10.0.0.65:32222
+  
+  dex.config: |
+    connectors:
+      - type: github
+        id: github
+        name: GitHub
+        config:
+          clientID: xxxxxxx
+          clientSecret: xxxx
+          loadAllGroups: false
+          teamNameField: slug
+          useLoginAsID: false
+  
+  # Enable SSO
+  admin.enabled: "true"  # Keep admin for emergency access
+
