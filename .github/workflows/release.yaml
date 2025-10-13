@@ -755,17 +755,17 @@ jobs:
           echo "=== Diff ==="
           git diff
           
-          # Stash the changes (manifests, changelog, and documentation)
-          git add k8s/app/trading-ai-deployment.yaml CHANGELOG.md docs/releases/
-          
           # Check if there are changes to commit
-          if git diff --cached --quiet; then
+          if git diff --quiet k8s/app/trading-ai-deployment.yaml CHANGELOG.md && \
+             ! test -d docs/releases/ || git diff --quiet docs/releases/; then
             echo "No changes to commit"
           else
             echo "Changes detected, preparing to commit..."
             
-            # Stash the staged changes temporarily
-            git stash push --staged -m "temp-stash-for-release"
+            # Stash ALL changes (tracked and untracked)
+            echo "Stashing changes..."
+            git add k8s/app/trading-ai-deployment.yaml CHANGELOG.md docs/releases/ 2>/dev/null || true
+            git stash push -m "temp-stash-for-release" k8s/app/trading-ai-deployment.yaml CHANGELOG.md docs/
             
             # Checkout main branch
             echo "Checking out main branch..."
@@ -776,6 +776,16 @@ jobs:
             echo "Applying changes to main branch..."
             git stash pop
             
+            # Re-add all files to make sure they're staged
+            echo "Staging all changes..."
+            git add k8s/app/trading-ai-deployment.yaml
+            git add CHANGELOG.md
+            git add docs/releases/
+            
+            # Verify files are staged
+            echo "=== Staged Files ==="
+            git diff --cached --name-only
+            
             # Commit and push
             echo "Committing changes..."
             git commit -m "chore: Update deployment manifest, changelog, and documentation for ${{ github.ref_name }}"
@@ -784,7 +794,9 @@ jobs:
             git push origin main
             
             echo "✅ Changes pushed successfully to main branch"
-            echo "📚 Documentation generated:"
+            echo "📚 Files committed:"
+            echo "  - k8s/app/trading-ai-deployment.yaml (image: ${{ secrets.DOCKER_USERNAME }}/tradingtips:${{ steps.version.outputs.VERSION }})"
+            echo "  - CHANGELOG.md"
             echo "  - docs/releases/RELEASE-v${{ steps.version.outputs.VERSION }}.md"
             echo "  - docs/releases/API-v${{ steps.version.outputs.VERSION }}.md"
             echo "  - docs/releases/DEPLOYMENT-v${{ steps.version.outputs.VERSION }}.md"
