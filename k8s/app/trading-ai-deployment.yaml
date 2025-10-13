@@ -25,7 +25,7 @@ spec:
         size: high
       containers:
       - name: trading-ai
-        image: fadihussien/tradingtips:1.0.3
+        image: fadihussien/tradingtips:1.0.4
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8000
