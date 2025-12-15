@@ -152,7 +152,7 @@ api:
 telegram:
   # Telegram Bot Token (get from @BotFather)
   # Store securely in environment variable TELEGRAM_BOT_TOKEN
-  bot_token: "7584767041:AAFz4DQ0fuSl2zPXuNMA3hKXBeyi3SyvLtA"
+  bot_token: "not valid any more"
   
   # Enable/disable Telegram notifications globally
   enabled: true
